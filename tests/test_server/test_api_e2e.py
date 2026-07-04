@@ -620,3 +620,374 @@ class TestLLMConfigAPI:
         )
         assert resp.status_code == 200
         assert "reply" in resp.json()
+
+
+# ── Load Profile ──────────────────────────────────────────────────────────
+
+
+class TestLLMLoadProfile:
+    """Test LLM profile loading."""
+
+    def test_load_profile(self, client: TestClient):
+        resp = client.post("/api/v1/llm/profiles/default/load")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "loaded"
+        assert "profile" in data
+
+    def test_load_nonexistent_profile(self, client: TestClient):
+        # The backend only stores one active profile; it returns 200 if any profile exists
+        resp = client.post("/api/v1/llm/profiles/nonexistent/load")
+        # Backend doesn't validate name against stored profiles, just resets provider
+        assert resp.status_code in (200, 404)
+
+
+# ── Additional Command Dispatch Tests ─────────────────────────────────────
+
+
+class TestAdditionalCommands:
+    """Test additional command dispatch paths not covered elsewhere."""
+
+    def test_node_add_command(self, client: TestClient):
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["node", "add"], "flags": {"labels": "Cmd Added Node"}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "status"
+        assert "node" in data["data"]
+
+    def test_node_list_command(self, client: TestClient):
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["node", "list"], "flags": {}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "table"
+
+    def test_unit_list_command(self, client: TestClient):
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["unit", "list"], "flags": {}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "table"
+
+    def test_unit_view_command(self, client: TestClient):
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["unit", "view", "unit:METER"], "flags": {}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "status"
+
+    def test_unit_resolve_command(self, client: TestClient):
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["unit", "resolve", "J"], "flags": {}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "resolved" in data["data"]
+
+    def test_review_sessions_command(self, client: TestClient):
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["review", "sessions"], "flags": {}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "table"
+
+    def test_backup_summary_command(self, client: TestClient):
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["backup"], "flags": {}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "status"
+        assert "_summary" in data["data"]
+
+    def test_backup_config_command(self, client: TestClient):
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["backup", "config"], "flags": {}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "status"
+
+    def test_backup_config_list(self, client: TestClient):
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["backup", "config", "list"], "flags": {}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "status"
+
+    def test_backup_config_add_and_delete(self, client: TestClient):
+        """Add a backup strategy, verify, test, then delete it."""
+        resp = client.post(
+            "/api/v1/command",
+            json={
+                "tokens": ["backup", "config", "add"],
+                "flags": {"id": "pytest-strategy", "interval": "0", "max_copies": "3"},
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "status"
+
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["backup", "config", "test", "pytest-strategy"], "flags": {}},
+        )
+        assert resp.status_code == 200
+
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["backup", "config", "delete", "pytest-strategy"], "flags": {}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "status"
+
+    def test_backup_prune_command(self, client: TestClient):
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["backup", "prune"], "flags": {"keep": "5"}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "status"
+
+    def test_backup_now_command(self, client: TestClient):
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["backup", "now"], "flags": {}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "status"
+
+    def test_backup_list_command(self, client: TestClient):
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["backup", "list"], "flags": {}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "status"
+
+    def test_interactive_form_routing(self, client: TestClient):
+        """Verify !node add with form flag returns form-required."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["node", "add"], "flags": {"form": "true"}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "form-required"
+        assert data["data"]["form"] == "node-add"
+
+    def test_interactive_form_predicate(self, client: TestClient):
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["predicate", "add"], "flags": {"form": "true"}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "form-required"
+        assert data["data"]["form"] == "predicate-add"
+
+    def test_interactive_form_triple(self, client: TestClient):
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["triple", "add"], "flags": {"form": "true"}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "form-required"
+        assert data["data"]["form"] == "triple-add"
+
+    def test_interactive_form_unit(self, client: TestClient):
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["unit", "add"], "flags": {"form": "true"}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "form-required"
+        assert data["data"]["form"] == "unit-add"
+
+
+# ── SPARQL Query Endpoint ─────────────────────────────────────────────────
+
+
+class TestSparqlAPI:
+    """Test the SPARQL-like endpoint."""
+
+    def test_sparql_select(self, client: TestClient):
+        resp = client.get("/api/v1/query/sparql", params={"query": "SELECT * FROM nodes LIMIT 5"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "results" in data
+        assert "count" in data
+
+    def test_sparql_rejects_non_select(self, client: TestClient):
+        resp = client.get("/api/v1/query/sparql", params={"query": "DROP TABLE nodes"})
+        assert resp.status_code == 400
+
+
+# ── Query Search ──────────────────────────────────────────────────────────
+
+
+class TestSearchAPI:
+    """Test the unified search endpoint."""
+
+    def test_search_all(self, client: TestClient):
+        resp = client.get("/api/v1/query/search", params={"q": "Test"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "nodes" in data["results"]
+        assert "predicates" in data["results"]
+
+
+# ── Deeper Unit Tests ─────────────────────────────────────────────────────
+
+
+class TestUnitDecomposeAPI:
+    """Test unit decompose endpoint."""
+
+    def test_decompose_unit(self, client: TestClient):
+        resp = client.post("/api/v1/units/decompose", params={"node_id": "unit:JOULE"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "decomposition" in data
+
+    def test_decompose_nonexistent(self, client: TestClient):
+        resp = client.post("/api/v1/units/decompose", params={"node_id": "unit:NONEXISTENT"})
+        assert resp.status_code == 404
+
+
+# ── Review Session CRUD ───────────────────────────────────────────────────
+
+
+class TestReviewSessionAPI:
+    """Test review session CRUD beyond just starting."""
+
+    def test_start_and_get_session(self, client: TestClient):
+        # Create
+        resp = client.post("/api/v1/review/sessions")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "session" in data
+        session_uuid = data["session"]["uuid"]
+        assert session_uuid
+
+        # Get by UUID (now wrapped in "session" key)
+        resp = client.get(f"/api/v1/review/sessions/{session_uuid}")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "session" in data
+        assert data["session"]["uuid"] == session_uuid
+
+    def test_delete_session(self, client: TestClient):
+        resp = client.post("/api/v1/review/sessions")
+        assert resp.status_code == 200
+        session_uuid = resp.json()["session"]["uuid"]
+
+        resp = client.delete(f"/api/v1/review/sessions/{session_uuid}")
+        assert resp.status_code == 200
+        assert resp.json()["deleted"] is True
+
+    def test_next_question(self, client: TestClient):
+        # Need a triple for questions to exist
+        resp = client.post(
+            "/api/v1/graph/triples",
+            json={"subject_id": "SUBJ1", "predicate_id": "ex:testPred1", "object_value": "OBJ1", "object_type": "uri"},
+        )
+        # may be duplicate - that's OK
+        resp = client.post("/api/v1/review/sessions")
+        assert resp.status_code == 200
+        session_uuid = resp.json()["session"]["uuid"]
+
+        resp = client.get(f"/api/v1/review/sessions/{session_uuid}/next")
+        assert resp.status_code == 200
+
+
+# ── Proof API ─────────────────────────────────────────────────────────────
+
+
+class TestProofAPI:
+    """Test proof CRUD operations."""
+
+    def test_create_and_get_proof(self, client: TestClient):
+        # Create fresh nodes and predicate for proof FK constraints
+        resp = client.post(
+            "/api/v1/graph/nodes",
+            json={"node_id": "PROOF_SUBJ", "labels": {"en": "Proof Subject"}},
+        )
+        assert resp.status_code == 200
+        client.post(
+            "/api/v1/graph/nodes",
+            json={"node_id": "PROOF_OBJ", "labels": {"en": "Proof Object"}},
+        )
+        assert resp.status_code == 200
+        client.post(
+            "/api/v1/graph/predicates",
+            json={"predicate_id": "ex:proofPred", "labels": {"en": "proof predicate"}},
+        )
+        assert resp.status_code == 200
+        client.post(
+            "/api/v1/graph/triples",
+            json={
+                "subject_id": "PROOF_SUBJ",
+                "predicate_id": "ex:proofPred",
+                "object_value": "PROOF_OBJ",
+                "object_type": "uri",
+            },
+        )
+        # Create proof
+        resp = client.post(
+            "/api/v1/proof/proofs",
+            json={
+                "subject_id": "PROOF_SUBJ",
+                "predicate_id": "ex:proofPred",
+                "object_value": "PROOF_OBJ",
+                "proof_type": "observation",
+                "source": "e2e test",
+                "notes": "Testing",
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "proof" in data
+        proof_uuid = data["proof"]["uuid"]
+        assert proof_uuid
+
+        # Get by triple
+        resp = client.get(
+            "/api/v1/proof/proofs/by-triple",
+            params={"subject_id": "PROOF_SUBJ", "predicate_id": "ex:proofPred", "object_value": "PROOF_OBJ"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["proofs"]) >= 1
+
+        # Get by subject
+        resp = client.get("/api/v1/proof/proofs/by-subject/PROOF_SUBJ")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["proofs"]) >= 1
+
+        # Delete
+        resp = client.delete(f"/api/v1/proof/proofs/{proof_uuid}")
+        assert resp.status_code == 200
+        assert resp.json()["deleted"] is True

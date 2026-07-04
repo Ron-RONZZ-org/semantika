@@ -36,7 +36,7 @@ async def get_session(session_uuid: str):
     session = svc.get_session(session_uuid)
     if not session:
         raise HTTPException(404, f"Session not found: {session_uuid}")
-    return session
+    return {"session": session}
 
 
 @router.get("/sessions/{session_uuid}/next")
