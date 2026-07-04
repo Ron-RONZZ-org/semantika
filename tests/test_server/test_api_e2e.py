@@ -1885,3 +1885,106 @@ class TestInteractiveFormsRegistration:
         data = resp.json()
         assert data.get("type") == "form-required"
         assert expected_form in str(data.get("data", {}))
+
+
+# ── Edge case command tests ────────────────────────────────────────────────
+
+
+class TestCommandEdgeCases:
+    """Test corner cases in command handlers."""
+
+    def test_search_invalid_limit(self, client: TestClient):
+        """Search with non-numeric limit defaults to 50."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["search"], "flags": {"q": "Subject", "limit": "abc"}},
+        )
+        assert resp.status_code == 200
+
+    def test_import_missing_data(self, client: TestClient):
+        """Import without data raises validation error."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["import"], "flags": {}},
+        )
+        assert resp.status_code == 400
+
+    def test_view_missing_id(self, client: TestClient):
+        """View without ID raises validation error."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["view"], "flags": {}},
+        )
+        assert resp.status_code == 400
+
+    def test_view_nonexistent_node(self, client: TestClient):
+        """View a non-existent node returns 400."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["view"], "flags": {"id": "ZZZDOESNOTEXIST"}},
+        )
+        assert resp.status_code == 400
+
+    def test_search_missing_query(self, client: TestClient):
+        """Search without query raises validation error."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["search"], "flags": {}},
+        )
+        assert resp.status_code == 400
+
+    def test_node_delete_multiple(self, client: TestClient):
+        """Delete multiple nodes by passing multiple IDs."""
+        for nid in ["MD1", "MD2", "MD3"]:
+            client.post("/api/v1/graph/nodes", json={"node_id": nid, "labels": {"en": nid}})
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["node", "delete"], "flags": {"id": "MD1", "_1": "MD2", "_2": "MD3"}},
+        )
+        assert resp.status_code == 200
+        assert "Deleted" in str(resp.json())
+
+    def test_predicate_group_search_no_query(self, client: TestClient):
+        """predicate-group search without query raises error."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["predicate-group", "search"], "flags": {}},
+        )
+        assert resp.status_code == 400
+
+    def test_review_start_invalid_mode(self, client: TestClient):
+        """Review with invalid mode returns 400."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["review", "start"], "flags": {"mode": "invalid_mode"}},
+        )
+        assert resp.status_code == 400
+
+    def test_unit_decompose_not_found(self, client: TestClient):
+        """Decompose a non-existent unit returns 400."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["unit", "decompose"], "flags": {"id": "unit:ZZZFAKE"}},
+        )
+        assert resp.status_code == 400
+
+    def test_proof_add_missing_args(self, client: TestClient):
+        """Proof add without required args redirects to form."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["proof", "add"], "flags": {}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        # Interactive commands return form-required on validation failure
+        assert "form" in str(data).lower()
+
+    def test_triple_delete_no_subject(self, client: TestClient):
+        """Triple delete without subject returns error in response."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["triple", "delete"], "flags": {}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "Specify" in str(data) or "error" in str(data).lower()
