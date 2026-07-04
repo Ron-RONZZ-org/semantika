@@ -92,3 +92,76 @@ function findNodeIndex(tokens) {
   }
   return tokens.length - 1;
 }
+
+export function getDataCompletionsFromCache(cachedData, uuidSource) {
+  if (!cachedData) return [];
+  const result = [];
+
+  if (!uuidSource) {
+    addAccounts(cachedData, result);
+    addCalendars(cachedData, result);
+    addContacts(cachedData, result);
+    return result;
+  }
+
+  if (uuidSource.startsWith("email.")) addAccounts(cachedData, result);
+  if (uuidSource.startsWith("calendar.")) addCalendars(cachedData, result);
+  if (uuidSource.startsWith("contacts.")) addContacts(cachedData, result);
+  if (uuidSource.startsWith("todo.")) addTodos(cachedData, result);
+  if (uuidSource.startsWith("journal.")) addJournal(cachedData, result);
+  if (uuidSource === "email.folders") addFolders(cachedData, result);
+
+  return result;
+}
+
+function addAccounts(cache, result) {
+  if (cache.accounts) {
+    for (const a of cache.accounts) {
+      result.push({ uuid: a.uuid, label: `${a.email} (${a.name || ""})` });
+    }
+  }
+}
+
+function addCalendars(cache, result) {
+  if (cache.calendars) {
+    for (const c of cache.calendars) {
+      result.push({ uuid: c.uuid, label: c.url });
+    }
+  }
+}
+
+function addContacts(cache, result) {
+  if (cache.contacts) {
+    for (const c of cache.contacts) {
+      result.push({ uuid: c.uuid, label: `${c.nomo || ""} <${c.retposto || ""}>` });
+    }
+  }
+}
+
+function addTodos(cache, result) {
+  if (cache.todos) {
+    for (const t of cache.todos) {
+      result.push({ uuid: t.uuid, label: t.title || "(untitled)" });
+    }
+  }
+}
+
+function addJournal(cache, result) {
+  if (cache.journal) {
+    for (const e of cache.journal) {
+      result.push({ uuid: e.uuid, label: `${e.date || ""} — ${e.title || ""}` });
+    }
+  }
+}
+
+function addFolders(cache, result) {
+  if (cache.folders) {
+    for (const f of cache.folders) {
+      result.push({
+        uuid: f.folder_name,
+        label: f.label || `${f.account_email}/${f.folder_name}`,
+        value: f.label || `${f.account_email}/${f.folder_name}`,
+      });
+    }
+  }
+}

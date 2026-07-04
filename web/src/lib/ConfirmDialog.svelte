@@ -26,18 +26,18 @@
 
 <style>
   .confirm-overlay {
-    position: absolute; inset: 0; background: rgba(0,0,0,0.5);
+    position: absolute; inset: 0; background: rgba(0,0,0,0.6);
     display: flex; align-items: center; justify-content: center; z-index: 100;
   }
   .confirm-box {
-    background: #fff; border: 1px solid #ddd; border-radius: 8px;
-    padding: 1.5rem 2rem; text-align: center; box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    background: #1e1e32; border: 1px solid #444; border-radius: 8px;
+    padding: 1.5rem 2rem; text-align: center; box-shadow: 0 4px 20px rgba(0,0,0,0.4);
   }
-  .confirm-box p { margin-bottom: 1rem; color: #333; font-size: 0.95rem; }
+  .confirm-box p { margin-bottom: 1rem; color: #e0e0e0; font-size: 0.95rem; }
   .actions { display: flex; gap: 0.75rem; justify-content: center; }
-  .btn { padding: 0.4rem 1rem; border: 1px solid #ccc; border-radius: 4px;
-    background: #f5f5f5; cursor: pointer; font-size: 0.85rem; }
-  .btn:hover { background: #e8e8e8; }
-  .btn.danger { background: #d32f2f; color: #fff; border-color: #b71c1c; }
-  .btn.danger:hover { background: #b71c1c; }
+  .btn { padding: 0.4rem 1rem; border: 1px solid #555; border-radius: 4px;
+    background: #2a2a3e; color: #e0e0e0; cursor: pointer; font-size: 0.85rem; }
+  .btn:hover { background: #3a3a5a; }
+  .btn.danger { background: #5a2a2a; color: #e0e0e0; border-color: #7a3a3a; }
+  .btn.danger:hover { background: #7a3a3a; }
 </style>

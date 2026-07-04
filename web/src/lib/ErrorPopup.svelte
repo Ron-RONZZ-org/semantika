@@ -1,19 +1,31 @@
 <script>
-  let { data } = $props();
+  let { data = {} } = $props();
 </script>
 
-<div class="error-popup">
-  <span class="icon">⚠</span>
-  <span class="msg">{data?.message || "Unknown error"}</span>
+<div class="error">
+  <p class="message">{data.message || "An error occurred."}</p>
+  {#if data.suggestion}
+    <p class="suggestion">{data.suggestion}</p>
+  {/if}
 </div>
 
 <style>
-  .error-popup {
-    display: flex; align-items: center; gap: 0.5rem;
-    padding: 1rem; margin: 1rem;
-    background: #fbe9e7; color: #d32f2f;
-    border: 1px solid #ef9a9a; border-radius: 6px;
-    font-size: 0.9rem;
+  .error {
+    text-align: center;
+    padding: 1.5rem;
   }
-  .icon { font-size: 1.2rem; }
+  .message {
+    color: #e74c3c;
+    font-family: monospace;
+    font-size: 0.9rem;
+    margin-bottom: 0.75rem;
+  }
+  .suggestion {
+    color: #7c7c9a;
+    font-family: monospace;
+    font-size: 0.85rem;
+    background: #2a2a3e;
+    padding: 0.5rem;
+    border-radius: 4px;
+  }
 </style>

@@ -33,6 +33,18 @@ async def graph_stats():
     return stats
 
 
+class ImportRequest(BaseModel):
+    data: str
+
+
+@router.post("/import")
+async def import_turtle(req: ImportRequest):
+    """Import Turtle (.ttl) content into the triple store."""
+    from semantika.graph.triple_turtle import import_turtle as _import
+    stats = _import(req.data)
+    return stats
+
+
 @router.get("/sparql")
 async def sparql_query(query: str):
     """Execute a raw SQL query (limited SPARQL-like access).

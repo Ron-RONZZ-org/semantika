@@ -1,15 +1,15 @@
-"""Core utilities — vendored from A-core.
+"""Core utilities — re-exported from lightercore where possible.
 
-Provides database connection management, XDG path resolution,
-CRUD service base, FTS5 configuration, and custom exceptions.
+``lightercore`` is the canonical source for DB, paths, exceptions, CRUD,
+and backup.  FTS5 config remains local.
 """
 
-from semantika.core.db import SemantikaDB
-from semantika.core.paths import config_dir, data_dir, ensure_dirs
-from semantika.core.exceptions import (
+from lightercore.db import LighterbirdDB as SemantikaDB
+from lightercore.paths import config_dir, data_dir, ensure_dirs
+from lightercore.exceptions import (
     AmbiguousIDError,
     ProtectedPathError,
-    SemantikaError,
+    LighterbirdError as SemantikaError,
 )
 
 __all__ = [

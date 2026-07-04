@@ -1,26 +1,57 @@
 """LLM provider abstraction — OpenAI-compatible + Ollama.
 
 Port of lighterbird's provider pattern: text-based command generation
-via system prompt (no native function-calling), plus plain chat.
+via system prompt (no native function-calling), plus plain chat, and
+profile management persisted in the system keyring.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
+import keyring as _kr
+import keyring.errors as _kr_errors
+
+logger = logging.getLogger(__name__)
 
 
 # ── Config ───────────────────────────────────────────────────────────────
+
+_KEYRING_SERVICE = "semantika-llm"
+_ACTIVE_CONFIG_KEY = "active-config"
+_PROFILES_KEY = "saved-profiles"
 
 _DEFAULT_BASE_URLS: dict[str, str] = {
     "openai": "https://api.openai.com/v1",
     "deepseek": "https://api.deepseek.com",
     "ollama": "http://localhost:11434/v1",
 }
+
+
+def _set_kr(key: str, value: str) -> None:
+    try:
+        _kr.set_password(_KEYRING_SERVICE, key, value)
+    except _kr_errors.KeyringError as e:
+        logger.warning("Keyring write failed: %s", e)
+
+
+def _get_kr(key: str) -> str | None:
+    try:
+        return _kr.get_password(_KEYRING_SERVICE, key)
+    except _kr_errors.KeyringError:
+        return None
+
+
+def _del_kr(key: str) -> None:
+    try:
+        _kr.delete_password(_KEYRING_SERVICE, key)
+    except _kr_errors.KeyringError:
+        pass
 
 
 @dataclass
@@ -48,15 +79,154 @@ class ProviderConfig:
 
 
 class LLMProvider:
-    """OpenAI-compatible chat provider (used for OpenAI, DeepSeek, Ollama, custom)."""
+    """OpenAI-compatible chat provider (used for OpenAI, DeepSeek, Ollama, custom).
 
-    def __init__(self, config: ProviderConfig) -> None:
-        self.config = config
-        self._available = bool(config.api_key) or config.provider_type == "ollama"
+    Configuration and named profiles are persisted in the system keyring.
+    """
+
+    def __init__(self, config: ProviderConfig | None = None) -> None:
+        self.config = config or self._load_config()
+        self._active_profile_name: str | None = None
+        self._available = bool(self.config.api_key) or self.config.provider_type == "ollama"
 
     @property
     def available(self) -> bool:
         return self._available
+
+    @property
+    def active_profile_name(self) -> str | None:
+        return self._active_profile_name
+
+    # ── Configuration persistence ────────────────────────────────────────
+
+    def configure(self, provider_type: str, **kwargs: Any) -> ProviderConfig:
+        """Save provider configuration to keyring and return config.
+
+        Args:
+            provider_type: ``"openai"``, ``"deepseek"``, ``"ollama"``, etc.
+            **kwargs: Additional config fields (api_key, base_url, model, etc.).
+        """
+        config_data = {
+            "provider_type": provider_type,
+            "api_key": kwargs.get("api_key", ""),
+            "base_url": kwargs.get("base_url", ""),
+            "model": kwargs.get("model", ""),
+            "temperature": float(kwargs.get("temperature", 0.7)),
+            "max_tokens": int(kwargs.get("max_tokens", 2048)),
+        }
+        _set_kr(_ACTIVE_CONFIG_KEY, json.dumps(config_data))
+        self.config = ProviderConfig(**config_data)
+        self._available = bool(self.config.api_key) or self.config.provider_type == "ollama"
+        return self.config
+
+    def _load_config(self) -> ProviderConfig:
+        """Load provider config from keyring or return defaults."""
+        raw = _get_kr(_ACTIVE_CONFIG_KEY)
+        if not raw:
+            return ProviderConfig()
+
+        try:
+            data = json.loads(raw)
+            return ProviderConfig(
+                provider_type=data.get("provider_type", "deepseek"),
+                api_key=data.get("api_key", ""),
+                base_url=data.get("base_url", ""),
+                model=data.get("model", ""),
+                temperature=float(data.get("temperature", 0.7)),
+                max_tokens=int(data.get("max_tokens", 2048)),
+            )
+        except (json.JSONDecodeError, ValueError, TypeError):
+            return ProviderConfig()
+
+    def clear_config(self) -> None:
+        """Remove provider configuration from keyring."""
+        _del_kr(_ACTIVE_CONFIG_KEY)
+        self.config = ProviderConfig()
+        self._available = False
+        self._active_profile_name = None
+
+    # ── Named profile management ─────────────────────────────────────────
+
+    def save_profile(self, name: str, provider_type: str, **kwargs: Any) -> dict:
+        """Save a named LLM profile.
+
+        Profiles are stored as a JSON dict keyed by name in keyring.
+        """
+        raw = _get_kr(_PROFILES_KEY) or "{}"
+        try:
+            profiles = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            profiles = {}
+
+        profiles[name] = {
+            "provider_type": provider_type,
+            "api_key": kwargs.get("api_key", ""),
+            "base_url": kwargs.get("base_url", ""),
+            "model": kwargs.get("model", ""),
+            "temperature": float(kwargs.get("temperature", 0.7)),
+            "max_tokens": int(kwargs.get("max_tokens", 2048)),
+        }
+        _set_kr(_PROFILES_KEY, json.dumps(profiles))
+        return profiles[name]
+
+    def list_profiles(self) -> list[dict]:
+        """Return all saved profiles (without API keys)."""
+        raw = _get_kr(_PROFILES_KEY) or "{}"
+        try:
+            profiles = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            return []
+
+        result = []
+        for name, data in profiles.items():
+            result.append({
+                "name": name,
+                "provider_type": data.get("provider_type", ""),
+                "base_url": data.get("base_url", ""),
+                "model": data.get("model", ""),
+                "has_api_key": bool(data.get("api_key", "")),
+            })
+        return result
+
+    def get_profile(self, name: str) -> dict | None:
+        """Get a saved profile by name (WITH api_key)."""
+        raw = _get_kr(_PROFILES_KEY) or "{}"
+        try:
+            profiles = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            return None
+        return profiles.get(name)
+
+    def delete_profile(self, name: str) -> bool:
+        """Delete a saved profile. Returns True if deleted."""
+        raw = _get_kr(_PROFILES_KEY) or "{}"
+        try:
+            profiles = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            return False
+        if name not in profiles:
+            return False
+        del profiles[name]
+        _set_kr(_PROFILES_KEY, json.dumps(profiles))
+        return True
+
+    def switch_to_profile(self, name: str) -> ProviderConfig | None:
+        """Activate a saved profile. Returns the config or None."""
+        profile = self.get_profile(name)
+        if not profile:
+            return None
+        cfg = self.configure(
+            provider_type=profile["provider_type"],
+            api_key=profile.get("api_key", ""),
+            base_url=profile.get("base_url", ""),
+            model=profile.get("model", ""),
+            temperature=profile.get("temperature", 0.7),
+            max_tokens=profile.get("max_tokens", 2048),
+        )
+        self._active_profile_name = name
+        return cfg
+
+    # ── Chat ─────────────────────────────────────────────────────────────
 
     async def chat(
         self,

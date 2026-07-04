@@ -1,7 +1,4 @@
 <script>
-  /** DynamicForm — generic form rendered from command tree metadata.
-   *  Ported from lighterbird's DynamicForm.svelte.
-   */
   import { findNode } from "./commandTree.js";
   import FormField from "./FormField.svelte";
 
@@ -30,6 +27,7 @@
   }
 
   function isSensitive(name) { return /password|secret|key|token/i.test(name); }
+
   function fieldType(flagDef) {
     if (flagDef.type === "number") return "number";
     if (flagDef.type === "date") return "date";
@@ -85,20 +83,26 @@
   {/each}
 
   <div class="form-actions">
-    <button type="submit" disabled={submitting}>{submitting ? "Saving…" : "Save"}</button>
+    <button type="submit" disabled={submitting}>{submitting ? "Saving\u2026" : "Save"}</button>
   </div>
 </form>
 
 <style>
   .dynamic-form { display: flex; flex-direction: column; gap: 0.75rem; padding: 1rem; }
-  .checkbox-label { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem; }
+  .checkbox-label { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem; color: #e0e0e0; }
   .form-actions { display: flex; gap: 0.5rem; padding-top: 0.5rem; }
-  .form-actions button { padding: 0.4rem 1rem; background: #4a90d9; color: #fff;
+  .form-actions button { padding: 0.4rem 1rem; background: #3a6a3a; color: #e0e0e0;
     border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
+  .form-actions button:hover { background: #4a8a4a; }
   .form-actions button:disabled { opacity: 0.5; }
   :global(.dynamic-form input[type="text"]),
   :global(.dynamic-form input[type="number"]),
-  :global(.dynamic-form input[type="password"]) {
-    padding: 0.4rem 0.6rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.85rem;
+  :global(.dynamic-form input[type="password"]),
+  :global(.dynamic-form input[type="date"]) {
+    padding: 0.4rem 0.6rem; border: 1px solid #444; border-radius: 4px; font-size: 0.85rem;
+    background: #2a2a3e; color: #e0e0e0; outline: none;
+  }
+  :global(.dynamic-form input:focus) {
+    border-color: #7c7c9a;
   }
 </style>

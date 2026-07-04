@@ -629,17 +629,27 @@ class TestLLMLoadProfile:
     """Test LLM profile loading."""
 
     def test_load_profile(self, client: TestClient):
-        resp = client.post("/api/v1/llm/profiles/default/load")
+        # First create a named profile
+        create_resp = client.post(
+            "/api/v1/llm/profiles",
+            json={
+                "name": "test-profile",
+                "provider_type": "deepseek",
+                "api_key": "test-key-123",
+                "model": "deepseek-v4-flash",
+            },
+        )
+        assert create_resp.status_code == 201
+        # Now load it
+        resp = client.post("/api/v1/llm/profiles/test-profile/load")
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "loaded"
-        assert "profile" in data
+        assert data["profile"] == "test-profile"
 
     def test_load_nonexistent_profile(self, client: TestClient):
-        # The backend only stores one active profile; it returns 200 if any profile exists
         resp = client.post("/api/v1/llm/profiles/nonexistent/load")
-        # Backend doesn't validate name against stored profiles, just resets provider
-        assert resp.status_code in (200, 404)
+        assert resp.status_code == 404
 
 
 # ── Additional Command Dispatch Tests ─────────────────────────────────────

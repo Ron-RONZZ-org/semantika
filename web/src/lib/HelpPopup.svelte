@@ -27,10 +27,11 @@
 
 <style>
   .help { padding: 1rem; }
-  .help h3 { margin: 0 0 0.5rem; }
+  .help h3 { margin: 0 0 0.5rem; color: #e0e0e0; }
   table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-  th, td { padding: 0.3rem 0.5rem; border: 1px solid #ddd; text-align: left; }
-  th { background: #f5f5f5; }
-  code { background: #f0f0f0; padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.8rem; }
-  .tip { margin-top: 1rem; color: #888; font-style: italic; font-size: 0.85rem; }
+  th, td { padding: 0.3rem 0.5rem; border: 1px solid #333; text-align: left; }
+  th { background: #222; color: #c0c0c0; }
+  td { color: #e0e0e0; }
+  code { background: #222; padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.8rem; color: #e0e0e0; }
+  .tip { margin-top: 1rem; color: #7c7c9a; font-style: italic; font-size: 0.85rem; }
 </style>

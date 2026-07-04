@@ -17,7 +17,6 @@ from pydantic import BaseModel
 
 from semantika.server.llm.provider import (
     LLMProvider,
-    ProviderConfig,
     get_command_definitions,
 )
 
@@ -25,59 +24,17 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# ── Keyring helpers ──────────────────────────────────────────────────────
-
-_KEYRING_SERVICE = "semantika-llm"
-_ACTIVE_PROFILE_KEY = "active-profile"
-
-import keyring as _kr
-import keyring.errors as _kr_errors
-
-
-def _set_kr(key: str, value: str) -> None:
-    try:
-        _kr.set_password(_KEYRING_SERVICE, key, value)
-    except _kr_errors.KeyringError as e:
-        logger.warning("Keyring write failed: %s", e)
-
-
-def _get_kr(key: str) -> str | None:
-    try:
-        return _kr.get_password(_KEYRING_SERVICE, key)
-    except _kr_errors.KeyringError:
-        return None
-
-
-def _del_kr(key: str) -> None:
-    try:
-        _kr.delete_password(_KEYRING_SERVICE, key)
-    except _kr_errors.KeyringError:
-        pass
-
-
 # ── Singleton provider ───────────────────────────────────────────────────
 
 _provider_instance: LLMProvider | None = None
 
 
 def get_provider() -> LLMProvider:
-    """Return the singleton LLM provider, loading config from keyring."""
+    """Return the singleton LLM provider (lazy-loaded from keyring)."""
     global _provider_instance
     if _provider_instance is not None:
         return _provider_instance
-
-    raw = _get_kr(_ACTIVE_PROFILE_KEY)
-    if raw:
-        try:
-            cfg = ProviderConfig(**json.loads(raw))
-            _provider_instance = LLMProvider(cfg)
-            return _provider_instance
-        except (json.JSONDecodeError, TypeError):
-            pass
-
-    # Default config
-    cfg = ProviderConfig()
-    _provider_instance = LLMProvider(cfg)
+    _provider_instance = LLMProvider()
     return _provider_instance
 
 
@@ -128,7 +85,8 @@ async def llm_config():
 @router.post("/configure")
 async def llm_configure(req: ConfigureRequest):
     """Save the active provider configuration to keyring."""
-    cfg = ProviderConfig(
+    provider = get_provider()
+    cfg = provider.configure(
         provider_type=req.provider_type,
         api_key=req.api_key,
         base_url=req.base_url,
@@ -136,40 +94,39 @@ async def llm_configure(req: ConfigureRequest):
         temperature=req.temperature,
         max_tokens=req.max_tokens,
     )
-    _set_kr(_ACTIVE_PROFILE_KEY, json.dumps({
-        "provider_type": cfg.provider_type,
-        "api_key": cfg.api_key or "",
-        "base_url": cfg.base_url,
-        "model": cfg.model,
-        "temperature": cfg.temperature,
-        "max_tokens": cfg.max_tokens,
-    }))
-    reset_provider()
     return {"status": "configured", "provider_type": cfg.provider_type, "model": cfg.model}
 
 
 @router.get("/profiles")
 async def list_profiles():
     """List saved LLM profiles (stored in keyring)."""
-    # Currently only the active profile is stored
-    raw = _get_kr(_ACTIVE_PROFILE_KEY)
-    if raw:
-        try:
-            cfg = json.loads(raw)
-            return {"profiles": [{"name": "default", "provider_type": cfg.get("provider_type"), "model": cfg.get("model")}]}
-        except json.JSONDecodeError:
-            pass
-    return {"profiles": []}
+    provider = get_provider()
+    return {"profiles": provider.list_profiles()}
+
+
+@router.post("/profiles", status_code=201)
+async def create_profile(req: ProfileSaveRequest):
+    """Save a named LLM profile."""
+    provider = get_provider()
+    provider.save_profile(
+        name=req.name,
+        provider_type=req.provider_type,
+        api_key=req.api_key,
+        base_url=req.base_url,
+        model=req.model,
+        temperature=req.temperature,
+        max_tokens=req.max_tokens,
+    )
+    return {"status": "created", "name": req.name}
 
 
 @router.post("/profiles/{name}/load")
 async def load_profile(name: str):
     """Load a saved profile by name."""
-    # Currently only one active profile
-    raw = _get_kr(_ACTIVE_PROFILE_KEY)
-    if not raw:
+    provider = get_provider()
+    config = provider.switch_to_profile(name)
+    if config is None:
         raise HTTPException(404, f"Profile '{name}' not found")
-    reset_provider()
     return {"status": "loaded", "profile": name}
 
 

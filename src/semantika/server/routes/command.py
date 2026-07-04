@@ -25,6 +25,7 @@ _INTERACTIVE_FORMS: dict[str, str] = {
     "predicate.add": "predicate-add",
     "triple.add": "triple-add",
     "unit.add": "unit-add",
+    "reset": "reset-no-backup",
 }
 
 
@@ -107,6 +108,44 @@ def get_command_tree() -> list[dict]:
             ],
         },
         {
+            "name": "llm",
+            "description": "Manage LLM provider configuration",
+            "children": [
+                {"name": "show", "description": "Show current LLM configuration", "params": []},
+                {"name": "profiles", "description": "List saved LLM profiles"},
+                {"name": "new", "description": "Create a new LLM config", "params": [
+                    {"name": "provider_type", "type": "string", "required": True},
+                ], "flags": [
+                    {"name": "api-key", "type": "string", "help": "API key"},
+                    {"name": "base-url", "type": "string", "help": "Base URL for the API"},
+                    {"name": "model", "type": "string", "help": "Model name"},
+                    {"name": "temperature", "type": "number", "help": "Temperature (0-2)"},
+                    {"name": "max-tokens", "type": "number", "help": "Max tokens per response"},
+                    {"name": "alias", "type": "string", "help": "Save as a named profile"},
+                ]},
+                {"name": "set", "description": "Modify current LLM settings", "params": [], "flags": [
+                    {"name": "provider-type", "type": "string", "help": "Provider type (openai, deepseek, ollama, custom)"},
+                    {"name": "api-key", "type": "string", "help": "API key"},
+                    {"name": "base-url", "type": "string", "help": "Base URL for the API"},
+                    {"name": "model", "type": "string", "help": "Model name"},
+                    {"name": "temperature", "type": "number", "help": "Temperature (0-2)"},
+                    {"name": "max-tokens", "type": "number", "help": "Max tokens per response"},
+                    {"name": "alias", "type": "string", "help": "Save as a named profile"},
+                ]},
+                {"name": "clear", "description": "Clear LLM provider configuration"},
+                {"name": "profile", "description": "Manage named profiles", "children": [
+                    {"name": "list", "description": "List saved profiles"},
+                    {"name": "show", "description": "Show current profile details"},
+                    {"name": "load", "description": "Activate a saved profile", "params": [
+                        {"name": "name", "type": "string", "required": True},
+                    ]},
+                    {"name": "delete", "description": "Delete a saved profile", "params": [
+                        {"name": "name", "type": "string", "required": True},
+                    ]},
+                ]},
+            ],
+        },
+        {
             "name": "backup",
             "description": "Database backup and restore",
             "children": [
@@ -134,6 +173,16 @@ def get_command_tree() -> list[dict]:
                 },
                 {"name": "export", "description": "Export all data to a portable zip", "params": [{"name": "output", "type": "string"}]},
                 {"name": "import", "description": "Import data from an export zip", "params": [{"name": "path", "type": "string", "required": True}]},
+            ],
+        },
+        {
+            "name": "reset",
+            "description": "Reset Semantika to a fresh state (backup first!)",
+            "params": [
+                {"name": "path", "type": "string", "placeholder": "/path/to/backup.db"},
+            ],
+            "flags": [
+                {"name": "no-backup", "type": "flag", "help": "Skip backup and delete everything (irreversible!)"},
             ],
         },
     ]
@@ -363,6 +412,168 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
     if path == "review.sessions":
         sessions = svc["review"].list_sessions()
         return {"type": "table", "data": sessions, "label": "Review Sessions"}
+
+    # ── LLM command handlers ──────────────────────────────────────────────
+    if path == "llm":
+        return {
+            "type": "status",
+            "title": "LLM Commands",
+            "data": {
+                "_summary": (
+                    "Available !llm commands:\n"
+                    "  !llm show                      — Show current config\n"
+                    "  !llm new <protocol>            — Create config (openai, deepseek, ollama, custom)\n"
+                    "  !llm set [flags]               — Modify current settings\n"
+                    "  !llm clear                     — Clear config\n"
+                    "  !llm profiles                  — List saved profiles\n"
+                    "  !llm profile list               — List saved profiles\n"
+                    "  !llm profile show               — Show current profile details\n"
+                    "  !llm profile load <name>         — Load a saved profile\n"
+                    "  !llm profile delete <name>       — Delete a saved profile"
+                ),
+            },
+        }
+
+    if path == "llm.show":
+        from semantika.server.llm.provider import LLMProvider as _Provider
+        p = _Provider()
+        cfg = p.config
+        return {
+            "type": "status",
+            "title": "LLM Configuration",
+            "data": {
+                "provider_type": cfg.provider_type,
+                "has_api_key": bool(cfg.api_key),
+                "base_url": cfg.base_url,
+                "model": cfg.model,
+                "temperature": cfg.temperature,
+                "max_tokens": cfg.max_tokens,
+                "available": p.available,
+            },
+        }
+
+    if path == "llm.new":
+        from semantika.server.llm.provider import LLMProvider as _Provider
+        p = _Provider()
+        protocol = merged.get("provider_type") or (remaining and remaining[0]) or ""
+        if not protocol:
+            raise CommandValidationError(
+                "Missing protocol.",
+                "Usage: !llm new openai|deepseek|ollama|custom [--api-key KEY] [--base-url URL] [--model MODEL]",
+            )
+        p.configure(
+            provider_type=protocol,
+            api_key=flags.get("api_key", ""),
+            base_url=flags.get("base_url", ""),
+            model=flags.get("model", ""),
+            temperature=float(flags.get("temperature", 0.7)),
+            max_tokens=int(flags.get("max_tokens", 2048)),
+        )
+        result: dict[str, Any] = {
+            "protocol": protocol,
+            "available": p.available,
+        }
+        if "alias" in flags:
+            name = flags["alias"]
+            cfg = p.config
+            p.save_profile(
+                name=name,
+                provider_type=cfg.provider_type,
+                api_key=cfg.api_key or "",
+                base_url=cfg.base_url or "",
+                model=cfg.model or "",
+                temperature=cfg.temperature,
+                max_tokens=cfg.max_tokens,
+            )
+            result["saved_as"] = name
+        return {"type": "status", "title": "LLM Configured", "data": result}
+
+    if path == "llm.set":
+        from semantika.server.llm.provider import LLMProvider as _Provider
+        p = _Provider()
+        if not flags:
+            raise CommandValidationError(
+                "No settings provided.",
+                "Usage: !llm set --model gpt-4 --api-key sk-...",
+            )
+        cfg = p.config
+        p.configure(
+            provider_type=flags.get("provider_type", cfg.provider_type or "deepseek"),
+            api_key=flags.get("api_key", cfg.api_key or ""),
+            base_url=flags.get("base_url", cfg.base_url or ""),
+            model=flags.get("model", cfg.model or ""),
+            temperature=float(flags.get("temperature", cfg.temperature or 0.7)),
+            max_tokens=int(flags.get("max_tokens", cfg.max_tokens or 2048)),
+        )
+        result = {"_summary": "done"}
+        if "alias" in flags:
+            name = flags["alias"]
+            c = p.config
+            p.save_profile(name=name, provider_type=c.provider_type, api_key=c.api_key or "",
+                           base_url=c.base_url or "", model=c.model or "",
+                           temperature=c.temperature, max_tokens=c.max_tokens)
+            result["saved_as"] = name
+        return {"type": "status", "title": "Profile Updated", "data": result}
+
+    if path == "llm.clear":
+        from semantika.server.llm.provider import LLMProvider as _Provider
+        p = _Provider()
+        p.clear_config()
+        return {"type": "status", "title": "LLM Cleared", "data": {"_summary": "done"}}
+
+    if path == "llm.profiles":
+        from semantika.server.llm.provider import LLMProvider as _Provider
+        p = _Provider()
+        profiles = p.list_profiles()
+        return {"type": "status", "title": "LLM Profiles", "data": {"profiles": profiles, "active_profile": p.active_profile_name}}
+
+    if path == "llm.profile.list":
+        from semantika.server.llm.provider import LLMProvider as _Provider
+        p = _Provider()
+        profiles = p.list_profiles()
+        return {"type": "status", "title": "LLM Profiles", "data": {"profiles": profiles, "active_profile": p.active_profile_name}}
+
+    if path == "llm.profile.show":
+        from semantika.server.llm.provider import LLMProvider as _Provider
+        p = _Provider()
+        cfg = p.config
+        return {
+            "type": "status",
+            "title": "Active Profile",
+            "data": {
+                "provider_type": cfg.provider_type,
+                "has_api_key": bool(cfg.api_key),
+                "base_url": cfg.base_url,
+                "model": cfg.model,
+                "temperature": cfg.temperature,
+                "max_tokens": cfg.max_tokens,
+                "available": p.available,
+                "active_profile_name": p.active_profile_name,
+            },
+        }
+
+    if path == "llm.profile.load":
+        name = merged.get("name") or (remaining and remaining[0]) or ""
+        if not name:
+            raise CommandValidationError("Missing profile name.", "Usage: !llm profile load <name>")
+        from semantika.server.llm.provider import LLMProvider as _Provider
+        p = _Provider()
+        config = p.switch_to_profile(name)
+        if config is None:
+            raise CommandValidationError(f"Profile not found: {name}")
+        return {"type": "status", "title": "Profile Loaded", "data": {
+            "name": name, "protocol": config.provider_type, "model": config.model, "available": p.available,
+        }}
+
+    if path == "llm.profile.delete":
+        name = merged.get("name") or (remaining and remaining[0]) or ""
+        if not name:
+            raise CommandValidationError("Missing profile name.", "Usage: !llm profile delete <name>")
+        from semantika.server.llm.provider import LLMProvider as _Provider
+        p = _Provider()
+        if p.delete_profile(name):
+            return {"type": "status", "title": "Profile Deleted", "data": {"removed": [name]}}
+        raise CommandValidationError(f"Profile not found: {name}")
 
     # ── Backup command handlers ──────────────────────────────────────────
     if path == "backup":
@@ -728,8 +939,74 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
             },
         }
 
+    # ── Reset command handler ──────────────────────────────────────────────
+    if path == "reset":
+        has_path = bool(remaining)
+        no_backup = "no-backup" in flags
+        confirmed = flags.get("confirmed", "").lower() in ("true", "1", "yes")
+
+        # Validate arguments — mutually exclusive
+        if not has_path and not no_backup:
+            raise CommandValidationError(
+                "Provide either a backup path or --no-backup.",
+                "Usage: !reset /path/to/backup.db   or   !reset --no-backup",
+            )
+
+        if has_path and no_backup:
+            raise CommandValidationError(
+                "Cannot specify both a backup path and --no-backup.",
+                "Use either !reset <path> to backup first, or !reset --no-backup to skip backup.",
+            )
+
+        # --no-backup mode: require GUI confirmation
+        if no_backup and not confirmed:
+            return {
+                "type": "form-required",
+                "title": "Confirm Reset",
+                "data": {
+                    "form": "reset-no-backup",
+                    "message": (
+                        "This will permanently delete ALL your Semantika data — "
+                        "nodes, predicates, triples, reviews, proofs, and unit ontology. "
+                        "LLM configuration and saved profiles will also be cleared. "
+                        "This action CANNOT be undone."
+                    ),
+                },
+            }
+
+        # Execute reset
+        from semantika.core.reset import reset_to_fresh_state
+
+        try:
+            backup_path = remaining[0] if remaining else None
+            result = reset_to_fresh_state(backup_path=backup_path)
+        except (FileNotFoundError, OSError) as e:
+            raise CommandValidationError(f"Reset failed: {e}")
+
+        # Build response
+        msg_parts = ["Semantika has been reset to a fresh state."]
+        if result.get("backup_path"):
+            msg_parts.append(f"Backup saved to: {result['backup_path']}")
+        msg_parts.append(
+            f"Databases removed: {len(result.get('databases_removed', []))}"
+        )
+        msg_parts.append(
+            f"Credentials cleared: {result.get('credentials_cleared', 0)}"
+        )
+
+        return {
+            "type": "status",
+            "title": "Reset Complete",
+            "data": {
+                "message": " ".join(msg_parts),
+                **result,
+            },
+        }
+
     raise CommandNotFound(tokens)
 
+
+# ── Backup helpers ────────────────────────────────────────────────────────
 
 # ── Backup helpers ────────────────────────────────────────────────────────
 
@@ -807,9 +1084,12 @@ def help_text() -> dict:
             {"cmd": "!export", "desc": "Export as Turtle"},
             {"cmd": "!stats", "desc": "Graph statistics"},
             {"cmd": "!review start/sessions", "desc": "Flashcard review"},
+            {"cmd": "!llm show/new/set/clear", "desc": "LLM provider configuration"},
+            {"cmd": "!llm profile list/show/load/delete", "desc": "LLM profile management"},
             {"cmd": "!backup now/list/restore/prune", "desc": "Database backup"},
             {"cmd": "!backup config list/add/modify/delete", "desc": "Backup strategies"},
             {"cmd": "!backup export/import", "desc": "Portable data export/import"},
+            {"cmd": "!reset [path] [--no-backup]", "desc": "Reset to fresh state (with optional backup)"},
             {"cmd": "!ask <question>", "desc": "Ask the LLM about the graph"},
         ]
     }
