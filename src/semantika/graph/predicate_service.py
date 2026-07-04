@@ -64,7 +64,7 @@ class PredicateService(CRUDService):
                 existing_labels = json.loads(old["labels"]) if isinstance(old["labels"], str) else old["labels"]
             except (json.JSONDecodeError, TypeError):
                 existing_labels = {}
-            merged = {**updates["labels"], **existing_labels}  # new values win
+            merged = {**existing_labels, **updates["labels"]}  # new values win
             updates["labels"] = json.dumps(merged)
 
         if "descriptions" in updates and isinstance(updates["descriptions"], dict):
@@ -72,7 +72,7 @@ class PredicateService(CRUDService):
                 existing_descs = json.loads(old["descriptions"]) if isinstance(old["descriptions"], str) else old["descriptions"]
             except (json.JSONDecodeError, TypeError):
                 existing_descs = {}
-            merged = {**updates["descriptions"], **existing_descs}
+            merged = {**existing_descs, **updates["descriptions"]}
             updates["descriptions"] = json.dumps(merged)
 
         updates["updated_at"] = ts

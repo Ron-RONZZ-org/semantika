@@ -9,6 +9,7 @@ Ported from lighterbird's command dispatch pattern.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -59,6 +60,13 @@ def get_command_tree() -> list[dict]:
                 {"name": "list", "description": "List all predicates"},
                 {"name": "search", "description": "Search predicates", "params": [{"name": "q", "type": "string", "required": True}]},
                 {"name": "add", "description": "Create a predicate", "interactive": True, "params": [{"name": "predicate_id", "type": "string", "required": True}]},
+                {"name": "update", "description": "Update a predicate", "params": [
+                    {"name": "predicate_id", "type": "string", "required": True},
+                    {"name": "labels", "type": "string"},
+                ]},
+                {"name": "delete", "description": "Delete a predicate", "params": [
+                    {"name": "predicate_id", "type": "string", "required": True},
+                ]},
             ],
         },
         {
@@ -89,6 +97,7 @@ def get_command_tree() -> list[dict]:
             "params": [{"name": "q", "type": "string", "required": True}],
         },
         {"name": "export", "description": "Export graph in Turtle format"},
+        {"name": "import", "description": "Import Turtle (.ttl) data", "params": [{"name": "data", "type": "string", "required": True}]},
         {"name": "stats", "description": "Show graph statistics"},
         {
             "name": "review",
@@ -178,6 +187,14 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
         ttl = svc["triple"].export_turtle()
         return {"type": "status", "data": {"ttl": ttl[:500] + "..." if len(ttl) > 500 else ttl}}
 
+    if path == "import":
+        ttl_content = merged.get("data") or (remaining and remaining[0]) or ""
+        if not ttl_content:
+            raise CommandValidationError("Provide TTL content via data= flag")
+        from semantika.graph.triple_turtle import import_turtle as _import
+        stats = _import(ttl_content)
+        return {"type": "status", "data": stats}
+
     if path == "search":
         q = merged.get("q") or ""
         if not q:
@@ -234,6 +251,32 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
         q = merged.get("q", "")
         results = svc["predicate"].search(q)
         return {"type": "table", "data": results, "label": f"Predicates matching '{q}'"}
+
+    if path == "predicate.update":
+        pred_id = merged.get("predicate_id") or ""
+        labels_raw = merged.get("labels") or ""
+        if not pred_id:
+            raise CommandValidationError("Specify a predicate_id")
+        payload = {}
+        if labels_raw:
+            try:
+                labels_dict = json.loads(labels_raw) if labels_raw.startswith("{") else {"en": labels_raw}
+            except json.JSONDecodeError:
+                labels_dict = {"en": labels_raw}
+            payload["labels"] = labels_dict
+        try:
+            pred = svc["predicate"].update(pred_id, payload)
+            return {"type": "status", "data": {"message": f"Updated {pred_id}"}}
+        except ValueError as e:
+            raise CommandValidationError(str(e))
+
+    if path == "predicate.delete":
+        pred_id = merged.get("predicate_id") or (remaining and remaining[0]) or ""
+        if not pred_id:
+            raise CommandValidationError("Specify a predicate_id")
+        svc["triple"].remove(predicate_id=pred_id)
+        svc["predicate"].delete(pred_id, soft=True)
+        return {"type": "status", "data": {"message": f"Deleted {pred_id}"}}
 
     if path == "predicate.add":
         pred_id = merged.get("predicate_id") or (remaining and remaining[0]) or ""

@@ -2,6 +2,16 @@
 
 Semantika — knowledge graph CLI+GUI with LLM. A semantic triple store with a Svelte frontend and BYOK (Bring Your Own Key) LLM-native integration. AGPL-3.0.
 
+## Project Family
+
+Semantika is the **third-generation** of a knowledge-graph toolchain. Understanding its ancestry clarifies design decisions:
+
+| Project | Role | Relationship |
+|---------|------|-------------|
+| **[A-semantika](../A-semantika)** | EO-first CLI ancestor | **Business-logic reference.** Forked and migrated from Esperanto to English. Core triple store services (NodeService, PredicateService, TripleService, ReviewService, ProofService, unit ontology) originate here. Refer to A-semantika when implementing graph operations, Turtle export, or review/proof mechanics. |
+| **[lighterbird](../lighterbird)** | Mature sister PIM app | **UX/LLM/DB reference.** The command-bar interaction model, command tree + dispatch architecture, autocomplete engine, tab/result-panel UI, and LLM provider integration (OpenAI/Ollama with text-based command generation) are all ported from lighterbird. Refer to lighterbird when designing frontend components, command routing, LLM tool-calling, or keyring-based config management. |
+| **Semantika (this repo)** | Modern English successor | **Combines the best of both.** Graph business logic from A-semantika + UX/LLM patterns from lighterbird + Svelte 5 SPA frontend. Adds: unified EN-language UX, unit ontology with expression resolution, FastAPI REST layer with auto-docs, and BYOK LLM integration. |
+
 ## Philosophy: You see only what you need
 
 Traditional knowledge management apps drown you in sidebars, nested menus, and feature flags. Semantika does the opposite:
@@ -20,23 +30,23 @@ Traditional knowledge management apps drown you in sidebars, nested menus, and f
 ```
 
 - `!node add/list/view/modify/delete` — manage knowledge graph nodes
-- `!predicate add/list/view` — manage predicates (semantic properties)
-- `!triple add/delete/search` — assert and query subject-predicate-object arcs
+- `!predicate add/list/search/update/delete` — manage predicates (semantic properties)
+- `!triple add/list/delete` — assert and query subject-predicate-object arcs
 - `!search <query>` — full-text search across labels and definitions
-- `!export` — export the graph in Turtle (.ttl) format
+- `!export` / `!import` — export/import the graph in Turtle (.ttl) format
 - `!review` — spaced-repetition flashcard review of triples
-- `!ask "What do I know about X?"` — query naturally via built-in LLM
-- Just type naturally → ask the LLM to add triples, find connections, or visualize relationships
+- Just type naturally → the LLM translates your intent into commands
 - As-you-type command suggestions with node/predicate completion — no memorisation needed
 
 ## Architecture
 
 ```
 semantika/
-├── core/          Vendored from A-core  — DB, FTS5, paths, interactive helpers
-├── graph/         Forked from A-semantika — triple store services
-├── server/        FastAPI backend       — REST API, command engine, LLM integration
-└── web/           Svelte 5 SPA          — Command-bar UI, rich result rendering
+├── core/          Vendored from A-core      — DB, FTS5, paths, interactive helpers
+├── graph/         Forked from A-semantika   — triple store services, TTL import/export
+├── server/        FastAPI backend           — REST API, command engine, LLM provider
+│   └── llm/       Ported from lighterbird   — OpenAI-compatible + Ollama, command generation
+└── web/           Svelte 5 SPA              — Command-bar UI (lighterbird pattern), rich results
 ```
 
 ## Stack
@@ -46,8 +56,8 @@ semantika/
 | Backend | Python 3.11+ / FastAPI | Lightweight, async, auto-docs |
 | Frontend | Svelte 5 SPA + Vite | Minimal bundle, excellent custom component DX |
 | Database | SQLite (WAL mode) | Embedded, zero-config |
-| AI | OpenAI-compatible API + Ollama | BYOK: bring your own model/key |
-| Credentials | System keyring | Never store API keys in DB |
+| AI | OpenAI-compatible API + Ollama | BYOK: bring your own model/key; two-phase command generation |
+| Credentials | System keyring (via `keyring`) | Never store API keys in DB |
 
 ## Quick Start
 
@@ -62,8 +72,6 @@ cd web
 npm install
 npm run dev
 ```
-
-Open http://localhost:5173 — the Vite dev server proxies API calls to the Python backend on port 8001.
 
 ### Port synchronization
 
@@ -115,18 +123,24 @@ uv run semantika-dev
 | `/api/v1/graph/predicates` | GET | List predicates |
 | `/api/v1/graph/predicates/search?q=` | GET | Search predicates |
 | `/api/v1/graph/predicates` | POST | Create a predicate |
+| `/api/v1/graph/predicates/{id}` | PATCH | Update a predicate |
+| `/api/v1/graph/predicates/{id}` | DELETE | Delete a predicate |
 | `/api/v1/graph/triples` | GET | List triples |
 | `/api/v1/graph/triples` | POST | Add a triple |
 | `/api/v1/graph/triples` | DELETE | Delete triples |
 | `/api/v1/graph/triples/by-subject/{id}` | GET | Get triples for subject |
 | `/api/v1/query/search?q=` | GET | Full-text search |
 | `/api/v1/query/export` | GET | Turtle export |
+| `/api/v1/query/import` | POST | Turtle import |
 | `/api/v1/query/stats` | GET | Graph stats |
 | `/api/v1/query/sparql?query=` | GET | Raw SQL SELECT query |
 | `/api/v1/command/tree` | GET | Command metadata |
 | `/api/v1/command/help` | GET | Help text |
 | `/api/v1/command/execute` | POST | Execute a command |
-| `/api/v1/llm/chat` | POST | Chat with LLM |
+| `/api/v1/llm/chat` | POST | Chat with LLM (two-phase: command generation → execution → summarization) |
+| `/api/v1/llm/config` | GET | Check LLM provider availability |
+| `/api/v1/llm/configure` | POST | Save provider config to keyring |
+| `/api/v1/llm/profiles` | GET | List saved LLM profiles |
 | `/api/v1/review/sessions` | GET/POST | Review session management |
 | `/api/v1/proof/proofs` | GET/POST | Proof management |
 
@@ -201,10 +215,4 @@ CREATE TABLE triples (
 
 ## Status
 
-**Pre-alpha — draft implementation complete.** The core triple store services (NodeService, PredicateService, TripleService, ReviewService, ProofService) have been ported from [A-semantika](../A-semantika) with Esperanto-to-English migration. The FastAPI server exposes all operations via REST API. The Svelte frontend provides a command-bar UI with vis-network graph visualization. 19 pytest tests pass.
-
-Next steps:
-- Port remaining CLI-specific features (batch operations, advanced filtering)
-- Implement full LLM provider integration (currently keyword-based stub)
-- Add more Svelte form components for interactive node/triple creation
-- Port the unit/dimension system from A-semantika
+**Pre-alpha — core complete.** All core triple store operations (nodes, predicates, triples, review, proof, units, TTL import/export) are implemented and tested. The LLM provider (OpenAI-compatible + Ollama) supports configurable profiles with keyring-based key storage and two-phase command generation (natural language → structured command → execution → summarization). 76 pytest tests pass (24 unit + 52 E2E API).
