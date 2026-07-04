@@ -13,34 +13,19 @@
     {#if data.type === "table" && Array.isArray(data.data)}
       {#if data.data.length > 0}
         <table>
-          <thead>
-            <tr>
-              {#each Object.keys(data.data[0]).filter(k => !k.startsWith("_")) as col}
-                <th>{col}</th>
-              {/each}
-            </tr>
-          </thead>
+          <thead><tr>{#each Object.keys(data.data[0]).filter(k => !k.startsWith("_")) as col}<th>{col}</th>{/each}</tr></thead>
           <tbody>
             {#each data.data as row}
-              <tr>
-                {#each Object.entries(row) as [key, val]}
-                  {#if !key.startsWith("_")}
-                    <td>{renderValue(val)}</td>
-                  {/if}
-                {/each}
-              </tr>
+              <tr>{#each Object.entries(row) as [key, val]}{#if !key.startsWith("_")}<td>{renderValue(val)}</td>{/if}{/each}</tr>
             {/each}
           </tbody>
         </table>
-      {:else}
-        <p class="empty">No results.</p>
-      {/if}
+      {:else}<p class="empty">No results.</p>{/if}
+    {:else if data.type === "chat"}
+      <div class="chat">{@html (data.data?.reply || JSON.stringify(data)).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>')}</div>
     {:else}
       {#each Object.entries(data.data) as [key, val]}
-        <div class="kv">
-          <span class="key">{key}</span>
-          <span class="val">{renderValue(val)}</span>
-        </div>
+        <div class="kv"><span class="key">{key}</span><span class="val">{renderValue(val)}</span></div>
       {/each}
     {/if}
   {:else}
@@ -56,5 +41,6 @@
   .kv { display: flex; gap: 0.5rem; padding: 0.3rem 0; border-bottom: 1px solid #eee; }
   .key { font-weight: 600; color: #555; min-width: 120px; font-size: 0.85rem; }
   .val { color: #333; font-size: 0.85rem; }
+  .chat { line-height: 1.6; font-size: 0.95rem; padding: 1rem; }
   .empty { color: #999; font-style: italic; padding: 1rem; text-align: center; }
 </style>

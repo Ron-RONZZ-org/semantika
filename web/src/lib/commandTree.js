@@ -1,28 +1,39 @@
-/** Command tree — dynamically fetched from backend. */
-import { api } from "./api.js";
+/** Command hierarchy — dynamically fetched from backend.
+ *
+ * Ported from lighterbird's ``commandTree.js``.
+ * The authoritative tree lives in the backend and is served via
+ * ``GET /api/v1/command/tree``.
+ */
 
-let _tree = null;
-let _promise = null;
+export let commandTree = [];
 
-export function initCommandTree() {
-  if (_promise) return _promise;
-  _promise = api.commandTree().then((t) => { _tree = t; return t; });
-  return _promise;
+export async function initCommandTree() {
+  try {
+    const resp = await fetch("/api/v1/command/tree");
+    if (resp.ok) commandTree = await resp.json();
+  } catch { /* Tree stays empty — commands still work via backend dispatch */ }
 }
 
-export function getCommandTree() { return _tree; }
+initCommandTree();
 
-export function getCompletions(input) {
-  if (!_tree || !input) return [];
-  const trimmed = input.trim().toLowerCase();
-  if (!trimmed.startsWith("!")) return [];
+export function getRootNames() {
+  return commandTree.map((n) => n.name);
+}
 
-  const parts = trimmed.slice(1).split(/\s+/);
-  const prefix = parts[parts.length - 1];
+export function findNode(tokens) {
+  let current = commandTree;
+  let node = null;
+  for (const token of tokens) {
+    const matched = current.find((n) => n.name.toLowerCase() === token.toLowerCase());
+    if (!matched) return node;
+    node = matched;
+    if (!node.children || node.children.length === 0) return node;
+    current = node.children;
+  }
+  return node;
+}
 
-  const cmds = _tree.commands || [];
-  return cmds
-    .filter((c) => c.path.toLowerCase().startsWith(prefix) || c.path.toLowerCase().includes(trimmed.slice(1)))
-    .slice(0, 6)
-    .map((c) => ({ text: `!${c.path}`, desc: c.description }));
+export function matchChildren(nodes, prefix) {
+  const p = prefix.toLowerCase();
+  return nodes.filter((n) => n.name.toLowerCase().startsWith(p));
 }
