@@ -23,6 +23,13 @@ async function sleep(ms) {
 
 async function typeAndRun(cmd) {
   const input = page.locator("[aria-label='Message input']");
+  // Ensure input is visible — press Escape to close any open popups first
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const vis = await input.isVisible().catch(() => false);
+    if (vis) break;
+    await page.keyboard.press("Escape");
+    await sleep(300);
+  }
   await input.waitFor({ state: "visible", timeout: 5000 });
   await input.click();
   await input.fill("");
@@ -36,7 +43,7 @@ async function typeAndRun(cmd) {
 
 async function closeResult() {
   // Press Escape to close result popups/tabs
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 6; i++) {
     await page.keyboard.press("Escape");
     await sleep(200);
   }
@@ -290,11 +297,13 @@ async function run() {
     await typeAndRun("!llm profile list");
   });
 
-  await test("!llm profile show", async () => {
+  await test("!llm profile show (details)", async () => {
     await typeAndRun("!llm profile show");
   });
 
   await test("!llm profile load e2e-test", async () => {
+    // Extra close to ensure input is visible
+    await closeResult();
     await typeAndRun("!llm profile load e2e-test");
   });
 
