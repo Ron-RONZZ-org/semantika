@@ -65,6 +65,20 @@ npm run dev
 
 Open http://localhost:5173 — the Vite dev server proxies API calls to the Python backend on port 8001.
 
+### Port synchronization
+
+If the backend is on a different port (e.g. 8001 is taken, or you used `--port 0` for an OS-assigned port), set `SEMANTIKA_PORT` before starting the frontend:
+
+```bash
+# Terminal 1: start backend on custom port
+uv run uvicorn semantika.server.app:create_app --factory --port 8765
+
+# Terminal 2: tell Vite proxy where the backend is
+SEMANTIKA_PORT=8765 npm run dev
+```
+
+In production (built frontend served by FastAPI), port configuration is automatic — the Svelte SPA is served as static files on the same port as the API. No proxy needed.
+
 ## Testing
 
 ```bash

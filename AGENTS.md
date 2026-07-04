@@ -66,6 +66,30 @@ This project uses **uv** for development:
 
 ---
 
+## Development Server
+
+### Port synchronization (dev only)
+
+The Svelte dev server (Vite, port 5173) proxies `/api/*` requests to the Python backend.
+The proxy target defaults to port **8001**. In production the built SPA is served on the
+same port as the API — no proxy needed.
+
+If the backend is on a different port (conflict, `--port 0`, or custom setup),
+set the `SEMANTIKA_PORT` env var before starting the frontend:
+
+```bash
+# Terminal 1: backend on custom port
+SEMANTIKA_DATA_DIR=/tmp/semantika-dev uv run uvicorn \
+  semantika.server.app:create_app --factory --port 8765
+
+# Terminal 2: Vite proxies to that port
+SEMANTIKA_PORT=8765 npm run dev
+```
+
+The default fallback is `SEMANTIKA_PORT || 8001` in ``vite.config.js``.
+
+---
+
 ## Source Tree Structure
 
 ```
