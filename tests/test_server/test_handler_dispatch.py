@@ -72,6 +72,23 @@ def mock_services(monkeypatch: pytest.MonkeyPatch, services: dict) -> None:
     """Mock get_services() to return the isolated services."""
     import semantika.graph.db as graph_db
     monkeypatch.setattr(graph_db, "get_services", lambda: services)
+    # Handler modules import get_services at module level, so patch each too
+    monkeypatch.setattr(
+        "semantika.server.command.handlers.graph.get_services",
+        lambda: services,
+    )
+    monkeypatch.setattr(
+        "semantika.server.command.handlers.review.get_services",
+        lambda: services,
+    )
+    monkeypatch.setattr(
+        "semantika.server.command.handlers.unit.get_services",
+        lambda: services,
+    )
+    monkeypatch.setattr(
+        "semantika.server.command.handlers.trash.get_services",
+        lambda: services,
+    )
 
 
 @pytest.fixture
@@ -113,6 +130,117 @@ class TestTrashHandler:
     def test_trash_purge_invalid_days(self):
         with pytest.raises(Exception, match="Invalid days"):
             dispatch(["trash", "purge"], {"days": "abc"})
+
+    def test_trash_restore_missing_id(self):
+        with pytest.raises(Exception, match="Specify a node ID"):
+            dispatch(["trash", "restore"], {})
+
+    def test_trash_delete_missing_id(self):
+        with pytest.raises(Exception, match="Specify a node ID"):
+            dispatch(["trash", "delete"], {})
+
+    def test_trash_purge_positive_days(self, seeded):
+        dispatch(["node", "delete"], {"id": "ALICE"})
+        result = dispatch(["trash", "purge"], {"days": "999"})
+        assert "Purged" in result["data"]["message"]
+
+
+# ── Review handler tests ─────────────────────────────────────────────────
+
+
+class TestReviewHandler:
+    """Test review command handlers with isolated services."""
+
+    def test_review_start_invalid_limit(self):
+        with pytest.raises(Exception, match="Invalid limit"):
+            dispatch(["review", "start"], {"limit": "abc"})
+
+    def test_review_start_invalid_mode(self):
+        with pytest.raises(Exception, match="Mode must be"):
+            dispatch(["review", "start"], {"mode": "invalid"})
+
+    def test_review_sessions(self, services):
+        result = dispatch(["review", "sessions"], {})
+        assert result["type"] == "table"
+
+    def test_review_view_missing_uuid(self):
+        with pytest.raises(Exception, match="Specify a session UUID"):
+            dispatch(["review", "view"], {})
+
+    def test_review_view_not_found(self):
+        with pytest.raises(Exception, match="Session not found"):
+            dispatch(["review", "view", "00000000-0000-0000-0000-000000000000"], {})
+
+    def test_review_delete_missing_uuid(self):
+        with pytest.raises(Exception, match="Specify a session UUID"):
+            dispatch(["review", "delete"], {})
+
+    def test_review_delete_not_found(self):
+        """Deleting a nonexistent session should not raise."""
+        result = dispatch(["review", "delete", "00000000-0000-0000-0000-000000000000"], {})
+        assert result["type"] == "status"
+
+    def test_proof_add_missing_args(self):
+        with pytest.raises(Exception, match="Specify"):
+            dispatch(["proof", "add"], {})
+
+    def test_proof_add(self, seeded):
+        # mock_services already patches get_services — just mock proof.create
+        seeded["proof"].create = lambda data: {
+            "uuid": "mock-uuid-1234", "subject_id": data.get("subject_id", ""),
+            "predicate_id": data.get("predicate_id", ""), "object_value": data.get("object_value", ""),
+        }
+        result = dispatch(["proof", "add", "ALICE", "ex:knows", "BOB"], {})
+        assert result["type"] == "status"
+        assert "Created proof" in result["data"]["message"]
+
+    def test_proof_view_missing_args(self):
+        with pytest.raises(Exception, match="Specify"):
+            dispatch(["proof", "view"], {})
+
+    def test_proof_view(self, seeded):
+        seeded["proof"].get_by_triple = lambda s, p, o: []
+        result = dispatch(["proof", "view", "ALICE", "ex:knows", "BOB"], {})
+        assert result["type"] == "table"
+
+    def test_proof_delete_missing_uuid(self):
+        with pytest.raises(Exception, match="Specify a proof UUID"):
+            dispatch(["proof", "delete"], {})
+
+    def test_proof_delete(self, seeded):
+        seeded["proof"].delete = lambda uuid: None
+        result = dispatch(["proof", "delete", "mock-uuid"], {})
+        assert result["type"] == "status"
+        assert "Deleted proof" in result["data"]["message"]
+
+
+# ── Unit handler tests ───────────────────────────────────────────────────
+
+
+class TestUnitHandler:
+    """Test unit command handlers with isolated services."""
+
+    def test_unit_list(self, services):
+        result = dispatch(["unit", "list"], {})
+        assert result["type"] == "table"
+
+    def test_unit_view_not_found(self):
+        with pytest.raises(Exception, match="Unit not found"):
+            dispatch(["unit", "view", "NONEXISTENT"], {})
+
+    def test_unit_add(self, services):
+        result = dispatch(["unit", "add"], {"node_id": "TEST_UNIT", "labels": "Test unit", "symbol": "tu"})
+        assert result["type"] == "status"
+        assert "Created unit" in result["data"]["message"]
+
+    def test_unit_add_no_error_on_duplicate(self, services):
+        """create_singleton uses INSERT OR IGNORE, so duplicates don't raise."""
+        from semantika.graph.db import get_services
+        svc = get_services()
+        svc["node"].create({"node_id": "unit:DUP_UNIT", "labels": {"en": "Dup"}})
+        result = dispatch(["unit", "add"], {"node_id": "DUP_UNIT", "labels": "Dup"})
+        assert result["type"] == "status"
+        assert "Created unit" in result["data"]["message"]
 
 
 # ── LLM handler tests ────────────────────────────────────────────────────
