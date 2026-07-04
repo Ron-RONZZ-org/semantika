@@ -20,6 +20,14 @@ os.environ["SEMANTIKA_DATA_DIR"] = str(TEST_DATA_DIR)
 
 from semantika.server.app import create_app
 
+# Clear any leftover LLM config from keyring before tests
+import keyring as _kr
+import keyring.errors as _kr_err
+try:
+    _kr.delete_password("semantika-llm", "active-profile")
+except (_kr_err.KeyringError, Exception):
+    pass
+
 
 @pytest.fixture(scope="module")
 def client() -> TestClient:
@@ -470,3 +478,145 @@ class TestNodeDeleteCascade:
         # Verify triple referencing the deleted node was also removed
         triples_resp = client.get("/api/v1/graph/triples/by-subject/FKSOURCE").json()
         assert len(triples_resp["triples"]) == 0
+
+
+# ── TTL Import ───────────────────────────────────────────────────────────
+
+
+SAMPLE_TTL = """@prefix ex: <http://example.org/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+ex:Dog a ex:Animal ;
+    rdfs:label "Dog"@en .
+
+ex:Cat a ex:Animal ;
+    rdfs:label "Cat"@en .
+"""
+
+
+class TestTTLImport:
+    """Test TTL import via API and command."""
+
+    def test_import_via_api(self, client: TestClient):
+        resp = client.post("/api/v1/query/import", json={"data": SAMPLE_TTL})
+        assert resp.status_code == 200
+        stats = resp.json()
+        assert stats["nodes_created"] >= 2
+        assert stats["predicates_created"] >= 2
+        assert stats["triples_added"] >= 2
+
+    def test_import_via_command(self, client: TestClient):
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["import"], "flags": {"data": SAMPLE_TTL}},
+        )
+        assert resp.status_code == 200
+
+    def test_import_triples_persisted(self, client: TestClient):
+        nodes = client.get("/api/v1/graph/nodes").json()
+        node_ids = [n["node_id"] for n in nodes["nodes"]]
+        assert any("Cat" in nid or "Animal" in nid for nid in node_ids)
+
+
+# ── Predicate Update/Delete via API ──────────────────────────────────────
+
+
+class TestPredicateUpdateDeleteAPI:
+    """Test predicate update and delete via REST API."""
+
+    def test_update_predicate(self, client: TestClient):
+        resp = client.patch(
+            "/api/v1/graph/predicates/rdf:type",
+            json={"labels": {"en": "updated type", "eo": "ĝisdatigita tipo"}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        labels = json.loads(data["predicate"]["labels"]) if isinstance(data["predicate"]["labels"], str) else data["predicate"]["labels"]
+        assert "updated type" in labels.get("en", "")
+
+    def test_delete_predicate(self, client: TestClient):
+        # Create a temporary predicate
+        client.post("/api/v1/graph/predicates", json={"predicate_id": "ex:tempPred", "labels": {"en": "temp"}})
+        resp = client.delete("/api/v1/graph/predicates/ex:tempPred")
+        assert resp.status_code == 200
+        assert resp.json()["deleted"] is True
+
+    def test_delete_predicate_not_found(self, client: TestClient):
+        resp = client.delete("/api/v1/graph/predicates/ex:nonexistent")
+        assert resp.status_code == 404
+
+
+# ── Predicate Update/Delete via Command ──────────────────────────────────
+
+
+class TestPredicateCommand:
+    """Test predicate update/delete via !command dispatch."""
+
+    def test_predicate_update_command(self, client: TestClient):
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["predicate", "update"], "flags": {"predicate_id": "rdf:type", "labels": "cmd updated"}},
+        )
+        assert resp.status_code == 200
+
+    def test_predicate_delete_command(self, client: TestClient):
+        # Create a predicate to delete via command
+        client.post("/api/v1/graph/predicates", json={"predicate_id": "ex:cmdDel", "labels": {"en": "cmd delete me"}})
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["predicate", "delete", "ex:cmdDel"], "flags": {}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "Deleted" in str(data)
+
+
+# ── LLM Config ───────────────────────────────────────────────────────────
+
+
+class TestLLMConfigAPI:
+    """Test LLM configuration routes."""
+
+    def test_llm_config_default(self, client: TestClient):
+        resp = client.get("/api/v1/llm/config")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "available" in data
+
+    def test_llm_configure(self, client: TestClient):
+        resp = client.post(
+            "/api/v1/llm/configure",
+            json={
+                "provider_type": "deepseek",
+                "api_key": "test-key-123",
+                "model": "deepseek-v4-flash",
+                "base_url": "https://api.deepseek.com",
+                "temperature": 0.7,
+                "max_tokens": 2048,
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "configured"
+
+    def test_llm_config_after_setup(self, client: TestClient):
+        resp = client.get("/api/v1/llm/config")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["available"] is True
+
+    def test_llm_profiles(self, client: TestClient):
+        resp = client.get("/api/v1/llm/profiles")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "profiles" in data
+
+    def test_llm_chat_with_keyword_fallback(self, client: TestClient):
+        # After configure with a fake key, the provider will try to use it
+        # but the API call will fail. We test the chat route still responds.
+        resp = client.post(
+            "/api/v1/llm/chat",
+            json={"message": "how many nodes?"},
+        )
+        assert resp.status_code == 200
+        assert "reply" in resp.json()

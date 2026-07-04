@@ -21,7 +21,19 @@ Context resolution order (highest priority first):
 
 The interaction model is a **centralized command box** — type `!node add` to create entities, `!ask "What do I know about X?"` to query naturally, or just type naturally to chat with the built-in LLM. The philosophy: *you see only what you need* — no sidebars, no bloat.
 
-The backend is forked from proven code in [A-semantika](../A-semantika) (triple store services) and [A-core](../A-core) (DB, FTS5, paths). The frontend is a Svelte SPA served by a FastAPI Python server.
+### Project Family & Design Inheritance
+
+Semantika is the **third generation** in a toolchain. When implementing new features, consult the ancestor projects for reference:
+
+| Project | Role | What to reference |
+|---------|------|-------------------|
+| **[A-semantika](../A-semantika)** | EO-first CLI ancestor | **Business logic**: NodeService, PredicateService, TripleService, Turtle export/import, review/proof mechanics, unit ontology. Forked with Esperanto→English migration. |
+| **[lighterbird](../lighterbird)** | Mature sister PIM app | **UX/LLM/DB**: Command-bar interaction, command tree + dispatch architecture, autocomplete engine, tab/result-panel UI, LLM provider integration (OpenAI/Ollama), text-based command generation, keyring-based config management. |
+| **[A-core](../A-core)** | Shared core library | **DB/FTS5/paths**: `SemantikaDB`, CRUDService, FTS5 config, XDG path resolution, exceptions. Vendored into `src/semantika/core/`. |
+
+**Key rule**: When the task is about graph business logic (nodes, predicates, triples, TTL, review, proof, units), look at **A-semantika** first. When the task is about UX patterns (command routing, LLM, autocomplete, tabs, forms) or DB management, look at **lighterbird** first. This avoids reinventing the wheel across the project family.
+
+The backend is forked from proven code in [A-semantika](../A-semantika) (triple store services) and [A-core](../A-core) (DB, FTS5, paths). The frontend is a Svelte SPA served by a FastAPI Python server, with UX patterns ported from [lighterbird](../lighterbird).
 
 ---
 
@@ -45,7 +57,9 @@ The backend is forked from proven code in [A-semantika](../A-semantika) (triple 
 | Frontend build | Vite + svelte-spa-router | Fast dev, static export possible |
 | Database | SQLite (WAL mode) | Embedded, zero-config, sufficient for single-user |
 | Credential storage | System keyring (via `keyring` library) | Never store API keys in DB |
-| AI providers | OpenAI-compatible API + Ollama | BYOK: bring your own model/key |
+| AI providers | OpenAI-compatible API + Ollama | BYOK: bring your own model/key; **two-phase command generation** (LLM parses NL → structured JSON command → dispatch → summarize) |
+| TTL parsing | `rdflib` | Standard Turtle (.ttl) import |
+| HTTP client | `httpx` | Async HTTP for LLM provider calls |
 | Package manager | `uv` (development), `pip` (user install) | Fast, modern, reproducible |
 | Build system | Hatchling | PEP 517 compliant, simple |
 

@@ -62,6 +62,79 @@ def _format_literal(value: str, datatype: str | None, lang: str | None) -> str:
     return f'"{escaped}"'
 
 
+def import_turtle(turtle_content: str) -> dict[str, int]:
+    """Import Turtle (.ttl) content into the triple store.
+
+    Args:
+        turtle_content: Raw Turtle format string.
+
+    Returns:
+        Dict with counts: nodes_created, predicates_created, triples_added.
+    """
+    from rdflib import BNode, Graph, Literal, URIRef
+    from semantika.graph.db import get_services
+
+    svc = get_services()
+    g = Graph()
+    g.parse(data=turtle_content, format="turtle")
+
+    stats: dict[str, int] = {
+        "nodes_created": 0,
+        "predicates_created": 0,
+        "triples_added": 0,
+    }
+
+    for s, p, o in g:
+        subject_id = str(s)
+        predicate_id = str(p)
+
+        if isinstance(o, URIRef):
+            object_value = str(o)
+            object_type = "uri"
+            object_lang = None
+            object_datatype = None
+        elif isinstance(o, Literal):
+            object_value = str(o)
+            object_type = "literal"
+            object_lang = o.language
+            object_datatype = str(o.datatype) if o.datatype else None
+        elif isinstance(o, BNode):
+            object_value = str(o)
+            object_type = "uri"
+            object_lang = None
+            object_datatype = None
+        else:
+            continue
+
+        for node_id in {subject_id, object_value} if object_type == "uri" else {subject_id}:
+            try:
+                svc["node"].create({"node_id": node_id, "labels": {"en": node_id}})
+                stats["nodes_created"] += 1
+            except ValueError:
+                pass
+
+        try:
+            svc["predicate"].create({"predicate_id": predicate_id, "labels": {"en": predicate_id}})
+            stats["predicates_created"] += 1
+        except ValueError:
+            pass
+
+        try:
+            svc["triple"].add(
+                subject_id,
+                predicate_id,
+                object_value,
+                object_type=object_type,
+                object_lang=object_lang,
+                object_datatype=object_datatype,
+            )
+            stats["triples_added"] += 1
+        except ValueError:
+            pass
+
+    return stats
+
+
 def export_turtle(db: SemantikaDB, base_uri: str = "https://example.org/") -> str:
     """Export triple store as Turtle.
 

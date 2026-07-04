@@ -46,6 +46,11 @@ class PredicateCreate(BaseModel):
     descriptions: dict[str, str] = {}
 
 
+class PredicateUpdate(BaseModel):
+    labels: dict[str, str] | None = None
+    descriptions: dict[str, str] | None = None
+
+
 # ── Nodes (static routes BEFORE dynamic {node_id}) ─────────────────────
 
 @router.get("/nodes")
@@ -135,6 +140,28 @@ async def create_predicate(data: PredicateCreate):
         return {"predicate": pred}
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+
+@router.patch("/predicates/{predicate_id}")
+def update_predicate(predicate_id: str, data: PredicateUpdate):
+    """Update a predicate's labels/descriptions."""
+    svc = _svc()["predicate"]
+    try:
+        pred = svc.update(predicate_id, data.model_dump(exclude_none=True))
+        return {"predicate": pred}
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+@router.delete("/predicates/{predicate_id}")
+def delete_predicate(predicate_id: str, soft: bool = True):
+    """Delete a predicate."""
+    svc = _svc()
+    svc["triple"].remove(predicate_id=predicate_id)
+    deleted = svc["predicate"].delete(predicate_id, soft=soft)
+    if not deleted:
+        raise HTTPException(404, f"Predicate not found: {predicate_id}")
+    return {"deleted": True}
 
 
 # ── Triples ────────────────────────────────────────────────────────────
