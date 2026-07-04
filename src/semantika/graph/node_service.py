@@ -238,26 +238,37 @@ class NodeService(CRUDService):
             return self.list(limit=limit)
 
         fts_query = " OR ".join(safe_tokens)
+        # BM25 ranking with column weights:
+        #   label_text (-5.0): most important — matches here ranked highest
+        #   definition_text (-1.0): moderately important
+        #   node_id (0.0): unindexed, zero weight
+        # bm25() returns lower scores for better matches.
         fts_sql = """
-            SELECT n.*
+            SELECT n.*, bm25(nodes_fts, 1.2, 0.75, 0.0, -5.0, -1.0) AS _rank
             FROM nodes n
             JOIN nodes_fts f ON n.node_id = f.node_id
             WHERE nodes_fts MATCH ?
+            ORDER BY _rank
             LIMIT ?
         """
         try:
             results = self.db.execute(fts_sql, (fts_query, limit))
         except sqlite3.DatabaseError:
-            logger.warning("FTS search failed — falling back to LIKE")
-            results = []
+            logger.warning("FTS search failed — rebuilding and retrying")
+            try:
+                self._rebuild_fts()
+                results = self.db.execute(fts_sql, (fts_query, limit))
+            except sqlite3.DatabaseError:
+                logger.error("FTS rebuild failed — using LIKE fallback")
+                results = []
 
         if results:
             return results
 
-        # Fallback: LIKE on label_text
+        # Fallback: LIKE on label_text (no BM25 rank — set _rank to 0)
         escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         return self.db.execute(
-            "SELECT * FROM nodes WHERE label_text LIKE ? ESCAPE '\\' COLLATE NOCASE LIMIT ?",
+            "SELECT *, 0 AS _rank FROM nodes WHERE label_text LIKE ? ESCAPE '\\' COLLATE NOCASE LIMIT ?",
             (f"%{escaped}%", limit),
         )
 
@@ -326,6 +337,32 @@ class NodeService(CRUDService):
                 "FTS 'delete' failed for %s (rowid=%s): %s",
                 node_id, rowid, exc,
             )
+
+    def _rebuild_fts(self) -> None:
+        """Rebuild the nodes FTS index from the content table.
+
+        Handles corruption by dropping and recreating the FTS table
+        if the FTS5 'rebuild' command fails.
+        """
+        try:
+            self.db.execute(
+                "INSERT INTO nodes_fts(nodes_fts) VALUES('rebuild')"
+            )
+        except sqlite3.DatabaseError:
+            logger.warning("Nodes FTS rebuild failed — recreating table")
+            # Drop shadow tables
+            for suffix in ("_data", "_idx", "_docsize", "_config", "_content"):
+                try:
+                    self.db.execute(f"DROP TABLE IF EXISTS nodes_fts{suffix}")
+                except sqlite3.DatabaseError:
+                    pass
+            try:
+                self.db.execute("DROP TABLE IF EXISTS nodes_fts")
+            except sqlite3.DatabaseError:
+                pass
+            # Recreate
+            self._ensure_fts()
+            self._populate_fts()
 
     # ── Node ID Rename ───────────────────────────────────────────────
 

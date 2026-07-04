@@ -172,6 +172,8 @@ class TripleService:
         predicate: str | None = None,
         object: str | None = None,  # noqa: A002
         limit: int = 100,
+        created_after: str | None = None,
+        created_before: str | None = None,
     ) -> list[dict]:
         """Search triples by resolving partial labels/IDs to exact IDs.
 
@@ -184,6 +186,10 @@ class TripleService:
             predicate: Partial predicate ID or label.
             object: Partial object node ID or label (URI objects only).
             limit: Maximum results.
+            created_after: ISO 8601 start datetime (inclusive). Filters
+                triples where ``created_at >= created_after``.
+            created_before: ISO 8601 end datetime (inclusive). Filters
+                triples where ``created_at <= created_before``.
 
         Returns:
             List of matching triple dicts.
@@ -255,6 +261,14 @@ class TripleService:
                 f"(object_type = 'uri' AND object_value IN ({placeholders}))"
             )
             params.extend(object_ids)
+
+        if created_after is not None:
+            clauses.append("created_at >= ?")
+            params.append(created_after)
+
+        if created_before is not None:
+            clauses.append("created_at <= ?")
+            params.append(created_before)
 
         if not clauses:
             return []
