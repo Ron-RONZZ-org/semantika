@@ -10,7 +10,8 @@ Semantika is the **third-generation** of a knowledge-graph toolchain. Understand
 |---------|------|-------------|
 | **[A-semantika](../A-semantika)** | EO-first CLI ancestor | **Business-logic reference.** Forked and migrated from Esperanto to English. Core triple store services (NodeService, PredicateService, TripleService, ReviewService, ProofService, unit ontology) originate here. Refer to A-semantika when implementing graph operations, Turtle export, or review/proof mechanics. |
 | **[lighterbird](../lighterbird)** | Mature sister PIM app | **UX/LLM/DB reference.** The command-bar interaction model, command tree + dispatch architecture, autocomplete engine, tab/result-panel UI, and LLM provider integration (OpenAI/Ollama with text-based command generation) are all ported from lighterbird. Refer to lighterbird when designing frontend components, command routing, LLM tool-calling, or keyring-based config management. |
-| **Semantika (this repo)** | Modern English successor | **Combines the best of both.** Graph business logic from A-semantika + UX/LLM patterns from lighterbird + Svelte 5 SPA frontend. Adds: unified EN-language UX, unit ontology with expression resolution, FastAPI REST layer with auto-docs, and BYOK LLM integration. |
+| **[lightercore](../lightercore)** | Shared core library | **Infrastructure reference.** DB, paths, exceptions, CRUD, and backup come from lightercore — the canonical source shared with lighterbird. |
+| **Semantika (this repo)** | Modern English successor | **Combines the best of all.** Graph business logic from A-semantika + UX/LLM patterns from lighterbird + shared infrastructure from lightercore + Svelte 5 SPA frontend. |
 
 ## Philosophy: You see only what you need
 
@@ -143,6 +144,17 @@ uv run semantika-dev
 | `/api/v1/llm/profiles` | GET | List saved LLM profiles |
 | `/api/v1/review/sessions` | GET/POST | Review session management |
 | `/api/v1/proof/proofs` | GET/POST | Proof management |
+
+## Dependencies
+
+Semantika depends on [lightercore](../lightercore) for shared infrastructure (DB, paths, exceptions, CRUD, backup). Clone both repos side by side:
+
+```bash
+git clone https://github.com/Ron-RONZZ-org/semantika.git
+git clone https://github.com/Ron-RONZZ-org/lightercore.git
+cd semantika
+uv pip install -e "../lightercore" -e ".[dev]"
+```
 
 ## Development
 

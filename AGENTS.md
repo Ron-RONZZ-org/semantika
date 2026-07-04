@@ -29,11 +29,12 @@ Semantika is the **third generation** in a toolchain. When implementing new feat
 |---------|------|-------------------|
 | **[A-semantika](../A-semantika)** | EO-first CLI ancestor | **Business logic**: NodeService, PredicateService, TripleService, Turtle export/import, review/proof mechanics, unit ontology. Forked with Esperanto→English migration. |
 | **[lighterbird](../lighterbird)** | Mature sister PIM app | **UX/LLM/DB**: Command-bar interaction, command tree + dispatch architecture, autocomplete engine, tab/result-panel UI, LLM provider integration (OpenAI/Ollama), text-based command generation, keyring-based config management. |
-| **[A-core](../A-core)** | Shared core library | **DB/FTS5/paths**: `SemantikaDB`, CRUDService, FTS5 config, XDG path resolution, exceptions. Vendored into `src/semantika/core/`. |
+| **[lightercore](../lightercore)** | Shared core library | **DB/paths/exceptions/CRUD/backup**: Canonical implementations consumed by both lighterbird and semantika. Replaces the earlier vendored A-core. |
+| **[A-core](../A-core)** | First-gen core library | Historical reference only. Superseded by lightercore. |
 
-**Key rule**: When the task is about graph business logic (nodes, predicates, triples, TTL, review, proof, units), look at **A-semantika** first. When the task is about UX patterns (command routing, LLM, autocomplete, tabs, forms) or DB management, look at **lighterbird** first. This avoids reinventing the wheel across the project family.
+**Key rule**: When the task is about graph business logic (nodes, predicates, triples, TTL, review, proof, units), look at **A-semantika** first. When the task is about UX patterns (command routing, LLM, autocomplete, tabs, forms) or DB management, look at **lighterbird** first. For shared infrastructure (DB, paths, exceptions, CRUD, backup), look at **lightercore** first — that is the canonical source.
 
-The backend is forked from proven code in [A-semantika](../A-semantika) (triple store services) and [A-core](../A-core) (DB, FTS5, paths). The frontend is a Svelte SPA served by a FastAPI Python server, with UX patterns ported from [lighterbird](../lighterbird).
+The backend is forked from proven code in [A-semantika](../A-semantika) (triple store services). Shared infrastructure (DB, paths, exceptions, CRUD, backup) comes from [lightercore](../lightercore), which supersedes the earlier vendored [A-core](../A-core). The frontend is a Svelte SPA served by a FastAPI Python server, with UX patterns ported from [lighterbird](../lighterbird).
 
 ---
 
@@ -117,13 +118,14 @@ semantika/
 │   └── semantika/               # Main Python package (21 source files)
 │       ├── __init__.py
 │       ├── __main__.py          # python -m semantika entry point
-│       ├── core/                # Vendored from A-core (5 files)
-│       │   ├── __init__.py
-│       │   ├── db.py            # SemantikaDB — SQLite with WAL, per-thread conns
-│       │   ├── paths.py         # XDG path resolution with SEMANTIKA_DIR env
-│       │   ├── exceptions.py    # AmbiguousIDError, ProtectedPathError, SemantikaError
-│       │   ├── crud.py          # CRUDService base with soft-delete, FTS hooks
-│       │   └── fts.py           # FTSConfig dataclass
+│       ├── core/                # Re-exports from lightercore (5 files) + FTS
+│       │   ├── __init__.py      # Re-exports SemantikaDB, paths, exceptions from lightercore
+│       │   ├── db.py            # Re-export: ``LighterbirdDB as SemantikaDB``
+│       │   ├── paths.py         # Re-export: XDG path resolution from lightercore
+│       │   ├── exceptions.py    # Re-export: exception hierarchy from lightercore
+│       │   ├── backup.py        # Re-export: strategy-based backup from lightercore
+│       │   ├── crud.py          # Re-export: CRUDService with UUID prefix + soft-delete
+│       │   └── fts.py           # FTSConfig dataclass (local, not in lightercore)
 │       ├── graph/               # Triple store services (forked from A-semantika, 9 files)
 │       │   ├── __init__.py
 │       │   ├── constants.py     # FTS5 keywords, heuristic helpers, EO→EN map
@@ -233,8 +235,8 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 
 ## What to Avoid
 
-- **Do not import from A-ecosystem packages at runtime.** Semantika forks the code — all dependencies must be vendored under `src/semantika/`.
-- **Do not duplicate logic across modules.** Shared utilities go in `core`.
+- **Do not import from A-ecosystem packages at runtime.** Use lightercore instead of vendoring A-core directly.
+- **Do not duplicate logic across modules.** Shared infrastructure comes from lightercore; domain-specific utilities go in their own module.
 - **Do not use `print()` for user output.** Use FastAPI structured responses or logging.
 - **Do not store API keys in SQLite.** Keyring only.
 - **Do not add heavy frameworks** (Django, SQLAlchemy, Celery) — this is a lightweight single-user app.
