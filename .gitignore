@@ -26,6 +26,7 @@ Thumbs.db
 # Test artifacts
 .pytest_cache/
 htmlcov/
+coverage_html/
 .coverage
 
 # Dev data

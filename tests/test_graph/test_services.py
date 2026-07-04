@@ -252,6 +252,82 @@ class TestProofService:
         proofs = prs.get_by_triple("X", "ex:p", "Y")
         assert len(proofs) == 1
 
+    def test_get_by_subject(self, services: dict):
+        prs = services["proof"]
+        ns = services["node"]
+        ps = services["predicate"]
+        ts = services["triple"]
+
+        ns.create({"node_id": "S1", "labels": {"en": "S1"}})
+        ns.create({"node_id": "O1", "labels": {"en": "O1"}})
+        ps.create({"predicate_id": "ex:rel", "labels": {"en": "rel"}})
+        ts.add("S1", "ex:rel", "O1", object_type="uri")
+
+        prs.create({"subject_id": "S1", "predicate_id": "ex:rel",
+                    "object_value": "O1", "proof_type": "observation"})
+        results = prs.get_by_subject("S1")
+        assert len(results) == 1
+
+    def test_delete_proof(self, services: dict):
+        prs = services["proof"]
+        ns = services["node"]
+        ps = services["predicate"]
+        ts = services["triple"]
+
+        ns.create({"node_id": "S", "labels": {"en": "S"}})
+        ns.create({"node_id": "O", "labels": {"en": "O"}})
+        ps.create({"predicate_id": "ex:p", "labels": {"en": "p"}})
+        ts.add("S", "ex:p", "O", object_type="uri")
+
+        proof = prs.create({"subject_id": "S", "predicate_id": "ex:p",
+                            "object_value": "O", "proof_type": "test"})
+        prs.delete(proof["uuid"])
+        proofs = prs.get_by_triple("S", "ex:p", "O")
+        assert len(proofs) == 0
+
+    def test_cascade_delete_proofs(self, services: dict):
+        prs = services["proof"]
+        ns = services["node"]
+        ps = services["predicate"]
+        ts = services["triple"]
+
+        ns.create({"node_id": "S", "labels": {"en": "S"}})
+        ns.create({"node_id": "O", "labels": {"en": "O"}})
+        ps.create({"predicate_id": "ex:p", "labels": {"en": "p"}})
+        ts.add("S", "ex:p", "O", object_type="uri")
+
+        prs.create({"subject_id": "S", "predicate_id": "ex:p",
+                    "object_value": "O", "proof_type": "test"})
+        count = prs.cascade_delete_proofs("S", "ex:p", "O")
+        assert count >= 1
+
+    def test_get_proofs_for_arcs_batch(self, services: dict):
+        prs = services["proof"]
+        ns = services["node"]
+        ps = services["predicate"]
+        ts = services["triple"]
+
+        ns.create({"node_id": "A", "labels": {"en": "A"}})
+        ns.create({"node_id": "B", "labels": {"en": "B"}})
+        ns.create({"node_id": "C", "labels": {"en": "C"}})
+        ps.create({"predicate_id": "ex:rel", "labels": {"en": "rel"}})
+        ts.add("A", "ex:rel", "B", object_type="uri")
+        ts.add("A", "ex:rel", "C", object_type="uri")
+
+        p1 = prs.create({"subject_id": "A", "predicate_id": "ex:rel",
+                         "object_value": "B", "proof_type": "obs"})
+        prs.create({"subject_id": "A", "predicate_id": "ex:rel",
+                    "object_value": "C", "proof_type": "obs"})
+
+        arcs = [("A", "ex:rel", "B"), ("A", "ex:rel", "C")]
+        result = prs.get_proofs_for_arcs_batch(arcs)
+        assert len(result) == 2
+        assert ("A", "ex:rel", "B") in result
+
+    def test_get_proofs_for_arcs_batch_empty(self, services: dict):
+        prs = services["proof"]
+        assert prs.get_proofs_for_arcs_batch([]) == {}
+
 
 class TestUnitService:
     def test_seeded_units(self, services: dict, db):

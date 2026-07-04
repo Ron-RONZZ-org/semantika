@@ -251,3 +251,53 @@ class TestExportImport:
         """import_data raises on nonexistent archive."""
         with pytest.raises(FileNotFoundError):
             import_data(str(tmp_path / "nonexistent.7z"))
+
+
+# ── Semantika-specific helpers ────────────────────────────────────────────
+
+
+class TestSemantikaBackupHelpers:
+    """Tests for semantika-specific backup helpers (core/backup.py)."""
+
+    def test_db_path(self) -> None:
+        from semantika.core.backup import _db_path
+        path = _db_path()
+        assert str(path).endswith("semantika.db")
+        assert path.name == "semantika.db"
+
+    def test_parse_backup_filename_new_format(self) -> None:
+        from semantika.core.backup import _parse_backup_filename
+        result = _parse_backup_filename("semantika_daily_20260704T120000.db")
+        assert result is not None
+        assert result["stem"] == "semantika"
+        assert result["strategy"] == "daily"
+        assert result["timestamp"] == "20260704T120000"
+        assert result["suffix"] == "db"
+
+    def test_parse_backup_filename_new_format_bak(self) -> None:
+        from semantika.core.backup import _parse_backup_filename
+        result = _parse_backup_filename("semantika_weekly_20260704T120000.bak")
+        assert result is not None
+        assert result["stem"] == "semantika"
+        assert result["strategy"] == "weekly"
+        assert result["suffix"] == "bak"
+
+    def test_parse_backup_filename_legacy_format(self) -> None:
+        from semantika.core.backup import _parse_backup_filename
+        result = _parse_backup_filename("semantika_20260704T120000.db")
+        assert result is not None
+        assert result["stem"] == "semantika"
+        assert result["strategy"] == "legacy"
+        assert result["timestamp"] == "20260704T120000"
+
+    def test_parse_backup_filename_no_match(self) -> None:
+        from semantika.core.backup import _parse_backup_filename
+        assert _parse_backup_filename("random_file.txt") is None
+        assert _parse_backup_filename("") is None
+
+    def test_parse_backup_filename_custom_stem(self) -> None:
+        from semantika.core.backup import _parse_backup_filename
+        result = _parse_backup_filename("myapp_daily_20260704T120000.db")
+        assert result is not None
+        assert result["stem"] == "myapp"
+        assert result["strategy"] == "daily"
