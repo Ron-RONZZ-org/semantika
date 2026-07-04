@@ -43,11 +43,13 @@ class TripleCreate(BaseModel):
     object_type: str = "uri"
     object_lang: str | None = None
     object_datatype: str | None = None
+    object_unit: str | None = None
 
 
 class TripleUpdate(BaseModel):
     object_lang: str | None = None
     object_datatype: str | None = None
+    object_unit: str | None = None
 
 
 class PredicateCreate(BaseModel):
@@ -287,6 +289,7 @@ async def update_triple_metadata(
             subject_id, predicate_id, object_value, object_type,
             object_lang=data.object_lang,
             object_datatype=data.object_datatype,
+            object_unit=data.object_unit,
         )
         if triple is None:
             raise HTTPException(404, "Triple not found")

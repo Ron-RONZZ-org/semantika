@@ -30,20 +30,31 @@ Traditional knowledge management apps drown you in sidebars, nested menus, and f
 └──────────────────────────────────────────────┘
 ```
 
-- `!node add/list/view/modify/delete/merge/rename` — manage knowledge graph nodes; merge duplicates or rename IDs with full FK cascade
-- `!predicate add/list/search/update/delete/rename` — manage predicates; rename IDs with cascade to triples and groups
-- `!triple add/list/delete` (`PATCH` for metadata) — assert, query, and modify subject-predicate-object arcs
-- `!search <query>` — full-text search across nodes, predicates, and triples (by label)
-- `!trash list/restore/purge` — manage soft-deleted nodes (restore or permanently purge)
-- `!export` / `!import` — export/import the graph in Turtle (.ttl) format
+- `!node add/list/view/update/delete/merge/rename` — manage nodes; batch delete with `--prefix`, merge duplicates, rename IDs with full FK cascade
+- `!predicate add/list/search/view/update/delete/rename` — manage predicates with descriptions, Wikidata auto-fetch; batch delete with `--prefix`
+- `!predicate-group list/view/add/rename/delete/search` — manage predicate groups with member add/remove
+- `!triple add` with full literal type support (`--str`, `--int`, `--float`, `--bool`, `--lang`, `--unit`, `--katex`, `--str-dosiero`, `--kodlingvo`)
+- `!triple delete` — delete triples with cascade proof removal (interactive picker for partial args)
+- `!triple modify` — change subject/predicate/object/type of existing triple
+- `!triple list/view` — list all triples or view triples for a node
+- `!search <q> [--date-from] [--date-to]` — full-text search with optional date filtering
+- `!view <id>` — alias for triples-by-subject view
+- `!export [--output FILE] [--base-uri URI]` — export graph in Turtle format to file or stdout
+- `!import <data>` — import Turtle (.ttl) data
+- `!trash list/restore/delete/purge` — manage soft-deleted nodes (restore, permanent delete, or bulk purge)
+- `!proof add/view/delete` — attach evidence (proofs) to triples
 - `!review start [view|quiz]` — interactive triple review with two modes:
   - **view**: show SPO, confirm correct/incorrect
   - **quiz**: multiple-choice with auto-generated distractors via FTS5 similarity
   - Optional `--date-from`/`--date-to` / `--limit` filters
-- `!review sessions` — list past review sessions with scores
-- `!files attach <node-id> <path|url>` — attach files to nodes (auto-MIME detection)
+- `!review sessions/view/delete` — manage review sessions
+- `!unit list/view/resolve/decompose/add` — unit ontology management
+- `!llm show/new/set/clear/profile*` — full LLM provider configuration with profiles
+- `!backup now/list/restore/prune/config/export/import` — database backup with multi-strategy support
+- `!stats` — graph statistics
+- `!reset` — reset to fresh state (with optional backup)
 - Just type naturally → the LLM translates your intent into commands
-- As-you-type command suggestions with node/predicate completion — no memorisation needed
+- As-you-type command suggestions with node/predicate/predicate-group completion — no memorisation needed
 
 ## Architecture
 

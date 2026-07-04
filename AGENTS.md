@@ -115,64 +115,55 @@ semantika/
 ├── pyproject.toml
 ├── .gitignore
 ├── src/
-│   └── semantika/               # Main Python package (21 source files)
+│   └── semantika/               # Main Python package
 │       ├── __init__.py
 │       ├── __main__.py          # python -m semantika entry point
-│       ├── core/                # Re-exports from lightercore (5 files) + FTS
-│       │   ├── __init__.py      # Re-exports SemantikaDB, paths, exceptions from lightercore
-│       │   ├── db.py            # Re-export: ``LighterbirdDB as SemantikaDB``
-│       │   ├── paths.py         # Re-export: XDG path resolution from lightercore
-│       │   ├── exceptions.py    # Re-export: exception hierarchy from lightercore
-│       │   ├── backup.py        # Re-export: strategy-based backup from lightercore
-│       │   ├── crud.py          # Re-export: CRUDService with UUID prefix + soft-delete
-│       │   └── fts.py           # FTSConfig dataclass (local, not in lightercore)
-│       ├── graph/               # Triple store services (forked from A-semantika, 9 files)
-│       │   ├── __init__.py
-│       │   ├── constants.py     # FTS5 keywords, heuristic helpers, EO→EN map
-│       │   ├── node_helpers.py  # Label/definition extraction, ID sanitization
-│       │   ├── node_service.py  # NodeService — CRUD, FTS5, prefix resolution, trash
-│       │   ├── predicate_service.py    # PredicateService — CRUD, LIKE search, merge
-│       │   ├── predicate_group_service.py  # PredicateGroupService — groups + members
-│       │   ├── triple_service.py         # TripleService — SPO CRUD, bulk queries
-│       │   ├── triple_turtle.py          # Turtle (.ttl) export
-│       │   ├── review_service.py         # ReviewService — spaced-repetition flashcards
-│       │   ├── proof_service.py          # ProofService — evidence attached to triples
-│       │   └── db.py                     # Schema DDL, get_db(), init_db(), seed defaults
-│       └── server/              # FastAPI web server (10 files)
+│       ├── core/                # Re-exports from lightercore + reset
+│       │   ├── __init__.py      # Re-exports SemantikaDB, paths, exceptions
+│       │   ├── db.py / paths.py / exceptions.py / backup.py / crud.py / fts.py
+│       │   └── reset.py         # Reset to fresh state
+│       ├── graph/               # Triple store services (18 Python files)
+│       │   ├── __init__.py + constants.py + db.py + file_helpers.py
+│       │   ├── node_helpers.py + node_service.py
+│       │   ├── predicate_service.py + predicate_group_service.py
+│       │   ├── triple_service.py + triple_turtle.py
+│       │   ├── review_service.py + proof_service.py
+│       │   ├── unit_service.py + unit_builder.py + unit_decomposition.py
+│       │   ├── unit_errors.py + unit_parser.py + unit_seed_data.py
+│       │   └── services/__init__.py
+│       └── server/              # FastAPI web server
 │           ├── __init__.py
 │           ├── app.py           # Application factory
+│           ├── tasks.py         # Background scheduled tasks
+│           ├── command/         # Command engine (models, parser, errors)
+│           ├── llm/             # LLM provider abstraction
 │           └── routes/
-│               ├── __init__.py
-│               ├── graph.py     # /api/v1/graph/* — nodes, predicates, triples CRUD
+│               ├── graph.py     # /api/v1/graph/* — CRUD for nodes, predicates, triples
 │               ├── query.py     # /api/v1/query/* — search, export, stats, sparql
-│               ├── command.py   # /api/v1/command/* — tree, execute, help
+│               ├── command.py   # /api/v1/command/* — tree, dispatch, execute
 │               ├── review.py    # /api/v1/review/* — session management
 │               ├── proof.py     # /api/v1/proof/* — proof CRUD
-│               └── llm.py       # /api/v1/llm/* — chat (stub with keyword routing)
-├── tests/                       # 19 pytest tests
-│   ├── __init__.py
-│   ├── conftest.py
-│   └── test_graph/
-│       └── test_services.py     # Integration tests for all 6 services
-├── core/                        # AGENTS-core.md
-├── graph/                       # AGENTS-graph.md
-├── server/                      # AGENTS-server.md
-├── scripts/                     # AGENTS-scripts.md
-└── web/                         # Svelte frontend (10 files)
-    ├── package.json
-    ├── vite.config.js
-    ├── svelte.config.js
-    ├── index.html
+│               ├── unit.py      # /api/v1/units/* — unit ontology
+│               ├── files.py     # /api/v1/files/* — file attachments
+│               └── llm.py       # /api/v1/llm/* — chat routing
+├── tests/                       # 134 pytest tests
+│   ├── test_core/               # Backup, infrastructure tests
+│   ├── test_graph/              # Service integration tests
+│   └── test_server/             # API E2E tests
+├── core/ / graph/ / server/ / scripts/  # Module-level AGENTS files
+└── web/                         # Svelte frontend
+    ├── package.json / vite.config.js / svelte.config.js / index.html
     └── src/
-        ├── main.js
-        ├── App.svelte           # Main app with tabs
-        └── lib/
-            ├── CommandBar.svelte  # !command input with autocomplete
-            ├── GraphView.svelte   # vis-network graph visualization
-            ├── ResultPanel.svelte # Command result display
-            ├── HomeTab.svelte     # Welcome screen
-            ├── GraphTab.svelte    # Graph view placeholder
-            └── SearchTab.svelte   # Search view placeholder
+        ├── main.js + App.svelte
+        └── lib/                  # UI components
+            ├── CommandBar.svelte / CommandBar.svelte
+            ├── DynamicForm.svelte / FormField.svelte / FormTab.svelte
+            ├── PopupOverlay.svelte / StatusPopup.svelte / ErrorPopup.svelte
+            ├── TabView.svelte / HomeTab.svelte / SearchTab.svelte
+            ├── LoadingPopup.svelte / BannerContainer.svelte
+            ├── HelpPopup.svelte / ConfirmDialog.svelte
+            ├── LlmSetupModal.svelte / GraphView.svelte
+            └── command*.js / popupStore.svelte.js / tabStore.svelte.js / api.js / markdown.js
 ```
 
 ---
