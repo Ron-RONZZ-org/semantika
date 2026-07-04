@@ -51,6 +51,14 @@ def get_command_tree() -> list[dict]:
                 {"name": "view", "description": "View a node and its triples", "params": [{"name": "id", "type": "string", "required": True}]},
                 {"name": "add", "description": "Create a new node", "interactive": True, "params": [{"name": "labels", "type": "string"}]},
                 {"name": "delete", "description": "Delete a node", "params": [{"name": "id", "type": "string", "required": True}]},
+                {"name": "merge", "description": "Merge source node into target node", "params": [
+                    {"name": "source", "type": "string", "required": True},
+                    {"name": "target", "type": "string", "required": True},
+                ]},
+                {"name": "rename", "description": "Rename a node", "params": [
+                    {"name": "id", "type": "string", "required": True},
+                    {"name": "new_id", "type": "string", "required": True},
+                ]},
             ],
         },
         {
@@ -66,6 +74,10 @@ def get_command_tree() -> list[dict]:
                 ]},
                 {"name": "delete", "description": "Delete a predicate", "params": [
                     {"name": "predicate_id", "type": "string", "required": True},
+                ]},
+                {"name": "rename", "description": "Rename a predicate", "params": [
+                    {"name": "predicate_id", "type": "string", "required": True},
+                    {"name": "new_id", "type": "string", "required": True},
                 ]},
             ],
         },
@@ -95,6 +107,15 @@ def get_command_tree() -> list[dict]:
             "name": "search",
             "description": "Full-text search across the graph",
             "params": [{"name": "q", "type": "string", "required": True}],
+        },
+        {
+            "name": "trash",
+            "description": "Manage soft-deleted nodes (trash)",
+            "children": [
+                {"name": "list", "description": "List trashed nodes"},
+                {"name": "restore", "description": "Restore a trashed node", "params": [{"name": "id", "type": "string", "required": True}]},
+                {"name": "purge", "description": "Permanently delete old trash entries", "params": [{"name": "days", "type": "number"}]},
+            ],
         },
         {"name": "export", "description": "Export graph in Turtle format"},
         {"name": "import", "description": "Import Turtle (.ttl) data", "params": [{"name": "data", "type": "string", "required": True}]},
@@ -278,7 +299,20 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
         if not q:
             raise CommandValidationError("Enter a search query")
         nodes = svc["node"].search(q)
-        return {"type": "table", "data": nodes, "label": f"Search: {q}"}
+        predicates = svc["predicate"].search(q)
+        triples = svc["triple"].search_by_labels(subject=q, limit=50) or []
+        # Also try as predicate/object
+        pred_triples = svc["triple"].search_by_labels(predicate=q, limit=50) or []
+        all_triples = list({t["subject_id"] + t["predicate_id"] + t["object_value"]: t for t in triples + pred_triples}.values())
+        return {
+            "type": "status",
+            "data": {
+                "nodes": nodes,
+                "predicates": predicates,
+                "triples": all_triples[:10],
+                "_summary": f"Nodes: {len(nodes)}, Predicates: {len(predicates)}, Triples: {len(all_triples)}",
+            },
+        }
 
     if path == "node.list":
         nodes = svc["node"].list(limit=int(merged.get("limit", 100)))
@@ -320,6 +354,39 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
             raise CommandValidationError("Specify a node ID")
         svc["node"].delete(node_id, soft=True)
         return {"type": "status", "data": {"message": f"Deleted {node_id}"}}
+
+    if path == "node.rename":
+        node_id = merged.get("id") or (remaining and remaining[0]) or ""
+        new_id = merged.get("new_id") or (remaining and remaining[1] if len(remaining) > 1 else "") or ""
+        if not node_id or not new_id:
+            raise CommandValidationError("Specify current and new node ID")
+        try:
+            result = svc["node"].update_node_id(node_id, new_id)
+            return {"type": "status", "data": {"message": f"Renamed {node_id} → {new_id}", "node": result}}
+        except ValueError as e:
+            raise CommandValidationError(str(e))
+
+    if path == "predicate.rename":
+        pred_id = merged.get("predicate_id") or (remaining and remaining[0]) or ""
+        new_id = merged.get("new_id") or (remaining and remaining[1] if len(remaining) > 1 else "") or ""
+        if not pred_id or not new_id:
+            raise CommandValidationError("Specify current and new predicate ID")
+        try:
+            result = svc["predicate"].update_predicate_id(pred_id, new_id)
+            return {"type": "status", "data": {"message": f"Renamed {pred_id} → {new_id}", "predicate": result}}
+        except ValueError as e:
+            raise CommandValidationError(str(e))
+
+    if path == "node.merge":
+        source = merged.get("source") or (remaining and remaining[0] if len(remaining) > 0 else "") or ""
+        target = merged.get("target") or (remaining and remaining[1] if len(remaining) > 1 else "") or ""
+        if not source or not target:
+            raise CommandValidationError("Specify source and target node IDs")
+        try:
+            result = svc["node"].merge_nodes(source, target)
+            return {"type": "status", "data": {"message": f"Merged {source} into {target}", "node": result}}
+        except ValueError as e:
+            raise CommandValidationError(str(e))
 
     if path == "predicate.list":
         preds = svc["predicate"].list()
@@ -404,6 +471,36 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
         nid = us.resolve_unit(expr)
         info = us.get_unit_info(nid)
         return {"type": "status", "data": {"resolved": nid, "info": info}}
+
+    if path == "trash.list":
+        items = svc["node"].list_trash()
+        return {"type": "table", "data": items, "label": "Trash"}
+
+    if path == "trash.restore":
+        node_id = merged.get("id") or (remaining and remaining[0]) or ""
+        if not node_id:
+            raise CommandValidationError("Specify a node ID")
+        restored = svc["node"].restore_from_trash(node_id)
+        if not restored:
+            raise CommandValidationError(f"Node not found in trash: {node_id}")
+        return {"type": "status", "data": {"message": f"Restored {restored.get('node_id', node_id)}"}}
+
+    if path == "trash.purge":
+        raw_days = merged.get("days") or (remaining and remaining[0]) or "30"
+        try:
+            days = int(raw_days)
+        except ValueError:
+            raise CommandValidationError(f"Invalid days value: {raw_days}")
+        if days <= 0:
+            count = svc["node"].empty_all_trash()
+        else:
+            items = svc["node"].get_trash_older_than(days)
+            count = len(items)
+            for item in items:
+                nid = item.get("node_id") or item.get(svc["node"]._pk_column)
+                if nid:
+                    svc["node"].permanent_delete(nid)
+        return {"type": "status", "data": {"message": f"Purged {count} item(s) from trash"}}
 
     if path == "review.start":
         session = svc["review"].create_session()

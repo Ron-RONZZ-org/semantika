@@ -327,6 +327,253 @@ class NodeService(CRUDService):
                 node_id, rowid, exc,
             )
 
+    # ── Node ID Rename ───────────────────────────────────────────────
+
+    def update_node_id(self, old_id: str, new_id: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Rename a node's node_id, cascading to all referencing triples.
+
+        Manual SQL UPDATEs in a single transaction to handle FK
+        constraints through generated columns.
+
+        Args:
+            old_id: Current node_id.
+            new_id: New node_id.
+            data: Optional additional field updates (labels, definitions, etc.).
+
+        Returns:
+            Updated node dict.
+
+        Raises:
+            ValueError: If old_id not found, new_id already exists, or
+                PK collision would occur on triples.
+        """
+        old = self.get(old_id)
+        if not old:
+            raise ValueError(f"Node not found: {old_id}")
+
+        existing = self.db.execute_one(
+            "SELECT node_id FROM nodes WHERE node_id = ?", (new_id,)
+        )
+        if existing:
+            raise ValueError(f"New node ID '{new_id}' already exists")
+
+        # Check triple PK collisions
+        old_triples = self.db.execute(
+            "SELECT predicate_id, object_value, object_type FROM triples "
+            "WHERE subject_id = ?", (old_id,),
+        )
+        for t in old_triples:
+            coll = self.db.execute_one(
+                "SELECT 1 FROM triples WHERE subject_id = ? AND predicate_id = ? "
+                "AND object_value = ? AND object_type = ?",
+                (new_id, t["predicate_id"], t["object_value"], t["object_type"]),
+            )
+            if coll:
+                raise ValueError(
+                    f"Rename would cause triple PK collision: "
+                    f"({new_id}, {t['predicate_id']}, {t['object_value']}, {t['object_type']})"
+                )
+
+        old_obj_triples = self.db.execute(
+            "SELECT subject_id, predicate_id, object_type FROM triples "
+            "WHERE object_type = 'uri' AND object_value = ?", (old_id,),
+        )
+        for t in old_obj_triples:
+            coll = self.db.execute_one(
+                "SELECT 1 FROM triples WHERE subject_id = ? AND predicate_id = ? "
+                "AND object_value = ? AND object_type = ?",
+                (t["subject_id"], t["predicate_id"], new_id, t["object_type"]),
+            )
+            if coll:
+                raise ValueError(
+                    f"Rename would cause triple PK collision: "
+                    f"({t['subject_id']}, {t['predicate_id']}, {new_id}, {t['object_type']})"
+                )
+
+        new_id = sanitize_node_id(new_id)
+        updates = dict(data or {})
+        ts = now()
+
+        if "labels" in updates:
+            labels = updates["labels"]
+            if isinstance(labels, dict):
+                labels = json.dumps(labels)
+            updates["labels"] = labels
+            updates["label_text"] = extract_label_text(labels)
+        if "definitions" in updates:
+            defns = updates["definitions"]
+            if isinstance(defns, dict):
+                defns = json.dumps(defns)
+            updates["definitions"] = defns
+            updates["definition_text"] = extract_definition_text(defns)
+
+        updates["node_id"] = new_id
+        updates["updated_at"] = ts
+
+        # Save rowid before transaction for FTS cleanup
+        old_rowid = None
+        row = self.db.execute_one(
+            f"SELECT rowid FROM {self.table} WHERE node_id = ?", (old_id,)
+        )
+        if row:
+            old_rowid = row["rowid"]
+
+        with self.db.transaction() as conn:
+            conn.execute("PRAGMA defer_foreign_keys=ON")
+
+            # Delete old FTS entry
+            if old_rowid is not None:
+                conn.execute(
+                    f"INSERT INTO nodes_fts(nodes_fts, rowid) VALUES('delete', ?)",
+                    (old_rowid,),
+                )
+
+            # Update node PK + fields
+            set_parts = [f"{k} = ?" for k in updates]
+            params = list(updates.values()) + [old_id]
+            conn.execute(
+                f"UPDATE nodes SET {', '.join(set_parts)} WHERE node_id = ?",
+                params,
+            )
+
+            # Cascade to triples (subject)
+            conn.execute(
+                "UPDATE triples SET subject_id = ? WHERE subject_id = ?",
+                (new_id, old_id),
+            )
+
+            # Cascade to triples (URI object)
+            conn.execute(
+                "UPDATE triples SET object_value = ? "
+                "WHERE object_type = 'uri' AND object_value = ?",
+                (new_id, old_id),
+            )
+
+            # Re-index FTS
+            self._index_fts(new_id)
+
+        return self.get(new_id)
+
+    # ── Node Merge ────────────────────────────────────────────────────
+
+    def merge_nodes(self, source_id: str, target_id: str) -> dict[str, Any]:
+        """Merge source node INTO target node.
+
+        All triples referencing *source* (as subject or URI object) are
+        reassigned to *target*.  Triple PK conflicts (where *target* already
+        has the same subject-predicate-object-type combination) are silently
+        skipped — target wins.
+
+        Labels and definitions are merged with target-first precedence:
+        source languages that do not exist in target are added; target
+        values are kept on collision.
+
+        The source node is deleted after reassignment.  ALL operations
+        happen in a single transaction with deferred FK checks.
+
+        Args:
+            source_id: Node ID of the source (will be deleted).
+            target_id: Node ID of the target (survives).
+
+        Returns:
+            Updated target node dict.
+
+        Raises:
+            ValueError: If either node is not found, or source equals target.
+        """
+        if source_id == target_id:
+            raise ValueError("Source and target must be different nodes")
+
+        source = self.get(source_id)
+        if not source:
+            raise ValueError(f"Source node not found: {source_id}")
+
+        target = self.get(target_id)
+        if not target:
+            raise ValueError(f"Target node not found: {target_id}")
+
+        # Parse JSON column values
+        try:
+            source_labels = json.loads(source["labels"]) if isinstance(source["labels"], str) else source.get("labels", {})
+        except (json.JSONDecodeError, TypeError):
+            source_labels = {}
+        try:
+            target_labels = json.loads(target["labels"]) if isinstance(target["labels"], str) else target.get("labels", {})
+        except (json.JSONDecodeError, TypeError):
+            target_labels = {}
+        try:
+            source_defns = json.loads(source["definitions"]) if isinstance(source["definitions"], str) else source.get("definitions", {})
+        except (json.JSONDecodeError, TypeError):
+            source_defns = {}
+        try:
+            target_defns = json.loads(target["definitions"]) if isinstance(target["definitions"], str) else target.get("definitions", {})
+        except (json.JSONDecodeError, TypeError):
+            target_defns = {}
+
+        merged_labels = {**source_labels, **target_labels}  # target wins
+        merged_defns = {**source_defns, **target_defns}
+
+        ts = now()
+
+        with self.db.transaction() as conn:
+            conn.execute("PRAGMA defer_foreign_keys=ON")
+
+            # 1. Remove old FTS entries
+            self._remove_from_fts(source_id)
+            self._remove_from_fts(target_id)
+
+            # 2. Update target with merged labels/definitions
+            conn.execute(
+                "UPDATE nodes SET labels = ?, label_text = ?, definitions = ?, "
+                "definition_text = ?, updated_at = ? WHERE node_id = ?",
+                (
+                    json.dumps(merged_labels),
+                    extract_label_text(merged_labels),
+                    json.dumps(merged_defns),
+                    extract_definition_text(merged_defns),
+                    ts,
+                    target_id,
+                ),
+            )
+
+            # 3. Reassign triples where source is subject → target
+            #    Skip collisions with target's existing triples
+            conn.execute(
+                """UPDATE triples SET subject_id = ?
+                   WHERE subject_id = ?
+                     AND (predicate_id, object_value, object_type) NOT IN (
+                       SELECT predicate_id, object_value, object_type
+                       FROM triples WHERE subject_id = ?
+                     )""",
+                (target_id, source_id, target_id),
+            )
+
+            # 4. Reassign triples where source is URI object → target
+            conn.execute(
+                """UPDATE triples SET object_value = ?
+                   WHERE object_type = 'uri' AND object_value = ?
+                     AND (subject_id, predicate_id, object_type) NOT IN (
+                       SELECT subject_id, predicate_id, object_type
+                       FROM triples WHERE object_type = 'uri' AND object_value = ?
+                     )""",
+                (target_id, source_id, target_id),
+            )
+
+            # 5. Clean up skipped collision triples still referencing source
+            conn.execute(
+                "DELETE FROM triples WHERE subject_id = ? "
+                "OR (object_type = 'uri' AND object_value = ?)",
+                (source_id, source_id),
+            )
+
+            # 6. Delete source node
+            conn.execute("DELETE FROM nodes WHERE node_id = ?", (source_id,))
+
+            # 7. Re-index target FTS
+            self._index_fts(target_id)
+
+        return self.get(target_id)
+
     # ── Batch operations ─────────────────────────────────────────────
 
     def get_by_nodes(self, node_ids: list[str]) -> list[dict]:

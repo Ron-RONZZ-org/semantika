@@ -19,6 +19,25 @@ async def search_all(q: str, limit: int = 50):
     return {"results": {"nodes": nodes, "predicates": predicates}}
 
 
+@router.get("/triples/search")
+async def search_triples(
+    subject: str | None = None,
+    predicate: str | None = None,
+    object: str | None = None,  # noqa: A002
+    limit: int = 100,
+):
+    """Search triples by resolving partial labels/IDs to exact IDs.
+
+    Accepts partial node IDs, predicate IDs, or label text for each
+    of the three SPO components.  Returns triples that match all
+    provided criteria (logical AND).
+    """
+    triples = get_services()["triple"].search_by_labels(
+        subject=subject, predicate=predicate, object=object, limit=limit,
+    )
+    return {"triples": triples}
+
+
 @router.get("/export")
 async def export_turtle():
     """Export the graph in Turtle (.ttl) format."""
