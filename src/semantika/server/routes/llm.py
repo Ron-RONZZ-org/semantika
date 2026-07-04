@@ -15,10 +15,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from semantika.server.llm.provider import (
-    LLMProvider,
-    get_command_definitions,
-)
+from semantika.server.llm.provider import LLMProvider
+from semantika.server.command.registry import get_command_definitions
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +160,7 @@ async def chat(req: ChatRequest):
         except Exception:
             return None
 
-    from semantika.server.routes.command import get_command_tree
+    from semantika.server.command.registry import get_command_tree
 
     defs = get_command_definitions(get_command_tree())
     cmd = None
@@ -173,11 +171,11 @@ async def chat(req: ChatRequest):
 
     if cmd and cmd.get("tokens"):
         # Phase 2: Execute the command
-        from semantika.server.routes.command import _dispatch
+        from semantika.server.command.registry import dispatch
         from semantika.server.command.errors import CommandError
 
         try:
-            result = _dispatch(cmd["tokens"], cmd.get("flags", {}))
+            result = dispatch(cmd["tokens"], cmd.get("flags", {}))
         except CommandError as e:
             # Command generation failed — try plain chat
             plain = await _safe_chat(messages + [{"role": "user", "content": req.message}])

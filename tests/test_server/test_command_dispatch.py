@@ -20,13 +20,15 @@ TEST_DATA_DIR.mkdir(parents=True, exist_ok=True)
 os.environ["SEMANTIKA_DATA_DIR"] = str(TEST_DATA_DIR)
 
 from semantika.server.app import create_app
-from semantika.server.routes.command import (
-    _resolve_form_type,
-    _parse_lang_tag_pairs,
-    _safe_json_loads,
-    _fmt_size,
-    _fmt_ts,
-    _backup_dir_abs,
+from semantika.server.command.registry import (
+    resolve_form_type as _resolve_form_type,
+)
+from semantika.server.command.helpers import (
+    parse_lang_tag_pairs as _parse_lang_tag_pairs,
+    safe_json_loads as _safe_json_loads,
+    fmt_size as _fmt_size,
+    fmt_ts as _fmt_ts,
+    backup_dir_abs as _backup_dir_abs,
 )
 
 
