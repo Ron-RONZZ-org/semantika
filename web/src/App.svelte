@@ -1,46 +1,72 @@
 <script>
+  import { onMount } from "svelte";
+  import { tabs, activeTabId, closeTab, openTab } from "./lib/tabStore.js";
+  import { initCommandTree } from "./lib/commandTree.js";
   import CommandBar from "./lib/CommandBar.svelte";
-  import GraphView from "./lib/GraphView.svelte";
-  import ResultPanel from "./lib/ResultPanel.svelte";
+  import TabView from "./lib/TabView.svelte";
 
-  let currentView = $state("graph");
-  let resultData = $state(null);
-  let resultType = $state("");
+  let loading = $state(true);
+  let error = $state(null);
+
+  onMount(async () => {
+    try {
+      await initCommandTree();
+      loading = false;
+    } catch (err) {
+      error = String(err);
+      loading = false;
+    }
+  });
 
   function handleCommand(result) {
-    resultType = result.type;
-    resultData = result;
-
-    if (result.type === "graph-refresh") {
-      // GraphView will refetch
+    if (!result) return;
+    if (result.type === "error") {
+      openTab("error", "Error", result);
+    } else if (result.type === "status") {
+      openTab("status", "Result", result);
+    } else if (result.type === "table") {
+      openTab("table", result.label || "Results", result);
+    } else if (result.type === "chat") {
+      openTab("chat", "Chat", result);
+    } else if (result.type === "graph-refresh") {
+      // handled by GraphView
+    } else {
+      openTab("status", "Result", result);
     }
   }
 </script>
 
 <div id="semantika-app">
   <header>
-    <div class="header-top">
+    <div class="header-row">
       <h1>Semantika</h1>
-      <nav class="tabs">
-        <button class:active={currentView === "graph"} onclick={() => currentView = "graph"}>
-          Graph
-        </button>
-        <button class:active={currentView === "search"} onclick={() => currentView = "search"}>
-          Search
-        </button>
-      </nav>
+      <span class="subtitle">knowledge graph</span>
+      <span class="shortcuts">Tab/` navigate · Ctrl+K command · ? help</span>
     </div>
     <CommandBar oncommand={handleCommand} />
   </header>
 
-  <main>
-    {#if currentView === "graph"}
-      <GraphView refresh={resultType === "graph-refresh"} />
-    {/if}
-    {#if resultData}
-      <ResultPanel data={resultData} />
-    {/if}
-  </main>
+  {#if loading}
+    <div class="loading-screen">Loading…</div>
+  {:else if error}
+    <div class="error-screen">⚠ {error}</div>
+  {:else}
+    <TabView />
+  {/if}
+
+  <footer class="tab-bar">
+    <button class="tab-btn home-btn" class:active={$activeTabId === "home"}
+      onclick={() => activeTabId.set("home")}>🏠 Home</button>
+    {#each $tabs as tab (tab.id)}
+      <button class="tab-btn" class:active={$activeTabId === tab.id}
+        onclick={() => activeTabId.set(tab.id)}>
+        {tab.title || tab.type}
+        {#if tab.closable}
+          <span class="tab-close" onclick={(e) => { e.stopPropagation(); closeTab(tab.id); }}>✕</span>
+        {/if}
+      </button>
+    {/each}
+  </footer>
 </div>
 
 <style>
@@ -48,43 +74,58 @@
     display: flex;
     flex-direction: column;
     height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f5f5f5;
   }
   header {
+    background: #fff;
     border-bottom: 1px solid #ddd;
-    padding: 0.5rem 1rem;
-    background: #fafafa;
+    padding: 0.4rem 1rem;
+    flex-shrink: 0;
   }
-  .header-top {
+  .header-row {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    margin-bottom: 0.5rem;
+    gap: 0.6rem;
+    margin-bottom: 0.4rem;
   }
-  h1 {
-    font-size: 1.2rem;
-    margin: 0;
+  h1 { margin: 0; font-size: 1.1rem; font-weight: 700; }
+  .subtitle { color: #888; font-size: 0.8rem; }
+  .shortcuts { margin-left: auto; color: #aaa; font-size: 0.75rem; }
+  .loading-screen, .error-screen {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    color: #999; font-size: 1.1rem;
   }
-  nav.tabs {
+  .error-screen { color: #d32f2f; }
+  .tab-bar {
     display: flex;
-    gap: 0.25rem;
+    gap: 2px;
+    padding: 2px 4px;
+    background: #e8e8e8;
+    border-top: 1px solid #ccc;
+    overflow-x: auto;
+    flex-shrink: 0;
   }
-  nav.tabs button {
-    padding: 0.25rem 0.75rem;
-    border: 1px solid #ccc;
-    background: #fff;
-    border-radius: 4px;
+  .tab-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border: none;
+    background: #ddd;
+    border-radius: 4px 4px 0 0;
     cursor: pointer;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
+    white-space: nowrap;
   }
-  nav.tabs button.active {
-    background: #4a90d9;
-    color: #fff;
-    border-color: #4a90d9;
+  .tab-btn.active { background: #fff; font-weight: 600; }
+  .tab-close {
+    margin-left: 4px;
+    padding: 0 2px;
+    border-radius: 2px;
+    cursor: pointer;
+    font-size: 0.7rem;
   }
-  main {
-    flex: 1;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-  }
+  .tab-close:hover { background: #ccc; }
+  .home-btn { font-weight: 600; }
 </style>

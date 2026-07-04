@@ -251,3 +251,40 @@ class TestProofService:
 
         proofs = prs.get_by_triple("X", "ex:p", "Y")
         assert len(proofs) == 1
+
+
+class TestUnitService:
+    def test_seeded_units(self, services: dict, db):
+        from semantika.graph.unit_service import UnitService
+        us = UnitService(db, services["node"], services["triple"])
+        units = us.list_units()
+        assert len(units) > 0
+
+    def test_get_unit_info(self, services: dict, db):
+        from semantika.graph.unit_service import UnitService
+        us = UnitService(db, services["node"], services["triple"])
+        info = us.get_unit_info("unit:METER")
+        assert info is not None
+        assert info.get("unit_symbol") == "m"
+
+    def test_resolve_singleton(self, services: dict, db):
+        from semantika.graph.unit_service import UnitService
+        us = UnitService(db, services["node"], services["triple"])
+        nid = us.resolve_unit("J")
+        assert nid == "unit:JOULE"
+
+    def test_resolve_compound(self, services: dict, db):
+        from semantika.graph.unit_service import UnitService
+        us = UnitService(db, services["node"], services["triple"])
+        nid = us.resolve_unit("J/K")
+        assert nid is not None
+        assert "JOULE" in nid
+
+    def test_create_singleton(self, services: dict, db):
+        from semantika.graph.unit_service import UnitService
+        us = UnitService(db, services["node"], services["triple"])
+        nid = us.create_singleton("TESTUNIT", "Test Unit", "tu")
+        assert nid == "unit:TESTUNIT"
+        # Verify it's listed
+        ids = [u["node_id"] for u in us.list_units()]
+        assert "unit:TESTUNIT" in ids
