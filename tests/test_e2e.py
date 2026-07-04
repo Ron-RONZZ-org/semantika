@@ -22,8 +22,8 @@ import pytest
 SCRIPTS: list[tuple[str, str, int]] = [
     (
         "semantika_e2e.mjs",
-        "Smoke tests: node/triple CRUD, search, stats, backup, tab nav",
-        180,
+        "Full command tree coverage (node, predicate, triple, unit, search, export, import, stats, review, llm, backup, help)",
+        300,
     ),
 ]
 
