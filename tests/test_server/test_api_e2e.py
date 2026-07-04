@@ -1097,15 +1097,15 @@ class TestReviewSessionAPI:
     """Test review session CRUD beyond just starting."""
 
     def test_start_and_get_session(self, client: TestClient):
-        # Create
-        resp = client.post("/api/v1/review/sessions")
+        # Create with default mode
+        resp = client.post("/api/v1/review/sessions", json={})
         assert resp.status_code == 200
         data = resp.json()
         assert "session" in data
         session_uuid = data["session"]["uuid"]
         assert session_uuid
 
-        # Get by UUID (now wrapped in "session" key)
+        # Get by UUID
         resp = client.get(f"/api/v1/review/sessions/{session_uuid}")
         assert resp.status_code == 200
         data = resp.json()
@@ -1113,7 +1113,7 @@ class TestReviewSessionAPI:
         assert data["session"]["uuid"] == session_uuid
 
     def test_delete_session(self, client: TestClient):
-        resp = client.post("/api/v1/review/sessions")
+        resp = client.post("/api/v1/review/sessions", json={})
         assert resp.status_code == 200
         session_uuid = resp.json()["session"]["uuid"]
 
@@ -1128,7 +1128,7 @@ class TestReviewSessionAPI:
             json={"subject_id": "SUBJ1", "predicate_id": "ex:testPred1", "object_value": "OBJ1", "object_type": "uri"},
         )
         # may be duplicate - that's OK
-        resp = client.post("/api/v1/review/sessions")
+        resp = client.post("/api/v1/review/sessions", json={"mode": "view", "limit": 10})
         assert resp.status_code == 200
         session_uuid = resp.json()["session"]["uuid"]
 
@@ -1205,3 +1205,87 @@ class TestProofAPI:
         resp = client.delete(f"/api/v1/proof/proofs/{proof_uuid}")
         assert resp.status_code == 200
         assert resp.json()["deleted"] is True
+
+
+class TestReviewModes:
+    """Test review quiz mode with distractor generation."""
+
+    def test_quiz_mode(self, client: TestClient):
+        """Start a quiz-mode review session."""
+        # Ensure at least one triple exists
+        client.post(
+            "/api/v1/graph/nodes",
+            json={"node_id": "Q_SUBJ", "labels": {"en": "Quiz Subject"}},
+        )
+        client.post(
+            "/api/v1/graph/nodes",
+            json={"node_id": "Q_OBJ", "labels": {"en": "Quiz Object"}},
+        )
+        client.post(
+            "/api/v1/graph/predicates",
+            json={"predicate_id": "ex:quizPred", "labels": {"en": "quiz predicate"}},
+        )
+        client.post(
+            "/api/v1/graph/triples",
+            json={
+                "subject_id": "Q_SUBJ", "predicate_id": "ex:quizPred",
+                "object_value": "Q_OBJ", "object_type": "uri",
+            },
+        )
+
+        resp = client.post(
+            "/api/v1/review/sessions",
+            json={"mode": "quiz", "limit": 5},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "session" in data
+        assert data["session"]["mode"] == "quiz"
+
+        # Check next question has options (quiz mode)
+        sess_uuid = data["session"]["uuid"]
+        q_resp = client.get(f"/api/v1/review/sessions/{sess_uuid}/next")
+        assert q_resp.status_code == 200
+        q_data = q_resp.json()
+        if not q_data.get("done"):
+            assert "options" in q_data["question"]
+
+    def test_date_filter(self, client: TestClient):
+        """Start a review session with date filter."""
+        resp = client.post(
+            "/api/v1/review/sessions",
+            json={"mode": "view", "date_from": "2020-01-01", "limit": 5},
+        )
+        assert resp.status_code == 200
+
+
+class TestFileAttachment:
+    """Test file attachment API."""
+
+    def test_attach_local_file(self, client: TestClient, tmp_path):
+        """Attach a local file to a node (in-place reference)."""
+        client.post(
+            "/api/v1/graph/nodes",
+            json={"node_id": "FILENODE", "labels": {"en": "File Node"}},
+        )
+
+        # Create a temp file
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("hello world")
+
+        resp = client.post(
+            "/api/v1/files/attach",
+            json={
+                "node_id": "FILENODE",
+                "source": str(test_file),
+                "en_loko": True,  # reference only — no copy
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["triples"]) >= 1
+
+        # Verify triples exist
+        resp = client.get("/api/v1/files/by-node/FILENODE")
+        assert resp.status_code == 200
+        assert len(resp.json()["attachments"]) >= 1

@@ -164,21 +164,27 @@ REVIEW_SCHEMA = {
     "review_sessions": """
         CREATE TABLE IF NOT EXISTS review_sessions (
             uuid        TEXT PRIMARY KEY,
+            mode        TEXT NOT NULL DEFAULT 'view',
+            date_from   TEXT,
+            date_to     TEXT,
             created_at  TEXT NOT NULL,
             total       INTEGER NOT NULL DEFAULT 0,
-            correct     INTEGER NOT NULL DEFAULT 0
+            correct     INTEGER NOT NULL DEFAULT 0,
+            finished    INTEGER NOT NULL DEFAULT 0
         )
     """,
     "review_results": """
         CREATE TABLE IF NOT EXISTS review_results (
-            uuid        TEXT PRIMARY KEY,
+            uuid         TEXT PRIMARY KEY,
             session_uuid TEXT NOT NULL REFERENCES review_sessions(uuid),
-            subject_id  TEXT NOT NULL,
+            subject_id   TEXT NOT NULL,
             predicate_id TEXT NOT NULL,
             object_value TEXT NOT NULL,
-            object_type TEXT NOT NULL DEFAULT 'uri',
-            is_correct  INTEGER NOT NULL DEFAULT 0,
-            answered_at TEXT NOT NULL
+            object_type  TEXT NOT NULL DEFAULT 'uri',
+            is_correct   INTEGER NOT NULL DEFAULT 0,
+            response     TEXT,
+            position     INTEGER NOT NULL DEFAULT 0,
+            answered_at  TEXT NOT NULL DEFAULT ''
         )
     """,
 }
@@ -233,10 +239,35 @@ def init_db() -> None:
     _ensure_nodes_fts(conn)
     _ensure_predicates_fts(conn)
 
+    # Migrate existing review tables (add missing columns)
+    _migrate_review_schema(conn)
+
     conn.commit()
 
     # Seed default predicates if empty
     _seed_default_predicates(db)
+
+
+def _migrate_review_schema(conn: sqlite3.Connection) -> None:
+    """Add missing columns to existing review tables (migration)."""
+    migs = {
+        "review_sessions": [
+            ("mode", "TEXT NOT NULL DEFAULT 'view'"),
+            ("date_from", "TEXT"),
+            ("date_to", "TEXT"),
+            ("finished", "INTEGER NOT NULL DEFAULT 0"),
+        ],
+        "review_results": [
+            ("response", "TEXT"),
+            ("position", "INTEGER NOT NULL DEFAULT 0"),
+        ],
+    }
+    for table, cols in migs.items():
+        for col_name, col_def in cols:
+            try:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
 
 
 def _ensure_nodes_fts(conn: sqlite3.Connection) -> None:
@@ -301,6 +332,11 @@ def _seed_default_predicates(db: SemantikaDB) -> None:
         ("owl:disjointWith", "owl", {"en": "disjoint from", "eo": "malapoga al"}, {"en": "Disjoint from", "eo": "Malapoga al"}),
         ("owl:inverseOf", "owl", {"en": "inverse of", "eo": "inverso de"}, {"en": "Inverse property of", "eo": "Inversa eco de"}),
         ("rdfs:seeAlso", "rdfs", {"en": "see also", "eo": "vidu ankau"}, {"en": "Related resource", "eo": "Rilata rimedo"}),
+        # File attachment predicates
+        (":hasFilePath", "manual", {"en": "file path", "eo": "dosiero-loko"}, {"en": "Path to attached file", "eo": "Loko de alkroĉita dosiero"}),
+        (":hasFileMime", "manual", {"en": "MIME type", "eo": "MIME-tipo"}, {"en": "MIME type of attached file", "eo": "MIME-tipo de alkroĉita dosiero"}),
+        (":hasFileSize", "manual", {"en": "file size", "eo": "grandeco"}, {"en": "File size in bytes", "eo": "Dosiergrandeco en bajtoj"}),
+        (":hasFileSource", "manual", {"en": "file source", "eo": "fontindiko"}, {"en": "Original source path/URL", "eo": "Origina fonta vojo/URL"}),
     ]
 
     ts = now()

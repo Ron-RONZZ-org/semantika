@@ -36,7 +36,12 @@ Traditional knowledge management apps drown you in sidebars, nested menus, and f
 - `!search <query>` — full-text search across nodes, predicates, and triples (by label)
 - `!trash list/restore/purge` — manage soft-deleted nodes (restore or permanently purge)
 - `!export` / `!import` — export/import the graph in Turtle (.ttl) format
-- `!review` — spaced-repetition flashcard review of triples
+- `!review start [view|quiz]` — interactive triple review with two modes:
+  - **view**: show SPO, confirm correct/incorrect
+  - **quiz**: multiple-choice with auto-generated distractors via FTS5 similarity
+  - Optional `--date-from`/`--date-to` / `--limit` filters
+- `!review sessions` — list past review sessions with scores
+- `!files attach <node-id> <path|url>` — attach files to nodes (auto-MIME detection)
 - Just type naturally → the LLM translates your intent into commands
 - As-you-type command suggestions with node/predicate completion — no memorisation needed
 

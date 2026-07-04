@@ -122,9 +122,15 @@ def get_command_tree() -> list[dict]:
         {"name": "stats", "description": "Show graph statistics"},
         {
             "name": "review",
-            "description": "Spaced-repetition flashcard review",
+            "description": "Interactive triple review (view and quiz modes)",
             "children": [
-                {"name": "start", "description": "Start a review session"},
+                {"name": "start", "description": "Start a review session", "params": [
+                    {"name": "mode", "type": "string", "help": "view or quiz (default: view)"},
+                ], "flags": [
+                    {"name": "date-from", "type": "string", "help": "Start date filter (ISO or YYYYMMDD)"},
+                    {"name": "date-to", "type": "string", "help": "End date filter (ISO or YYYYMMDD)"},
+                    {"name": "limit", "type": "number", "help": "Number of questions (default: 10)"},
+                ]},
                 {"name": "sessions", "description": "List past review sessions"},
             ],
         },
@@ -503,7 +509,19 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
         return {"type": "status", "data": {"message": f"Purged {count} item(s) from trash"}}
 
     if path == "review.start":
-        session = svc["review"].create_session()
+        mode = merged.get("mode") or (remaining and remaining[0]) or "view"
+        if mode not in ("view", "quiz"):
+            raise CommandValidationError("Mode must be 'view' or 'quiz'")
+        date_from = flags.get("date_from", None)
+        date_to = flags.get("date_to", None)
+        raw_limit = flags.get("limit", "10")
+        try:
+            limit = int(raw_limit)
+        except ValueError:
+            raise CommandValidationError(f"Invalid limit value: {raw_limit}")
+        session = svc["review"].create_session(
+            mode=mode, date_from=date_from, date_to=date_to, limit=limit,
+        )
         return {"type": "status", "data": session}
 
     if path == "review.sessions":
