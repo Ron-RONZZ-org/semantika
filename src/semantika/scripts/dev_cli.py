@@ -12,7 +12,7 @@ import uvicorn
 def dev_main() -> None:
     parser = argparse.ArgumentParser(description="Semantika dev server")
     parser.add_argument("--seed", action="store_true", help="Seed with test data")
-    parser.add_argument("--port", type=int, default=8000, help="Port to bind")
+    parser.add_argument("--port", type=int, default=8001, help="Port to bind (lighterbird uses 8000)")
     args = parser.parse_args()
 
     # TODO: seed data logic

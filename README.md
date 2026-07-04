@@ -53,6 +53,7 @@ semantika/
 
 ```bash
 # Backend
+# The `.[dev]` suffix installs optional dev dependencies (pytest, ruff, etc.)
 uv pip install -e ".[dev]"
 uv run python -m semantika
 
@@ -62,7 +63,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173 — the Vite dev server proxies API calls to the Python backend on port 8000.
+Open http://localhost:5173 — the Vite dev server proxies API calls to the Python backend on port 8001.
 
 ## Testing
 
@@ -121,29 +122,28 @@ uv run semantika-dev
 
 ```bash
 # Start with clean database
-SEMANTIKA_DATA_DIR=/tmp/semantika-dev uv run uvicorn semantika.server.app:create_app --factory --port 8000
-```
+SEMANTIKA_DATA_DIR=/tmp/semantika-dev uv run uvicorn semantika.server.app:create_app --factory --port 8001
 
 ### Testing API
 
 ```bash
 # List nodes
-curl http://localhost:8000/api/v1/graph/nodes
+curl http://localhost:8001/api/v1/graph/nodes
 
 # Create a node
-curl -X POST http://localhost:8000/api/v1/graph/nodes \
+curl -X POST http://localhost:8001/api/v1/graph/nodes \
   -H "Content-Type: application/json" \
   -d '{"node_id":"CONCEPT","labels":{"en":"My Concept"}}'
 
 # Add a triple
-curl -X POST http://localhost:8000/api/v1/graph/triples \
+curl -X POST http://localhost:8001/api/v1/graph/triples \
   -H "Content-Type: application/json" \
   -d '{"subject_id":"CONCEPT","predicate_id":"rdf:type","object_value":"THING","object_type":"uri"}'
 
 # Execute a command
-curl -X POST http://localhost:8000/api/v1/command/execute \
+curl -X POST http://localhost:8001/api/v1/command \
   -H "Content-Type: application/json" \
-  -d '{"command":"stats"}'
+  -d '{"tokens":["stats"],"flags":{}}'
 ```
 
 ## DB Schema
