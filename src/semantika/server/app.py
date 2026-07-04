@@ -26,6 +26,25 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def startup() -> None:
         init_db()
+        try:
+            from semantika.server.tasks import init_backup_scheduler
+            init_backup_scheduler()
+        except Exception:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Backup scheduler init failed (non-fatal)"
+            )
+
+    @app.on_event("shutdown")
+    async def shutdown() -> None:
+        try:
+            from semantika.server.tasks import shutdown_backup_scheduler
+            shutdown_backup_scheduler(timeout=3.0)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Backup scheduler shutdown failed (non-fatal)"
+            )
 
     # API routes
     from semantika.server.routes import graph, query, command as cmd, review, proof, llm, unit

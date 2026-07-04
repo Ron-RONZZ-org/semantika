@@ -13,7 +13,6 @@ import json
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 
 from semantika.server.command.errors import CommandError, CommandNotFound, CommandValidationError
 from semantika.server.command.models import CommandRequest, CommandResponse
@@ -105,6 +104,36 @@ def get_command_tree() -> list[dict]:
             "children": [
                 {"name": "start", "description": "Start a review session"},
                 {"name": "sessions", "description": "List past review sessions"},
+            ],
+        },
+        {
+            "name": "backup",
+            "description": "Database backup and restore",
+            "children": [
+                {"name": "now", "description": "Create timestamped DB backup for all strategies"},
+                {"name": "list", "description": "List available backup snapshots"},
+                {"name": "restore", "description": "Restore from latest (or --timestamp) backup"},
+                {"name": "prune", "description": "Delete old backups, keeping N newest", "params": [{"name": "keep", "type": "number"}]},
+                {
+                    "name": "config",
+                    "description": "Backup strategy management",
+                    "children": [
+                        {"name": "list", "description": "List backup strategies"},
+                        {"name": "add", "description": "Add a backup strategy", "params": [
+                            {"name": "id", "type": "string", "required": True},
+                            {"name": "label", "type": "string"},
+                            {"name": "interval", "type": "number"},
+                            {"name": "max_copies", "type": "number"},
+                            {"name": "target", "type": "string"},
+                            {"name": "enabled", "type": "string"},
+                        ]},
+                        {"name": "modify", "description": "Modify a backup strategy", "params": [{"name": "id", "type": "string", "required": True}]},
+                        {"name": "delete", "description": "Delete a backup strategy", "params": [{"name": "id", "type": "string", "required": True}]},
+                        {"name": "test", "description": "Test a strategy's target directory", "params": [{"name": "id", "type": "string", "required": True}]},
+                    ],
+                },
+                {"name": "export", "description": "Export all data to a portable zip", "params": [{"name": "output", "type": "string"}]},
+                {"name": "import", "description": "Import data from an export zip", "params": [{"name": "path", "type": "string", "required": True}]},
             ],
         },
     ]
@@ -335,7 +364,400 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
         sessions = svc["review"].list_sessions()
         return {"type": "table", "data": sessions, "label": "Review Sessions"}
 
+    # ── Backup command handlers ──────────────────────────────────────────
+    if path == "backup":
+        return {
+            "type": "status",
+            "title": "Backup Commands",
+            "data": {
+                "_summary": (
+                    "Available !backup commands:\n"
+                    "  !backup now             — Create timestamped DB backup for all strategies\n"
+                    "  !backup list            — List available backup snapshots\n"
+                    "  !backup restore         — Restore from the latest backup\n"
+                    "  !backup prune           — Delete old backups, keeping N newest\n"
+                    "  !backup config          — View backup config summary\n"
+                    "  !backup config list     — List backup strategies\n"
+                    "  !backup config add      — Add a backup strategy\n"
+                    "  !backup config modify   — Modify a backup strategy\n"
+                    "  !backup config delete   — Delete a backup strategy\n"
+                    "  !backup config test     — Test a strategy's target\n"
+                    "  !backup export          — Export all data to a portable zip\n"
+                    "  !backup import          — Import data from an export zip\n"
+                ),
+            },
+        }
+
+    if path == "backup.now":
+        from semantika.core.backup import backup_all_strategies, load_config, resolve_target_path
+
+        created = backup_all_strategies()
+        if not created:
+            return {"type": "status", "title": "Backup", "data": {"message": "No data files found to back up."}}
+
+        cfg = load_config()
+        loc_lines = ["  Local backup dir: " + _backup_dir_abs()]
+        for s in cfg.get("strategies", []):
+            loc_lines.append(f"  {s['id']}: {resolve_target_path(s)}")
+        location = "\n".join(loc_lines)
+
+        return {
+            "type": "status",
+            "title": "Backup Complete",
+            "data": {
+                "message": f"Created {len(created)} backup(s).\n\nBackup location:\n{location}",
+                "backups": [str(p) for p in created],
+            },
+        }
+
+    if path == "backup.list":
+        from semantika.core.backup import list_backups as _list_backups
+
+        stem = flags.get("stem")
+        strategy_filter = flags.get("strategy")
+        backups = _list_backups()
+        if stem:
+            backups = [b for b in backups if b["stem"] == stem]
+        if strategy_filter:
+            backups = [b for b in backups if b["strategy"] == strategy_filter]
+
+        if not backups:
+            return {"type": "status", "title": "Backups", "data": {"message": "No backups found."}}
+
+        entries = []
+        for b in backups:
+            entries.append({
+                "file": b["path"].name,
+                "timestamp": _fmt_ts(b["timestamp"]),
+                "size": _fmt_size(b["size_bytes"]),
+                "database": b["stem"],
+                "strategy": b.get("strategy", "legacy"),
+            })
+
+        return {
+            "type": "status",
+            "title": f"Backups ({len(entries)})",
+            "data": {"entries": entries},
+        }
+
+    if path == "backup.restore":
+        from semantika.core.backup import restore_latest, restore_by_timestamp
+        from semantika.graph.db import get_db_path, close_db
+
+        timestamp = flags.get("timestamp")
+
+        # Close the DB connection before overwriting the file
+        close_db()
+
+        target = str(get_db_path().parent)
+        try:
+            if timestamp:
+                restored = restore_by_timestamp(timestamp, target)
+            else:
+                restored = restore_latest(target)
+        except (FileNotFoundError, LookupError, OSError) as e:
+            raise CommandValidationError(str(e))
+
+        # Reinitialize the DB
+        from semantika.graph.db import init_db
+        init_db()
+
+        return {
+            "type": "status",
+            "title": "Restore Complete",
+            "data": {
+                "message": f"Restored to: {restored}",
+                "file": str(restored),
+            },
+        }
+
+    if path == "backup.prune":
+        from semantika.core.backup import prune_backups
+
+        raw = flags.get("keep", "")
+        if raw:
+            try:
+                retention = int(raw)
+            except ValueError:
+                raise CommandValidationError(f"Invalid --keep value: {raw}")
+        else:
+            retention = None
+
+        deleted = prune_backups(retention=retention)
+        return {
+            "type": "status",
+            "title": "Backup Pruned",
+            "data": {"message": f"Deleted {deleted} old backup(s)."},
+        }
+
+    if path == "backup.config":
+        from semantika.core.backup import load_config, resolve_target_path
+
+        cfg = load_config()
+        strategies = cfg.get("strategies", [])
+        enabled_count = sum(1 for s in strategies if s.get("enabled", True))
+
+        summary = (
+            f"Backup strategies: {len(strategies)} configured ({enabled_count} enabled)\n"
+        )
+        for s in strategies:
+            status = "✓" if s.get("enabled", True) else "✗"
+            interval = s.get("interval_minutes", 0)
+            sched_str = f"{interval} min" if interval > 0 else "on-demand"
+            summary += (
+                f"  {status} {s['id']:12s}  {s.get('label', ''):20s}  "
+                f"max {s.get('max_copies', 10):3d}  target={resolve_target_path(s)}  "
+                f"every {sched_str}\n"
+            )
+        summary += "\nUse !backup config list for interactive management."
+
+        return {
+            "type": "status",
+            "title": "Backup Config",
+            "data": {"_summary": summary},
+        }
+
+    if path == "backup.config.list":
+        from semantika.core.backup import list_strategies, resolve_target_path
+
+        strategies = list_strategies()
+        for s in strategies:
+            s["_resolved_target"] = resolve_target_path(s)
+        return {
+            "type": "status",
+            "title": f"Backup Strategies ({len(strategies)})",
+            "data": {"strategies": strategies},
+        }
+
+    if path == "backup.config.add":
+        from semantika.core.backup import BackupStrategy, add_strategy
+
+        sid = flags.get("id", "")
+        if not sid:
+            raise CommandValidationError(
+                "Missing --id", "Usage: !backup config add --id daily --label 'Daily backups'"
+            )
+
+        label = flags.get("label", "") or sid
+        raw_interval = flags.get("interval", "0")
+        try:
+            interval_minutes = int(raw_interval)
+        except ValueError:
+            raise CommandValidationError(f"Invalid --interval value: {raw_interval}")
+        raw_max = flags.get("max_copies", "10")
+        try:
+            max_copies = int(raw_max)
+        except ValueError:
+            raise CommandValidationError(f"Invalid --max-copies value: {raw_max}")
+        if interval_minutes < 0:
+            raise CommandValidationError("--interval must be >= 0")
+        target = flags.get("target", "local")
+        enabled_raw = flags.get("enabled", "true")
+        enabled = enabled_raw.lower() in ("true", "1", "yes")
+
+        try:
+            strategy = BackupStrategy(
+                id=sid,
+                label=label,
+                interval_minutes=interval_minutes,
+                max_copies=max_copies,
+                target=target,
+                enabled=enabled,
+            )
+            add_strategy(strategy)
+        except ValueError as e:
+            raise CommandValidationError(str(e))
+
+        return {
+            "type": "status",
+            "title": "Strategy Added",
+            "data": {"strategy": sid, "message": f"Added backup strategy '{sid}'."},
+        }
+
+    if path == "backup.config.modify":
+        from semantika.core.backup import get_strategy, update_strategy
+
+        if not remaining:
+            raise CommandValidationError(
+                "Missing strategy id.", "Usage: !backup config modify daily --max-copies 5"
+            )
+        sid = remaining[0]
+        strategy = get_strategy(sid)
+        if strategy is None:
+            raise CommandValidationError(f"Strategy '{sid}' not found.")
+
+        updates: dict[str, Any] = {}
+        if "label" in flags:
+            updates["label"] = flags["label"]
+        if "interval" in flags:
+            raw = flags["interval"]
+            try:
+                updates["interval_minutes"] = int(raw)
+            except ValueError:
+                raise CommandValidationError(f"Invalid interval value: {raw}")
+        if "max_copies" in flags:
+            updates["max_copies"] = flags["max_copies"]
+        if "target" in flags:
+            updates["target"] = flags["target"]
+        if "enabled" in flags:
+            raw = flags["enabled"]
+            updates["enabled"] = raw.lower() in ("true", "1", "yes") if raw else not strategy.get("enabled", True)
+
+        if not updates:
+            raise CommandValidationError(
+                "No changes specified.",
+                "Use --label, --interval, --max-copies, --target, or --enabled.",
+            )
+
+        try:
+            update_strategy(sid, updates)
+        except ValueError as e:
+            raise CommandValidationError(str(e))
+
+        return {
+            "type": "status",
+            "title": "Strategy Modified",
+            "data": {
+                "strategy": sid,
+                "changed": list(updates.keys()),
+                "message": f"Modified strategy '{sid}': {', '.join(updates.keys())}.",
+            },
+        }
+
+    if path == "backup.config.delete":
+        from semantika.core.backup import remove_strategy
+
+        if not remaining:
+            raise CommandValidationError(
+                "Missing strategy id.", "Usage: !backup config delete daily"
+            )
+        sid = remaining[0]
+        try:
+            remove_strategy(sid)
+        except ValueError as e:
+            raise CommandValidationError(str(e))
+
+        return {
+            "type": "status",
+            "title": "Strategy Deleted",
+            "data": {"strategy": sid, "message": f"Deleted backup strategy '{sid}'."},
+        }
+
+    if path == "backup.config.test":
+        from semantika.core.backup import verify_strategy_target
+
+        if not remaining:
+            raise CommandValidationError(
+                "Missing strategy id.", "Usage: !backup config test daily"
+            )
+        sid = remaining[0]
+        try:
+            result = verify_strategy_target(sid)
+        except ValueError as e:
+            raise CommandValidationError(str(e))
+
+        if result.get("success"):
+            return {"type": "status", "title": "Test Passed", "data": {"message": result["message"]}}
+        return {
+            "type": "error",
+            "title": "Test Failed",
+            "data": {"message": result.get("message", ""), "error": result.get("error", "")},
+        }
+
+    if path == "backup.export":
+        from semantika.core.backup import export_data
+
+        output = flags.get("output", ".")
+        try:
+            export_path = export_data(output)
+        except OSError as e:
+            raise CommandValidationError(f"Export failed: {e}")
+
+        return {
+            "type": "status",
+            "title": "Export Complete",
+            "data": {
+                "path": str(export_path),
+                "message": f"Data exported to: {export_path}",
+            },
+        }
+
+    if path == "backup.import":
+        from semantika.core.backup import import_data
+        from semantika.graph.db import close_db
+
+        if not remaining:
+            raise CommandValidationError(
+                "Missing export path.", "Usage: !backup import <path> [--force]"
+            )
+
+        export_path = remaining[0]
+        force = "force" in flags
+
+        # Close DB before overwriting
+        close_db()
+
+        try:
+            result = import_data(export_path, force=force)
+        except (FileNotFoundError, ValueError, OSError) as e:
+            raise CommandValidationError(f"Import failed: {e}")
+
+        # Re-initialize DB after import
+        if result.get("imported"):
+            from semantika.graph.db import init_db
+            init_db()
+
+        imported = result.get("imported", [])
+        skipped = result.get("skipped", [])
+        errors = result.get("errors", [])
+
+        msg_parts = [f"Imported {len(imported)} file(s)."]
+        if skipped:
+            msg_parts.append(f"{len(skipped)} skipped.")
+        if errors:
+            msg_parts.append(f"{len(errors)} error(s).")
+
+        return {
+            "type": "status",
+            "title": "Import Complete",
+            "data": {
+                "imported": imported,
+                "skipped": skipped,
+                "errors": errors,
+                "message": " ".join(msg_parts),
+            },
+        }
+
     raise CommandNotFound(tokens)
+
+
+# ── Backup helpers ────────────────────────────────────────────────────────
+
+
+def _fmt_size(b: int) -> str:
+    """Format a byte count for human display."""
+    if b < 1024:
+        return f"{b} B"
+    if b < 1024 * 1024:
+        return f"{b / 1024:.1f} KiB"
+    return f"{b / (1024 * 1024):.1f} MiB"
+
+
+def _fmt_ts(ts: str) -> str:
+    """Format a backup timestamp for human display."""
+    if len(ts) >= 15:
+        base = f"{ts[:4]}-{ts[4:6]}-{ts[6:8]} {ts[9:11]}:{ts[11:13]}:{ts[13:15]}"
+        # Append microseconds if available
+        if len(ts) > 15:
+            base += f".{ts[15:21]}"
+        return base
+    return ts
+
+
+def _backup_dir_abs() -> str:
+    """Return the absolute path of the default backup directory."""
+    from semantika.core.paths import data_dir
+    return str((data_dir() / ".backups").resolve())
 
 
 # ── Routes ───────────────────────────────────────────────────────────────
@@ -385,6 +807,9 @@ def help_text() -> dict:
             {"cmd": "!export", "desc": "Export as Turtle"},
             {"cmd": "!stats", "desc": "Graph statistics"},
             {"cmd": "!review start/sessions", "desc": "Flashcard review"},
+            {"cmd": "!backup now/list/restore/prune", "desc": "Database backup"},
+            {"cmd": "!backup config list/add/modify/delete", "desc": "Backup strategies"},
+            {"cmd": "!backup export/import", "desc": "Portable data export/import"},
             {"cmd": "!ask <question>", "desc": "Ask the LLM about the graph"},
         ]
     }

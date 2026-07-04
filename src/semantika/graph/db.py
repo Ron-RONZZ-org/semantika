@@ -39,6 +39,24 @@ def get_db() -> SemantikaDB:
     return _db_instance
 
 
+def close_db() -> None:
+    """Close and reset the singleton database instance.
+
+    Used before restore operations so the file can be overwritten.
+    """
+    global _db_instance, _db_path
+    if _db_instance is not None:
+        try:
+            _db_instance.close()
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Error closing DB: %s", exc
+            )
+        _db_instance = None
+        _db_path = None
+
+
 def get_services() -> dict[str, Any]:
     """Return a dict of all service singletons.
 
