@@ -1,0 +1,203 @@
+# AGENTS.md — Root Project Rules for Semantika
+
+This is the canonical, repo-wide instruction file for AI agents working on **Semantika**.
+
+## Hierarchical Context Model
+
+Agents **must** follow this rule:
+
+> When working inside a directory, load the nearest `AGENTS.md` file and merge it with parent `AGENTS.md` files up to root.
+> Local rules override global rules.
+
+Context resolution order (highest priority first):
+1. `AGENTS-[module].md` in module directories — module-specific context
+2. `AGENTS.md` in current working directory (if present)
+3. Root `AGENTS.md` — global project rules
+
+---
+## Project Overview
+
+**Semantika** is a command-driven knowledge graph tool integrating semantic triple storage, natural-language querying, and LLM-native interaction into a single webapp with BYOK (Bring Your Own Key) LLM support.
+
+The interaction model is a **centralized command box** — type `!node add` to create entities, `!ask "What do I know about X?"` to query naturally, or just type naturally to chat with the built-in LLM. The philosophy: *you see only what you need* — no sidebars, no bloat.
+
+The backend is forked from proven code in [A-semantika](../A-semantika) (triple store services) and [A-core](../A-core) (DB, FTS5, paths). The frontend is a Svelte SPA served by a FastAPI Python server.
+
+---
+
+## Language and Naming Conventions
+
+- **Source code**: English (variable names, comments, docstrings)
+- **User-facing strings**: English first (i18n can be added later)
+- **CLI command names**: English, **singular form** (`node`, `predicate`, `triple`, `search`, `export`, `review`, `proof`) — the `!` commands are user-facing
+- **URL paths, route names**: lowercase with hyphens (`/api/v1/graph/nodes`)
+- **Database columns**: English names throughout (e.g., `node_id`, `labels`, `definitions`, `created_at`). Migrated from A-semantika's Esperanto convention.
+
+---
+
+## Tech Stack
+
+| Layer | Technology | Rationale |
+|-------|-----------|-----------|
+| Backend | Python 3.11+ | Ecosystem, existing codebase |
+| Backend framework | FastAPI + uvicorn | Lightweight, async, auto-docs |
+| Frontend | Svelte 5 SPA | Minimal bundle, excellent custom component DX |
+| Frontend build | Vite + svelte-spa-router | Fast dev, static export possible |
+| Database | SQLite (WAL mode) | Embedded, zero-config, sufficient for single-user |
+| Credential storage | System keyring (via `keyring` library) | Never store API keys in DB |
+| AI providers | OpenAI-compatible API + Ollama | BYOK: bring your own model/key |
+| Package manager | `uv` (development), `pip` (user install) | Fast, modern, reproducible |
+| Build system | Hatchling | PEP 517 compliant, simple |
+
+---
+
+## Dependency Management
+
+This project uses **uv** for development:
+
+| Operation | Command |
+|-----------|---------|
+| Install project in dev mode | `uv pip install -e .` |
+| Install dev deps | `uv pip install -e ".[dev]"` |
+| Run tests | `uv run pytest tests/` |
+| Run isolated dev server | `uv run semantika-dev --seed` |
+| Add dependency | `uv add <pkg>` |
+| Add dev dependency | `uv pip install <pkg>` |
+
+---
+
+## Source Tree Structure
+
+```
+semantika/
+├── AGENTS.md                    # This file — global project rules
+├── README.md
+├── LICENSE                      # AGPL-3.0
+├── pyproject.toml
+├── .gitignore
+├── src/
+│   └── semantika/               # Main Python package
+│       ├── __init__.py
+│       ├── __main__.py          # python -m semantika entry point
+│       ├── scripts/             # Dev tooling: seed data generator, dev CLI
+│       │   ├── __init__.py
+│       │   ├── dev_cli.py       # semantika-dev CLI entry point
+│       │   └── seed.py          # Seed data generator for test databases
+│       ├── core/                # Vendored from A-core: DB, crypto, paths, FTS
+│       ├── graph/               # Triple store services (forked from A-semantika)
+│       │   ├── __init__.py
+│       │   └── services/        # NodeService, PredicateService, TripleService, etc.
+│       └── server/              # FastAPI web server
+│           ├── __init__.py
+│           ├── app.py           # Application factory
+│           ├── routes/          # API routes
+│           ├── command/         # !command parsing + dispatch
+│           └── llm/             # LLM provider abstraction
+├── tests/                       # Shared tests root
+│   ├── test_core/
+│   ├── test_graph/
+│   └── test_server/
+├── core/                        # AGENTS-core.md
+├── graph/                       # AGENTS-graph.md
+├── server/                      # AGENTS-server.md
+├── scripts/                     # AGENTS-scripts.md
+└── web/                         # Svelte frontend (separate Node project)
+    └── AGENTS-web.md
+```
+
+---
+
+## GUI + CLI Parity Requirement
+
+**All functionalities MUST be accessible via BOTH GUI and CLI.** No feature may be CLI-only or GUI-only. This means:
+
+- Every `!command` must have a corresponding GUI panel (form, tab, or overlay) accessible through the command bar.
+- Every GUI form/panel must have a corresponding `!command` accessible via the centralized command box.
+- When adding a new feature, implement both the CLI handler (backend) and the GUI component (Svelte) simultaneously.
+- The authoritative command metadata lives in `src/semantika/server/command/tree.py` (backend). The frontend fetches it on startup via `GET /api/v1/command/tree`.
+
+---
+
+## Coding Guidelines
+
+1. **No file > 500 lines.** Split by functional unit.
+2. **Type hints on all public functions.** Use `from __future__ import annotations`.
+3. **Docstrings on all public functions.** Google-style or reStructuredText.
+4. **Tests required for all modules.** `pytest` with `tmp_path` isolation for DB tests.
+5. **SQLite in WAL mode.** Use `pragma journal_mode=wal` on connection.
+6. **API keys in system keyring only.** Never in SQLite, config files, or environment (beyond dev).
+7. **Async where it matters.** FastAPI routes are async; business logic can be sync.
+8. **Error messages include actionable suggestions.**
+9. **Missing CLI args → form popup (default behaviour).** When a `!command` is invoked with missing required options and the command has an interactive form registered, the system redirects the user to a form with pre-filled options. All interactive commands must be registered in `tree.py` (backend) with `interactive: true`.
+
+---
+
+## Commit Message Format
+
+Use [Conventional Commits](https://www.conventionalcommits.org/):
+- `feat:` — new user-facing feature
+- `fix:` — bug fix
+- `docs:` — documentation only
+- `chore:` — tooling, config, CI
+- `test:` — test additions/fixes
+- `refactor:` — code restructuring with no behavior change
+- `web:` — frontend-only changes (Svelte)
+- `server:` — backend API changes
+
+---
+
+## Testing Requirements
+
+| Aspect | Convention |
+|--------|-----------|
+| Framework | pytest |
+| Run all tests | `uv run pytest tests/` |
+| Run single test file | `uv run pytest tests/test_graph/test_nodes.py -v` |
+| Test directory | `tests/` |
+
+### Testing Principles
+
+1. **Test via the public API wherever possible.** Prefer integration tests over isolated unit tests.
+2. **Console errors in browser tests indicate real bugs** — fix them even if tests pass.
+3. **Every bug fix must include a test that would have caught the regression.**
+
+---
+
+## What to Avoid
+
+- **Do not import from A-ecosystem packages at runtime.** Semantika forks the code — all dependencies must be vendored under `src/semantika/`.
+- **Do not duplicate logic across modules.** Shared utilities go in `core`.
+- **Do not use `print()` for user output.** Use FastAPI structured responses or logging.
+- **Do not store API keys in SQLite.** Keyring only.
+- **Do not add heavy frameworks** (Django, SQLAlchemy, Celery) — this is a lightweight single-user app.
+- **Do not hardcode paths.** Use `core.paths` module for XDG-compliant resolution.
+
+---
+
+## Module-Level AGENTS Files
+
+| Module | AGENTS File | Description |
+|--------|-------------|-------------|
+| Core | `core/AGENTS-core.md` | DB, FTS5, paths, interactive helpers |
+| Graph | `graph/AGENTS-graph.md` | Triple store services (node, predicate, triple, recenzi, provo) |
+| Server | `server/AGENTS-server.md` | FastAPI routes, command engine, LLM |
+| Scripts | `scripts/AGENTS-scripts.md` | Dev CLI, seed data generator |
+| Web | `web/AGENTS-web.md` | Svelte SPA, command-bar UI |
+
+(Update this table as new modules are added)
+
+---
+
+## Dependency and Inheritance Map
+
+```
+Root AGENTS.md (global rules)
+    │
+    ├── core/AGENTS-core.md       DB, FTS5, paths, interactive helpers
+    ├── graph/AGENTS-graph.md     Triple store: nodes, predicates, triples, recenzi, provo
+    ├── server/AGENTS-server.md   FastAPI backend, API routes, LLM
+    ├── scripts/AGENTS-scripts.md Dev CLI, seed data, test infra
+    └── web/AGENTS-web.md         Svelte SPA frontend
+```
+
+Local rules override global rules. Module-level files focus on domain-specific behavior, constraints, and invariants.

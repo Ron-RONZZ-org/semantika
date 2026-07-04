@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "semantika"
+version = "0.1.0"
+description = "Knowledge graph CLI+GUI with LLM — semantic triple store with Svelte frontend"
+authors = [{name = "Rong ZHOU"}]
+readme = "README.md"
+license = "AGPL-3.0-only"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.27.0",
+    "cryptography>=42.0.0",
+    "httpx>=0.27.0",
+    "openai>=1.12.0",
+    "pydantic>=2.0.0",
+    "mistune>=3.3.2",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-mock>=3.14.0",
+    "ruff>=0.4.0",
+]
+
+[project.scripts]
+semantika-dev = "semantika.scripts.dev_cli:dev_main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/semantika"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "e2e: E2E browser tests (skipped by default; use --e2e to run)",
+]
+
+[tool.ruff.lint]
+select = ["S110", "S112", "E", "F", "I"]
