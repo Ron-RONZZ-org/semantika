@@ -28,7 +28,7 @@ def create_app() -> FastAPI:
         init_db()
 
     # API routes
-    from semantika.server.routes import graph, query, command as cmd, review, proof, llm
+    from semantika.server.routes import graph, query, command as cmd, review, proof, llm, unit
 
     app.include_router(graph.router, prefix="/api/v1/graph")
     app.include_router(query.router, prefix="/api/v1/query")
@@ -36,6 +36,7 @@ def create_app() -> FastAPI:
     app.include_router(review.router, prefix="/api/v1/review")
     app.include_router(proof.router, prefix="/api/v1/proof")
     app.include_router(llm.router, prefix="/api/v1/llm")
+    app.include_router(unit.router, prefix="/api/v1")
 
     # Static files (Svelte SPA)
     dist = Path(__file__).resolve().parent.parent.parent.parent / "web" / "dist"
