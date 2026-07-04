@@ -11,9 +11,16 @@
   function _inferCommandPath(formType) {
     const map = {
       "node-add": ["node", "add"],
+      "node-delete": ["node", "delete"],
       "predicate-add": ["predicate", "add"],
+      "predicate-delete": ["predicate", "delete"],
       "triple-add": ["triple", "add"],
+      "triple-delete": ["triple", "delete"],
+      "triple-modify": ["triple", "modify"],
       "unit-add": ["unit", "add"],
+      "proof-add": ["proof", "add"],
+      "predicate-group-add": ["predicate-group", "add"],
+      "reset-no-backup": ["reset"],
     };
     return map[formType] || [];
   }

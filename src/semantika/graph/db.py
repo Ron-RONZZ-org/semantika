@@ -143,10 +143,11 @@ SCHEMA = {
             object_value    TEXT NOT NULL,
             object_lang     TEXT DEFAULT NULL,
             object_datatype TEXT DEFAULT NULL,
+            object_unit     TEXT DEFAULT NULL,
+            created_at      TEXT NOT NULL,
             object_node_id  TEXT GENERATED ALWAYS AS (
                 CASE WHEN object_type='uri' THEN object_value ELSE NULL END
             ) STORED REFERENCES nodes(node_id),
-            created_at      TEXT NOT NULL,
             PRIMARY KEY (subject_id, predicate_id, object_value, object_type)
         ) WITHOUT ROWID
     """,
@@ -242,6 +243,9 @@ def init_db() -> None:
     # Migrate existing review tables (add missing columns)
     _migrate_review_schema(conn)
 
+    # Migrate triples table (add object_unit)
+    _migrate_triples_schema(conn)
+
     conn.commit()
 
     # Seed default predicates if empty
@@ -260,6 +264,21 @@ def _migrate_review_schema(conn: sqlite3.Connection) -> None:
         "review_results": [
             ("response", "TEXT"),
             ("position", "INTEGER NOT NULL DEFAULT 0"),
+        ],
+    }
+    for table, cols in migs.items():
+        for col_name, col_def in cols:
+            try:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+
+
+def _migrate_triples_schema(conn: sqlite3.Connection) -> None:
+    """Add missing columns to existing triples table (migration)."""
+    migs = {
+        "triples": [
+            ("object_unit", "TEXT DEFAULT NULL"),
         ],
     }
     for table, cols in migs.items():

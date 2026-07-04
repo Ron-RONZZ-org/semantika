@@ -10,6 +10,7 @@ Ported from lighterbird's command dispatch pattern.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -22,9 +23,15 @@ router = APIRouter(tags=["command"])
 # ── Interactive command form mapping ──────────────────────────────────────
 _INTERACTIVE_FORMS: dict[str, str] = {
     "node.add": "node-add",
+    "node.delete": "node-delete",
     "predicate.add": "predicate-add",
+    "predicate.delete": "predicate-delete",
     "triple.add": "triple-add",
+    "triple.delete": "triple-delete",
+    "triple.modify": "triple-modify",
     "unit.add": "unit-add",
+    "proof.add": "proof-add",
+    "predicate-group.add": "predicate-group-add",
     "reset": "reset-no-backup",
 }
 
@@ -50,7 +57,16 @@ def get_command_tree() -> list[dict]:
                 {"name": "search", "description": "Search nodes by label", "params": [{"name": "q", "type": "string", "required": True}]},
                 {"name": "view", "description": "View a node and its triples", "params": [{"name": "id", "type": "string", "required": True}]},
                 {"name": "add", "description": "Create a new node", "interactive": True, "params": [{"name": "labels", "type": "string"}]},
-                {"name": "delete", "description": "Delete a node", "params": [{"name": "id", "type": "string", "required": True}]},
+                {"name": "update", "description": "Update node labels/definitions", "params": [
+                    {"name": "id", "type": "string", "required": True},
+                    {"name": "labels", "type": "string"},
+                ], "flags": [
+                    {"name": "definitions", "type": "string", "help": "New definitions (JSON or LANG::TEXT)"},
+                    {"name": "new-id", "type": "string", "help": "Rename to new ID"},
+                ]},
+                {"name": "delete", "description": "Delete nodes (multiple IDs or --prefix)", "interactive": True, "params": [{"name": "id", "type": "string"}], "flags": [
+                    {"name": "prefix", "type": "string", "help": "Delete all nodes with this ID prefix"},
+                ]},
                 {"name": "merge", "description": "Merge source node into target node", "params": [
                     {"name": "source", "type": "string", "required": True},
                     {"name": "target", "type": "string", "required": True},
@@ -66,18 +82,52 @@ def get_command_tree() -> list[dict]:
             "description": "Manage predicates (semantic properties)",
             "children": [
                 {"name": "list", "description": "List all predicates"},
-                {"name": "search", "description": "Search predicates", "params": [{"name": "q", "type": "string", "required": True}]},
-                {"name": "add", "description": "Create a predicate", "interactive": True, "params": [{"name": "predicate_id", "type": "string", "required": True}]},
+                {"name": "search", "description": "Search predicates", "params": [{"name": "q", "type": "string", "required": True}], "flags": [
+                    {"name": "wikidata", "type": "flag", "help": "Also search Wikidata"},
+                ]},
+                {"name": "view", "description": "View predicate details", "params": [{"name": "predicate_id", "type": "string", "required": True}]},
+                {"name": "add", "description": "Create a predicate", "interactive": True, "params": [{"name": "predicate_id", "type": "string", "required": True}], "flags": [
+                    {"name": "wikidata", "type": "flag", "help": "Auto-fetch labels from Wikidata"},
+                    {"name": "labels", "type": "string", "help": "Labels as LANG::TEXT (repeatable)"},
+                    {"name": "descriptions", "type": "string", "help": "Descriptions as LANG::TEXT (repeatable)"},
+                ]},
                 {"name": "update", "description": "Update a predicate", "params": [
                     {"name": "predicate_id", "type": "string", "required": True},
-                    {"name": "labels", "type": "string"},
+                ], "flags": [
+                    {"name": "labels", "type": "string", "help": "Labels as LANG::TEXT (repeatable)"},
+                    {"name": "descriptions", "type": "string", "help": "Descriptions as LANG::TEXT (repeatable)"},
+                    {"name": "replace", "type": "flag", "help": "Replace instead of merging labels/descriptions"},
+                    {"name": "new-id", "type": "string", "help": "Rename to new ID"},
                 ]},
-                {"name": "delete", "description": "Delete a predicate", "params": [
-                    {"name": "predicate_id", "type": "string", "required": True},
+                {"name": "delete", "description": "Delete predicates (multiple IDs or --prefix)", "interactive": True, "params": [{"name": "predicate_id", "type": "string"}], "flags": [
+                    {"name": "prefix", "type": "string", "help": "Delete all predicates with this ID prefix"},
                 ]},
                 {"name": "rename", "description": "Rename a predicate", "params": [
                     {"name": "predicate_id", "type": "string", "required": True},
                     {"name": "new_id", "type": "string", "required": True},
+                ]},
+            ],
+        },
+        {
+            "name": "predicate-group",
+            "description": "Manage predicate groups",
+            "children": [
+                {"name": "list", "description": "List all predicate groups"},
+                {"name": "view", "description": "View group details and members", "params": [{"name": "name", "type": "string", "required": True}]},
+                {"name": "add", "description": "Create a predicate group", "interactive": True, "params": [{"name": "name", "type": "string", "required": True}]},
+                {"name": "rename", "description": "Rename a predicate group", "params": [
+                    {"name": "name", "type": "string", "required": True},
+                    {"name": "new_name", "type": "string", "required": True},
+                ]},
+                {"name": "delete", "description": "Delete predicate groups", "params": [{"name": "name", "type": "string", "required": True}]},
+                {"name": "search", "description": "Search groups by name", "params": [{"name": "q", "type": "string", "required": True}]},
+                {"name": "add-member", "description": "Add predicate to group", "params": [
+                    {"name": "group", "type": "string", "required": True},
+                    {"name": "predicate_id", "type": "string", "required": True},
+                ]},
+                {"name": "remove-member", "description": "Remove predicate from group", "params": [
+                    {"name": "group", "type": "string", "required": True},
+                    {"name": "predicate_id", "type": "string", "required": True},
                 ]},
             ],
         },
@@ -90,7 +140,40 @@ def get_command_tree() -> list[dict]:
                     {"name": "subject_id", "type": "string", "required": True},
                     {"name": "predicate_id", "type": "string", "required": True},
                     {"name": "object_value", "type": "string", "required": True},
+                ], "flags": [
+                    {"name": "str", "type": "flag", "help": "Object is a string literal"},
+                    {"name": "int", "type": "flag", "help": "Object is an integer literal"},
+                    {"name": "float", "type": "flag", "help": "Object is a float literal"},
+                    {"name": "bool", "type": "flag", "help": "Object is a boolean literal"},
+                    {"name": "lang", "type": "string", "help": "Language tag (with --str)"},
+                    {"name": "unit", "type": "string", "help": "Unit node ID (with --int/--float)"},
+                    {"name": "katex", "type": "string", "help": "KaTeX formula"},
+                    {"name": "str-dosiero", "type": "string", "help": "Read file as string literal"},
+                    {"name": "kodlingvo", "type": "string", "help": "Programming language for code block"},
                 ]},
+                {"name": "delete", "description": "Delete a triple (interactive picker if args partial)", "interactive": True, "params": [
+                    {"name": "subject", "type": "string", "required": True},
+                    {"name": "predicate", "type": "string"},
+                    {"name": "object", "type": "string"},
+                ]},
+                {"name": "modify", "description": "Modify an existing triple", "interactive": True, "params": [
+                    {"name": "subject", "type": "string", "required": True},
+                    {"name": "predicate", "type": "string"},
+                    {"name": "object", "type": "string"},
+                ], "flags": [
+                    {"name": "new-subject", "type": "string", "help": "New subject ID"},
+                    {"name": "new-predicate", "type": "string", "help": "New predicate ID"},
+                    {"name": "new-object", "type": "string", "help": "New object value"},
+                    {"name": "str", "type": "flag", "help": "New object is a string literal"},
+                    {"name": "int", "type": "flag", "help": "New object is integer literal"},
+                    {"name": "float", "type": "flag", "help": "New object is float literal"},
+                    {"name": "bool", "type": "flag", "help": "New object is boolean literal"},
+                    {"name": "lang", "type": "string", "help": "Language tag"},
+                    {"name": "unit", "type": "string", "help": "Unit node ID"},
+                    {"name": "katex", "type": "string", "help": "KaTeX formula"},
+                    {"name": "str-dosiero", "type": "string", "help": "Read file as string"},
+                ]},
+                {"name": "view", "description": "View all triples for a node", "params": [{"name": "id", "type": "string", "required": True}]},
             ],
         },
         {
@@ -100,6 +183,7 @@ def get_command_tree() -> list[dict]:
                 {"name": "list", "description": "List all units"},
                 {"name": "view", "description": "View unit details", "params": [{"name": "id", "type": "string", "required": True}]},
                 {"name": "resolve", "description": "Resolve a unit expression", "params": [{"name": "expr", "type": "string", "required": True}]},
+                {"name": "decompose", "description": "Decompose a compound unit", "params": [{"name": "id", "type": "string", "required": True}]},
                 {"name": "add", "description": "Create a custom unit", "interactive": True},
             ],
         },
@@ -107,17 +191,31 @@ def get_command_tree() -> list[dict]:
             "name": "search",
             "description": "Full-text search across the graph",
             "params": [{"name": "q", "type": "string", "required": True}],
+            "flags": [
+                {"name": "date-from", "type": "string", "help": "Start date (ISO or YYYYMMDD)"},
+                {"name": "date-to", "type": "string", "help": "End date (ISO or YYYYMMDD)"},
+                {"name": "limit", "type": "number", "help": "Max results"},
+            ],
+        },
+        {
+            "name": "view",
+            "description": "View all triples for a node (alias for triple view)",
+            "params": [{"name": "id", "type": "string", "required": True}],
         },
         {
             "name": "trash",
-            "description": "Manage soft-deleted nodes (trash)",
+            "description": "Manage soft-deleted items",
             "children": [
                 {"name": "list", "description": "List trashed nodes"},
                 {"name": "restore", "description": "Restore a trashed node", "params": [{"name": "id", "type": "string", "required": True}]},
+                {"name": "delete", "description": "Permanently delete from trash", "params": [{"name": "id", "type": "string", "required": True}]},
                 {"name": "purge", "description": "Permanently delete old trash entries", "params": [{"name": "days", "type": "number"}]},
             ],
         },
-        {"name": "export", "description": "Export graph in Turtle format"},
+        {"name": "export", "description": "Export graph in Turtle format", "flags": [
+            {"name": "output", "type": "string", "help": "Output file path"},
+            {"name": "base-uri", "type": "string", "help": "Custom base URI"},
+        ]},
         {"name": "import", "description": "Import Turtle (.ttl) data", "params": [{"name": "data", "type": "string", "required": True}]},
         {"name": "stats", "description": "Show graph statistics"},
         {
@@ -132,6 +230,29 @@ def get_command_tree() -> list[dict]:
                     {"name": "limit", "type": "number", "help": "Number of questions (default: 10)"},
                 ]},
                 {"name": "sessions", "description": "List past review sessions"},
+                {"name": "view", "description": "View session details", "params": [{"name": "uuid", "type": "string", "required": True}]},
+                {"name": "delete", "description": "Delete a review session", "params": [{"name": "uuid", "type": "string", "required": True}]},
+            ],
+        },
+        {
+            "name": "proof",
+            "description": "Manage proofs (evidence attached to triples)",
+            "children": [
+                {"name": "add", "description": "Add proof to a triple", "interactive": True, "params": [
+                    {"name": "subject_id", "type": "string", "required": True},
+                    {"name": "predicate_id", "type": "string", "required": True},
+                    {"name": "object_value", "type": "string", "required": True},
+                ], "flags": [
+                    {"name": "proof-type", "type": "string", "help": "Type (observation, experiment, reference, etc.)"},
+                    {"name": "source", "type": "string", "help": "Source citation"},
+                    {"name": "notes", "type": "string", "help": "Notes about this proof"},
+                ]},
+                {"name": "view", "description": "View proofs for a triple", "params": [
+                    {"name": "subject_id", "type": "string", "required": True},
+                    {"name": "predicate_id", "type": "string", "required": True},
+                    {"name": "object_value", "type": "string", "required": True},
+                ]},
+                {"name": "delete", "description": "Delete a proof", "params": [{"name": "uuid", "type": "string", "required": True}]},
             ],
         },
         {
@@ -264,7 +385,6 @@ def _resolve_command_path(
             merged[f"_{param_idx}"] = val
             param_idx += 1
 
-    # Command flags override positional auto-fill
     return cmd_tokens, remaining, merged
 
 
@@ -285,13 +405,24 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
     path = ".".join(cmd_tokens).lower()
     svc = get_services()
 
+    # ── Stats ─────────────────────────────────────────────────────────
     if path == "stats":
         return {"type": "status", "data": svc["triple"].get_stats()}
 
+    # ── Export ────────────────────────────────────────────────────────
     if path == "export":
-        ttl = svc["triple"].export_turtle()
+        base_uri = flags.get("base_uri", "https://example.org/")
+        ttl = svc["triple"].export_turtle(base_uri=base_uri)
+        output = flags.get("output", "")
+        if output:
+            try:
+                Path(output).write_text(ttl, encoding="utf-8")
+                return {"type": "status", "data": {"message": f"Exported to {output}"}}
+            except OSError as e:
+                raise CommandValidationError(f"Could not write to {output}: {e}")
         return {"type": "status", "data": {"ttl": ttl[:500] + "..." if len(ttl) > 500 else ttl}}
 
+    # ── Import ────────────────────────────────────────────────────────
     if path == "import":
         ttl_content = merged.get("data") or (remaining and remaining[0]) or ""
         if not ttl_content:
@@ -300,26 +431,52 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
         stats = _import(ttl_content)
         return {"type": "status", "data": stats}
 
+    # ── Search ────────────────────────────────────────────────────────
     if path == "search":
         q = merged.get("q") or ""
         if not q:
             raise CommandValidationError("Enter a search query")
-        nodes = svc["node"].search(q)
-        predicates = svc["predicate"].search(q)
-        triples = svc["triple"].search_by_labels(subject=q, limit=50) or []
-        # Also try as predicate/object
-        pred_triples = svc["triple"].search_by_labels(predicate=q, limit=50) or []
+        date_from = flags.get("date_from") or flags.get("date-from") or None
+        date_to = flags.get("date_to") or flags.get("date-to") or None
+        raw_limit = flags.get("limit", "50")
+        try:
+            limit = int(raw_limit)
+        except ValueError:
+            limit = 50
+        nodes = svc["node"].search(q, limit=limit)
+        predicates = svc["predicate"].search(q, limit=limit)
+        triples = svc["triple"].search_by_labels(
+            subject=q, limit=limit,
+            created_after=date_from, created_before=date_to,
+        ) or []
+        pred_triples = svc["triple"].search_by_labels(
+            predicate=q, limit=limit,
+            created_after=date_from, created_before=date_to,
+        ) or []
         all_triples = list({t["subject_id"] + t["predicate_id"] + t["object_value"]: t for t in triples + pred_triples}.values())
         return {
             "type": "status",
             "data": {
                 "nodes": nodes,
                 "predicates": predicates,
-                "triples": all_triples[:10],
+                "triples": all_triples[:limit],
                 "_summary": f"Nodes: {len(nodes)}, Predicates: {len(predicates)}, Triples: {len(all_triples)}",
             },
         }
 
+    # ── View (root command, alias for triple view) ────────────────────
+    if path == "view":
+        node_id = merged.get("id") or (remaining and remaining[0]) or ""
+        if not node_id:
+            raise CommandValidationError("Specify a node ID")
+        node = svc["node"].resolve_node_id_prefix(node_id)
+        if not node:
+            raise CommandValidationError(f"Node not found: {node_id}")
+        triples = svc["triple"].get_by_subject(node["node_id"])
+        node["triples"] = triples
+        return {"type": "status", "data": node}
+
+    # ── Node commands ─────────────────────────────────────────────────
     if path == "node.list":
         nodes = svc["node"].list(limit=int(merged.get("limit", 100)))
         return {"type": "table", "data": nodes, "label": "Nodes"}
@@ -354,12 +511,76 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
         except ValueError as e:
             raise CommandValidationError(str(e))
 
-    if path == "node.delete":
-        node_id = merged.get("id") or (remaining and remaining[0]) or ""
+    if path == "node.update":
+        node_id = merged.get("id") or ""
         if not node_id:
             raise CommandValidationError("Specify a node ID")
-        svc["node"].delete(node_id, soft=True)
-        return {"type": "status", "data": {"message": f"Deleted {node_id}"}}
+        node = svc["node"].resolve_node_id_prefix(node_id)
+        if not node:
+            raise CommandValidationError(f"Node not found: {node_id}")
+        payload: dict = {}
+        labels_raw = merged.get("labels") or ""
+        if labels_raw:
+            try:
+                labels_dict = json.loads(labels_raw) if labels_raw.startswith("{") else _parse_lang_tag_pairs(labels_raw)
+            except json.JSONDecodeError:
+                labels_dict = {"en": labels_raw}
+            payload["labels"] = labels_dict
+        defs_raw = flags.get("definitions") or flags.get("defs") or ""
+        if defs_raw:
+            try:
+                defs_dict = json.loads(defs_raw) if defs_raw.startswith("{") else _parse_lang_tag_pairs(defs_raw)
+            except json.JSONDecodeError:
+                defs_dict = {"en": defs_raw}
+            payload["definitions"] = defs_dict
+        new_id = flags.get("new_id") or flags.get("new-id") or ""
+        try:
+            if new_id:
+                result = svc["node"].update_node_id(node_id, new_id, data=payload if payload else None)
+                return {"type": "status", "data": {"message": f"Updated node {node_id} -> {new_id}", "node": result}}
+            elif payload:
+                result = svc["node"].update(node_id, payload)
+                return {"type": "status", "data": {"message": f"Updated node {node_id}", "node": result}}
+            else:
+                raise CommandValidationError("No changes specified (use --labels, --definitions, or --new-id)")
+        except ValueError as e:
+            raise CommandValidationError(str(e))
+
+    if path == "node.delete":
+        ids: list[str] = []
+        pos_id = merged.get("id") or ""
+        if pos_id:
+            ids.append(pos_id)
+        # Extra positional tokens are additional IDs
+        for k, v in merged.items():
+            if k.startswith("_") and v:
+                ids.append(v)
+        prefix = flags.get("prefix") or ""
+        if prefix:
+            prefix_nodes = svc["node"].db.execute(
+                "SELECT * FROM nodes WHERE node_id LIKE ? ORDER BY node_id",
+                (f"{prefix}%",),
+            )
+            seen = set(ids)
+            for n in prefix_nodes:
+                if n["node_id"] not in seen:
+                    ids.append(n["node_id"])
+        if not ids:
+            raise CommandValidationError("Specify node ID(s) or use --prefix")
+        deleted = 0
+        errors = []
+        for nid in ids:
+            try:
+                svc["triple"].remove(subject_id=nid)
+                svc["triple"].remove(object_value=nid)
+                svc["node"].delete(nid, soft=True)
+                deleted += 1
+            except Exception as e:
+                errors.append(f"{nid}: {e}")
+        msg = f"Deleted {deleted} node(s)"
+        if errors:
+            msg += f" ({len(errors)} error(s))"
+        return {"type": "status", "data": {"message": msg, "errors": errors}}
 
     if path == "node.rename":
         node_id = merged.get("id") or (remaining and remaining[0]) or ""
@@ -369,17 +590,6 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
         try:
             result = svc["node"].update_node_id(node_id, new_id)
             return {"type": "status", "data": {"message": f"Renamed {node_id} → {new_id}", "node": result}}
-        except ValueError as e:
-            raise CommandValidationError(str(e))
-
-    if path == "predicate.rename":
-        pred_id = merged.get("predicate_id") or (remaining and remaining[0]) or ""
-        new_id = merged.get("new_id") or (remaining and remaining[1] if len(remaining) > 1 else "") or ""
-        if not pred_id or not new_id:
-            raise CommandValidationError("Specify current and new predicate ID")
-        try:
-            result = svc["predicate"].update_predicate_id(pred_id, new_id)
-            return {"type": "status", "data": {"message": f"Renamed {pred_id} → {new_id}", "predicate": result}}
         except ValueError as e:
             raise CommandValidationError(str(e))
 
@@ -394,6 +604,7 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
         except ValueError as e:
             raise CommandValidationError(str(e))
 
+    # ── Predicate commands ────────────────────────────────────────────
     if path == "predicate.list":
         preds = svc["predicate"].list()
         return {"type": "table", "data": preds, "label": "Predicates"}
@@ -401,47 +612,244 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
     if path == "predicate.search":
         q = merged.get("q", "")
         results = svc["predicate"].search(q)
+        wikidata_flag = "wikidata" in flags or flags.get("wikidata", "").lower() in ("true", "1", "yes")
+        if wikidata_flag:
+            try:
+                from semantika.graph.node_helpers import search_wikidata
+                wd_results = search_wikidata(q)
+                local_ids = {r["predicate_id"] for r in results}
+                for wd in wd_results:
+                    if wd["predicate_id"] not in local_ids:
+                        results.append(wd)
+            except Exception:
+                pass  # Wikidata search is best-effort
         return {"type": "table", "data": results, "label": f"Predicates matching '{q}'"}
 
-    if path == "predicate.update":
-        pred_id = merged.get("predicate_id") or ""
-        labels_raw = merged.get("labels") or ""
-        if not pred_id:
-            raise CommandValidationError("Specify a predicate_id")
-        payload = {}
-        if labels_raw:
-            try:
-                labels_dict = json.loads(labels_raw) if labels_raw.startswith("{") else {"en": labels_raw}
-            except json.JSONDecodeError:
-                labels_dict = {"en": labels_raw}
-            payload["labels"] = labels_dict
-        try:
-            pred = svc["predicate"].update(pred_id, payload)
-            return {"type": "status", "data": {"message": f"Updated {pred_id}"}}
-        except ValueError as e:
-            raise CommandValidationError(str(e))
-
-    if path == "predicate.delete":
+    if path == "predicate.view":
         pred_id = merged.get("predicate_id") or (remaining and remaining[0]) or ""
         if not pred_id:
             raise CommandValidationError("Specify a predicate_id")
-        svc["triple"].remove(predicate_id=pred_id)
-        svc["predicate"].delete(pred_id, soft=True)
-        return {"type": "status", "data": {"message": f"Deleted {pred_id}"}}
+        pred = svc["predicate"].get(pred_id)
+        if not pred:
+            raise CommandValidationError(f"Predicate not found: {pred_id}")
+        return {"type": "status", "data": pred}
 
     if path == "predicate.add":
         pred_id = merged.get("predicate_id") or (remaining and remaining[0]) or ""
         if not pred_id:
             raise CommandValidationError("Specify a predicate_id")
+        labels_raw = flags.get("labels") or ""
+        descs_raw = flags.get("descriptions") or ""
+        wikidata_flag = "wikidata" in flags or flags.get("wikidata", "").lower() in ("true", "1", "yes")
+        data: dict = {"predicate_id": pred_id}
+        if labels_raw:
+            try:
+                data["labels"] = json.loads(labels_raw) if labels_raw.startswith("{") else _parse_lang_tag_pairs(labels_raw)
+            except json.JSONDecodeError:
+                data["labels"] = {"en": labels_raw}
+        if descs_raw:
+            try:
+                data["descriptions"] = json.loads(descs_raw) if descs_raw.startswith("{") else _parse_lang_tag_pairs(descs_raw)
+            except json.JSONDecodeError:
+                data["descriptions"] = {"en": descs_raw}
+        if wikidata_flag:
+            data["source"] = "wikidata"
+            try:
+                from semantika.graph.node_helpers import fetch_wikidata_details
+                wd = fetch_wikidata_details(pred_id)
+                if wd:
+                    data.setdefault("labels", {}).update(wd.get("labels", {}))
+                    data.setdefault("descriptions", {}).update(wd.get("descriptions", {}))
+            except Exception:
+                pass  # Best-effort
         try:
-            pred = svc["predicate"].create({"predicate_id": pred_id, "labels": {"en": pred_id}})
+            pred = svc["predicate"].create(data)
             return {"type": "status", "data": {"message": f"Created predicate {pred['predicate_id']}", "predicate": pred}}
         except ValueError as e:
             raise CommandValidationError(str(e))
 
+    if path == "predicate.update":
+        pred_id = merged.get("predicate_id") or ""
+        if not pred_id:
+            raise CommandValidationError("Specify a predicate_id")
+        existing = svc["predicate"].get(pred_id)
+        if not existing:
+            raise CommandValidationError(f"Predicate not found: {pred_id}")
+        payload = {}
+        labels_raw = merged.get("labels") or ""
+        descs_raw = flags.get("descriptions") or ""
+        replace = "replace" in flags or flags.get("replace", "").lower() in ("true", "1", "yes")
+        if labels_raw:
+            parsed = _parse_lang_tag_pairs(labels_raw)
+            if replace:
+                payload["labels"] = parsed
+            else:
+                merged_labels = _safe_json_loads(existing.get("labels", "{}"))
+                merged_labels.update(parsed)
+                payload["labels"] = merged_labels
+        if descs_raw:
+            parsed = _parse_lang_tag_pairs(descs_raw)
+            if replace:
+                payload["descriptions"] = parsed
+            else:
+                merged_descs = _safe_json_loads(existing.get("descriptions", "{}"))
+                merged_descs.update(parsed)
+                payload["descriptions"] = merged_descs
+        new_id = flags.get("new_id") or flags.get("new-id") or ""
+        try:
+            if new_id:
+                svc["predicate"].update_predicate_id(pred_id, new_id, updates=payload if payload else None)
+                return {"type": "status", "data": {"message": f"Renamed {pred_id} → {new_id}"}}
+            elif payload:
+                svc["predicate"].update(pred_id, payload)
+                return {"type": "status", "data": {"message": f"Updated {pred_id}"}}
+            else:
+                raise CommandValidationError("No changes specified (use --labels, --descriptions, or --new-id)")
+        except ValueError as e:
+            raise CommandValidationError(str(e))
+
+    if path == "predicate.rename":
+        pred_id = merged.get("predicate_id") or (remaining and remaining[0]) or ""
+        new_id = merged.get("new_id") or (remaining and remaining[1] if len(remaining) > 1 else "") or ""
+        if not pred_id or not new_id:
+            raise CommandValidationError("Specify current and new predicate ID")
+        try:
+            result = svc["predicate"].update_predicate_id(pred_id, new_id)
+            return {"type": "status", "data": {"message": f"Renamed {pred_id} → {new_id}", "predicate": result}}
+        except ValueError as e:
+            raise CommandValidationError(str(e))
+
+    if path == "predicate.delete":
+        ids: list[str] = []
+        pos_id = merged.get("predicate_id") or ""
+        if pos_id:
+            ids.append(pos_id)
+        for k, v in merged.items():
+            if k.startswith("_") and v:
+                ids.append(v)
+        prefix = flags.get("prefix") or ""
+        if prefix:
+            prefix_preds = svc["predicate"].db.execute(
+                "SELECT * FROM predicates WHERE predicate_id LIKE ? ORDER BY predicate_id",
+                (f"{prefix}%",),
+            )
+            seen = set(ids)
+            for p in prefix_preds:
+                if p["predicate_id"] not in seen:
+                    ids.append(p["predicate_id"])
+        if not ids:
+            raise CommandValidationError("Specify predicate ID(s) or use --prefix")
+        deleted = 0
+        errors = []
+        for pid in ids:
+            try:
+                svc["triple"].remove(predicate_id=pid)
+                svc["predicate"].delete(pid, soft=True)
+                deleted += 1
+            except Exception as e:
+                errors.append(f"{pid}: {e}")
+        msg = f"Deleted {deleted} predicate(s)"
+        if errors:
+            msg += f" ({len(errors)} error(s))"
+        return {"type": "status", "data": {"message": msg, "errors": errors}}
+
+    # ── Predicate Group commands ──────────────────────────────────────
+    if path == "predicate-group.list":
+        groups = svc["predicate_group"].list()
+        return {"type": "table", "data": groups, "label": "Predicate Groups"}
+
+    if path == "predicate-group.view":
+        name = merged.get("name") or (remaining and remaining[0]) or ""
+        if not name:
+            raise CommandValidationError("Specify a group name")
+        group = svc["predicate_group"].get_by_field("group_name", name)
+        if not group:
+            raise CommandValidationError(f"Group not found: {name}")
+        members = svc["predicate_group"].list_members(name)
+        group["members"] = members
+        return {"type": "status", "data": group}
+
+    if path == "predicate-group.add":
+        name = merged.get("name") or (remaining and remaining[0]) or ""
+        if not name:
+            raise CommandValidationError("Specify a group name")
+        try:
+            svc["predicate_group"].create({"group_name": name})
+            return {"type": "status", "data": {"message": f"Created group '{name}'"}}
+        except ValueError as e:
+            raise CommandValidationError(str(e))
+
+    if path == "predicate-group.rename":
+        name = merged.get("name") or (remaining and remaining[0]) or ""
+        new_name = merged.get("new_name") or (remaining and remaining[1] if len(remaining) > 1 else "") or ""
+        if not name or not new_name:
+            raise CommandValidationError("Specify current and new group name")
+        try:
+            svc["predicate_group"].rename(name, new_name)
+            return {"type": "status", "data": {"message": f"Renamed '{name}' → '{new_name}'"}}
+        except ValueError as e:
+            raise CommandValidationError(str(e))
+
+    if path == "predicate-group.delete":
+        name = merged.get("name") or (remaining and remaining[0]) or ""
+        if not name:
+            raise CommandValidationError("Specify a group name")
+        group = svc["predicate_group"].get_by_field("group_name", name)
+        if not group:
+            raise CommandValidationError(f"Group not found: {name}")
+        try:
+            svc["predicate_group"].clear_members(group["uuid"])
+            svc["predicate_group"].delete(group["uuid"])
+            return {"type": "status", "data": {"message": f"Deleted group '{name}'"}}
+        except ValueError as e:
+            raise CommandValidationError(str(e))
+
+    if path == "predicate-group.search":
+        q = merged.get("q") or (remaining and remaining[0]) or ""
+        if not q:
+            raise CommandValidationError("Enter a search term")
+        escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        results = svc["predicate_group"].db.execute(
+            "SELECT * FROM predicate_groups WHERE group_name LIKE ? ESCAPE '\\'",
+            (f"%{escaped}%",),
+        )
+        return {"type": "table", "data": results, "label": f"Groups matching '{q}'"}
+
+    if path == "predicate-group.add-member":
+        group_name = merged.get("group") or (remaining and remaining[0]) or ""
+        pred_id = merged.get("predicate_id") or (remaining and remaining[1] if len(remaining) > 1 else "") or ""
+        if not group_name or not pred_id:
+            raise CommandValidationError("Specify group name and predicate_id")
+        try:
+            svc["predicate_group"].add_member(group_name, pred_id)
+            return {"type": "status", "data": {"message": f"Added {pred_id} to '{group_name}'"}}
+        except ValueError as e:
+            raise CommandValidationError(str(e))
+
+    if path == "predicate-group.remove-member":
+        group_name = merged.get("group") or (remaining and remaining[0]) or ""
+        pred_id = merged.get("predicate_id") or (remaining and remaining[1] if len(remaining) > 1 else "") or ""
+        if not group_name or not pred_id:
+            raise CommandValidationError("Specify group name and predicate_id")
+        try:
+            svc["predicate_group"].remove_member(group_name, pred_id)
+            return {"type": "status", "data": {"message": f"Removed {pred_id} from '{group_name}'"}}
+        except ValueError as e:
+            raise CommandValidationError(str(e))
+
+    # ── Triple commands ──────────────────────────────────────────────
     if path == "triple.list":
         triples = svc["triple"].db.execute("SELECT * FROM triples ORDER BY subject_id, predicate_id LIMIT ?", (100,))
         return {"type": "table", "data": triples, "label": "Triples"}
+
+    if path == "triple.view":
+        node_id = merged.get("id") or (remaining and remaining[0]) or ""
+        if not node_id:
+            raise CommandValidationError("Specify a node ID")
+        triples = svc["triple"].get_by_subject(node_id)
+        if not triples:
+            return {"type": "status", "data": {"message": f"No triples found for {node_id}", "triples": []}}
+        return {"type": "table", "data": triples, "label": f"Triples for {node_id}"}
 
     if path == "triple.add":
         subject_id = merged.get("subject_id") or (remaining and remaining[0]) or ""
@@ -449,12 +857,246 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
         object_value = merged.get("object_value") or (remaining and remaining[2] if len(remaining) > 2 else "") or ""
         if not subject_id or not predicate_id or not object_value:
             raise CommandValidationError("Specify subject_id, predicate_id, and object_value")
+
+        # Determine object type and value from flags
+        str_flag = "str" in flags or flags.get("str", "").lower() in ("true", "1", "yes")
+        int_flag = "int" in flags or flags.get("int", "").lower() in ("true", "1", "yes")
+        float_flag = "float" in flags or flags.get("float", "").lower() in ("true", "1", "yes")
+        bool_flag = "bool" in flags or flags.get("bool", "").lower() in ("true", "1", "yes")
+        lang = flags.get("lang", None)
+        unit = flags.get("unit", None)
+        katex = flags.get("katex", None)
+        str_dosiero = flags.get("str_dosiero", None) or flags.get("str-dosiero", None)
+        kodlingvo = flags.get("kodlingvo", None)
+
+        # Resolve object source
+        if katex is not None:
+            object_value = katex.strip().strip("$")
+            object_type = "literal"
+            object_datatype = "text/katex"
+        elif str_dosiero is not None:
+            try:
+                object_value = Path(str_dosiero).read_text(encoding="utf-8")
+            except (FileNotFoundError, OSError) as e:
+                raise CommandValidationError(f"Could not read file: {e}")
+            object_type = "literal"
+            object_datatype = "text/plain"
+            str_flag = True
+            if kodlingvo:
+                object_datatype = f"text/x-{kodlingvo}"
+        elif str_flag:
+            object_type = "literal"
+        elif int_flag:
+            object_type = "literal"
+            object_datatype = "xsd:integer"
+        elif float_flag:
+            object_type = "literal"
+            object_datatype = "xsd:decimal"
+        elif bool_flag:
+            object_type = "literal"
+            object_datatype = "xsd:boolean"
+        else:
+            object_type = "uri"
+            object_datatype = None
+
+        object_lang = lang if str_flag else None
+
+        # Resolve subject/object IDs for URI type
         try:
-            triple = svc["triple"].add(subject_id, predicate_id, object_value, object_type="uri")
+            if object_type == "uri":
+                obj_node = svc["node"].resolve_node_id_prefix(object_value)
+                if not obj_node:
+                    obj_node = svc["node"].resolve_node_id_substring(object_value)
+                if not obj_node:
+                    raise CommandValidationError(f"Object node not found: {object_value}")
+                object_value = obj_node["node_id"]
+        except Exception as e:
+            if "Ambiguous" in str(e):
+                raise CommandValidationError(str(e))
+
+        try:
+            triple = svc["triple"].add(
+                subject_id=subject_id,
+                predicate_id=predicate_id,
+                object_value=object_value,
+                object_type=object_type,
+                object_lang=object_lang,
+                object_datatype=object_datatype,
+                object_unit=unit,
+            )
             return {"type": "status", "data": {"message": f"Added triple: {subject_id} → {predicate_id} → {object_value}", "triple": triple}}
         except ValueError as e:
+            # Duplicate handling: offer metadata update
+            existing = svc["triple"].get_one(subject_id, predicate_id, object_value, object_type)
+            if existing:
+                changes = {}
+                if object_lang is not None and object_lang != existing.get("object_lang"):
+                    changes["object_lang"] = object_lang
+                if object_datatype is not None and object_datatype != existing.get("object_datatype"):
+                    changes["object_datatype"] = object_datatype
+                if unit is not None and unit != existing.get("object_unit"):
+                    changes["object_unit"] = unit
+                if changes:
+                    svc["triple"].update_metadata(
+                        subject_id, predicate_id, object_value, object_type,
+                        **changes,
+                    )
+                    return {"type": "status", "data": {"message": "Triple already existed — metadata updated", "changes": changes}}
+                return {"type": "status", "data": {"message": "Triple already exists with identical metadata"}}
             raise CommandValidationError(str(e))
 
+    if path == "triple.delete":
+        subject = merged.get("subject") or (remaining and remaining[0]) or ""
+        predicate = merged.get("predicate") or (remaining and remaining[1] if len(remaining) > 1 else "")
+        object_val = merged.get("object") or (remaining and remaining[2] if len(remaining) > 2 else "")
+
+        if not subject:
+            raise CommandValidationError("Specify a subject")
+
+        # Try to find the triple(s)
+        if predicate and object_val:
+            # Full SPO — direct delete
+            triple = svc["triple"].get_one(subject, predicate, object_val)
+            if not triple:
+                # Try to resolve as URI
+                try:
+                    obj_node = svc["node"].resolve_node_id_prefix(object_val)
+                    if obj_node:
+                        triple = svc["triple"].get_one(subject, predicate, obj_node["node_id"])
+                        if triple:
+                            object_val = obj_node["node_id"]
+                except Exception:
+                    pass
+            if not triple:
+                raise CommandValidationError("Triple not found")
+            svc["proof"].cascade_delete_proofs(subject, predicate, object_val)
+            svc["triple"].remove(subject_id=subject, predicate_id=predicate, object_value=object_val)
+            return {"type": "status", "data": {"message": "Triple deleted"}}
+        elif predicate:
+            # Delete by subject + predicate
+            triples = svc["triple"].get_by_sp(subject, predicate)
+            count = 0
+            for t in triples:
+                svc["proof"].cascade_delete_proofs(t["subject_id"], t["predicate_id"], t["object_value"])
+                svc["triple"].remove(
+                    subject_id=t["subject_id"], predicate_id=t["predicate_id"],
+                    object_value=t["object_value"], object_type=t.get("object_type", "uri"),
+                )
+                count += 1
+            return {"type": "status", "data": {"message": f"Deleted {count} triple(s)"}}
+        else:
+            # Delete all triples for subject
+            triples = svc["triple"].get_by_subject(subject)
+            count = 0
+            for t in triples:
+                svc["proof"].cascade_delete_proofs(t["subject_id"], t["predicate_id"], t["object_value"])
+                svc["triple"].remove(
+                    subject_id=t["subject_id"], predicate_id=t["predicate_id"],
+                    object_value=t["object_value"], object_type=t.get("object_type", "uri"),
+                )
+                count += 1
+            return {"type": "status", "data": {"message": f"Deleted {count} triple(s)"}}
+
+    if path == "triple.modify":
+        subject = merged.get("subject") or (remaining and remaining[0]) or ""
+        predicate = merged.get("predicate") or (remaining and remaining[1] if len(remaining) > 1 else "")
+        object_val = merged.get("object") or (remaining and remaining[2] if len(remaining) > 2 else "")
+
+        if not subject:
+            raise CommandValidationError("Specify a subject")
+
+        # Find the existing triple
+        triple = None
+        if predicate and object_val:
+            triple = svc["triple"].get_one(subject, predicate, object_val) or None
+            if not triple:
+                try:
+                    obj_node = svc["node"].resolve_node_id_prefix(object_val)
+                    if obj_node:
+                        triple = svc["triple"].get_one(subject, predicate, obj_node["node_id"])
+                        if triple:
+                            object_val = obj_node["node_id"]
+                except Exception:
+                    pass
+        if not triple:
+            raise CommandValidationError("Triple not found")
+
+        # Extract new values from flags
+        new_subject = flags.get("new_subject", None) or flags.get("new-subject", None) or triple["subject_id"]
+        new_predicate = flags.get("new_predicate", None) or flags.get("new-predicate", None) or triple["predicate_id"]
+        new_object_raw = flags.get("new_object", None) or flags.get("new-object", None) or triple["object_value"]
+
+        str_flag = "str" in flags
+        int_flag = "int" in flags
+        float_flag = "float" in flags
+        bool_flag = "bool" in flags
+        lang = flags.get("lang", None)
+        unit = flags.get("unit", None)
+        katex = flags.get("katex", None)
+        str_dosiero = flags.get("str_dosiero", None) or flags.get("str-dosiero", None)
+
+        if katex is not None:
+            new_object = katex.strip().strip("$")
+            new_type = "literal"
+            new_datatype = "text/katex"
+        elif str_dosiero is not None:
+            try:
+                new_object = Path(str_dosiero).read_text(encoding="utf-8")
+            except (FileNotFoundError, OSError) as e:
+                raise CommandValidationError(f"Could not read file: {e}")
+            new_type = "literal"
+            new_datatype = "text/plain"
+        elif str_flag:
+            new_object = new_object_raw
+            new_type = "literal"
+            new_datatype = None
+        elif int_flag:
+            new_object = new_object_raw
+            new_type = "literal"
+            new_datatype = "xsd:integer"
+        elif float_flag:
+            new_object = new_object_raw
+            new_type = "literal"
+            new_datatype = "xsd:decimal"
+        elif bool_flag:
+            new_object = new_object_raw
+            new_type = "literal"
+            new_datatype = "xsd:boolean"
+        else:
+            new_object = new_object_raw
+            new_type = triple.get("object_type", "uri")
+            new_datatype = triple.get("object_datatype", None)
+
+        new_lang = lang if str_flag else triple.get("object_lang", None)
+        new_unit = unit or triple.get("object_unit", None)
+
+        # No-op check
+        noop = (
+            triple["subject_id"] == new_subject
+            and triple["predicate_id"] == new_predicate
+            and triple["object_value"] == new_object
+            and triple.get("object_type", "uri") == new_type
+            and triple.get("object_unit") == new_unit
+        )
+        if noop:
+            return {"type": "status", "data": {"message": "No change — triple remains unchanged"}}
+
+        # Remove old + insert new
+        old_type = triple.get("object_type", "uri")
+        svc["proof"].cascade_delete_proofs(triple["subject_id"], triple["predicate_id"], triple["object_value"])
+        svc["triple"].remove(
+            subject_id=triple["subject_id"], predicate_id=triple["predicate_id"],
+            object_value=triple["object_value"], object_type=old_type,
+        )
+        svc["triple"].add(
+            subject_id=new_subject, predicate_id=new_predicate,
+            object_value=new_object, object_type=new_type,
+            object_lang=new_lang, object_datatype=new_datatype,
+            object_unit=new_unit,
+        )
+        return {"type": "status", "data": {"message": f"Triple modified: {triple['subject_id']} → {triple['predicate_id']} → {triple['object_value']}"}}
+
+    # ── Unit commands ─────────────────────────────────────────────────
     if path == "unit.list":
         from semantika.graph.unit_service import UnitService
         us = UnitService(svc["node"].db, svc["node"], svc["triple"])
@@ -478,6 +1120,16 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
         info = us.get_unit_info(nid)
         return {"type": "status", "data": {"resolved": nid, "info": info}}
 
+    if path == "unit.decompose":
+        node_id = merged.get("id") or (remaining and remaining[0]) or ""
+        from semantika.graph.unit_service import UnitService
+        us = UnitService(svc["node"].db, svc["node"], svc["triple"])
+        info = us.get_unit_info(node_id)
+        if not info:
+            raise CommandValidationError(f"Unit not found: {node_id}")
+        return {"type": "status", "data": {"decomposition": info.get("decomposition", "")}}
+
+    # ── Trash commands ────────────────────────────────────────────────
     if path == "trash.list":
         items = svc["node"].list_trash()
         return {"type": "table", "data": items, "label": "Trash"}
@@ -490,6 +1142,13 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
         if not restored:
             raise CommandValidationError(f"Node not found in trash: {node_id}")
         return {"type": "status", "data": {"message": f"Restored {restored.get('node_id', node_id)}"}}
+
+    if path == "trash.delete":
+        node_id = merged.get("id") or (remaining and remaining[0]) or ""
+        if not node_id:
+            raise CommandValidationError("Specify a node ID")
+        svc["node"].permanent_delete(node_id)
+        return {"type": "status", "data": {"message": f"Permanently deleted {node_id}"}}
 
     if path == "trash.purge":
         raw_days = merged.get("days") or (remaining and remaining[0]) or "30"
@@ -508,6 +1167,7 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
                     svc["node"].permanent_delete(nid)
         return {"type": "status", "data": {"message": f"Purged {count} item(s) from trash"}}
 
+    # ── Review commands ───────────────────────────────────────────────
     if path == "review.start":
         mode = merged.get("mode") or (remaining and remaining[0]) or "view"
         if mode not in ("view", "quiz"):
@@ -528,7 +1188,70 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
         sessions = svc["review"].list_sessions()
         return {"type": "table", "data": sessions, "label": "Review Sessions"}
 
-    # ── LLM command handlers ──────────────────────────────────────────────
+    if path == "review.view":
+        session_uuid = merged.get("uuid") or (remaining and remaining[0]) or ""
+        if not session_uuid:
+            raise CommandValidationError("Specify a session UUID")
+        session = svc["review"].get_session(session_uuid, enrich=True)
+        if not session:
+            raise CommandValidationError(f"Session not found: {session_uuid}")
+        return {"type": "status", "data": session}
+
+    if path == "review.delete":
+        session_uuid = merged.get("uuid") or (remaining and remaining[0]) or ""
+        if not session_uuid:
+            raise CommandValidationError("Specify a session UUID")
+        svc["review"].delete_session(session_uuid)
+        return {"type": "status", "data": {"message": f"Deleted session {session_uuid}"}}
+
+    # ── Proof commands ────────────────────────────────────────────────
+    if path == "proof.add":
+        subject_id = merged.get("subject_id") or (remaining and remaining[0]) or ""
+        predicate_id = merged.get("predicate_id") or (remaining and remaining[1] if len(remaining) > 1 else "") or ""
+        object_value = merged.get("object_value") or (remaining and remaining[2] if len(remaining) > 2 else "") or ""
+        if not subject_id or not predicate_id or not object_value:
+            raise CommandValidationError("Specify subject_id, predicate_id, and object_value")
+        # Resolve node IDs from prefixes
+        subj_node = svc["node"].resolve_node_id_prefix(subject_id)
+        if subj_node:
+            subject_id = subj_node["node_id"]
+        obj_node = svc["node"].resolve_node_id_prefix(object_value)
+        if obj_node:
+            object_value = obj_node["node_id"]
+        proof_data = {
+            "subject_id": subject_id,
+            "predicate_id": predicate_id,
+            "object_value": object_value,
+            "proof_type": flags.get("proof_type", "observation"),
+            "source": flags.get("source", ""),
+            "notes": flags.get("notes", ""),
+        }
+        proof = svc["proof"].create(proof_data)
+        return {"type": "status", "data": {"message": f"Created proof {proof['uuid']}", "proof": proof}}
+
+    if path == "proof.view":
+        subject_id = merged.get("subject_id") or (remaining and remaining[0]) or ""
+        predicate_id = merged.get("predicate_id") or (remaining and remaining[1] if len(remaining) > 1 else "") or ""
+        object_value = merged.get("object_value") or (remaining and remaining[2] if len(remaining) > 2 else "") or ""
+        if not subject_id or not predicate_id or not object_value:
+            raise CommandValidationError("Specify subject_id, predicate_id, and object_value")
+        subj_node = svc["node"].resolve_node_id_prefix(subject_id)
+        if subj_node:
+            subject_id = subj_node["node_id"]
+        obj_node = svc["node"].resolve_node_id_prefix(object_value)
+        if obj_node:
+            object_value = obj_node["node_id"]
+        proofs = svc["proof"].get_by_triple(subject_id, predicate_id, object_value)
+        return {"type": "table", "data": proofs, "label": "Proofs"}
+
+    if path == "proof.delete":
+        proof_uuid = merged.get("uuid") or (remaining and remaining[0]) or ""
+        if not proof_uuid:
+            raise CommandValidationError("Specify a proof UUID")
+        svc["proof"].delete(proof_uuid)
+        return {"type": "status", "data": {"message": f"Deleted proof {proof_uuid}"}}
+
+    # ── LLM command handlers ──────────────────────────────────────────
     if path == "llm":
         return {
             "type": "status",
@@ -690,7 +1413,7 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
             return {"type": "status", "title": "Profile Deleted", "data": {"removed": [name]}}
         raise CommandValidationError(f"Profile not found: {name}")
 
-    # ── Backup command handlers ──────────────────────────────────────────
+    # ── Backup command handlers ───────────────────────────────────────
     if path == "backup":
         return {
             "type": "status",
@@ -1054,7 +1777,7 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
             },
         }
 
-    # ── Reset command handler ──────────────────────────────────────────────
+    # ── Reset command handler ─────────────────────────────────────────
     if path == "reset":
         has_path = bool(remaining)
         no_backup = "no-backup" in flags
@@ -1121,9 +1844,40 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
     raise CommandNotFound(tokens)
 
 
-# ── Backup helpers ────────────────────────────────────────────────────────
+# ── Helpers ────────────────────────────────────────────────────────────────
 
-# ── Backup helpers ────────────────────────────────────────────────────────
+def _parse_lang_tag_pairs(text: str | list[str]) -> dict[str, str]:
+    """Parse ``LANG::TEXT`` or ``LANG:TEXT`` pairs into a dict.
+
+    Accepts either a comma/space-separated string or a list of strings.
+    """
+    result: dict[str, str] = {}
+    if isinstance(text, str):
+        items = [t.strip() for t in text.replace(",", " ").split() if t.strip()]
+    else:
+        items = text
+    for item in items:
+        if "::" in item:
+            lang, _, val = item.partition("::")
+        elif ":" in item:
+            lang, _, val = item.partition(":")
+        else:
+            continue
+        lang = lang.strip()
+        val = val.strip()
+        if lang and val:
+            result[lang] = val
+    return result
+
+
+def _safe_json_loads(raw: Any) -> dict:
+    """Safely parse a JSON string to a dict, returning {} on failure."""
+    if isinstance(raw, dict):
+        return raw
+    try:
+        return json.loads(raw) if raw else {}
+    except (json.JSONDecodeError, TypeError):
+        return {}
 
 
 def _fmt_size(b: int) -> str:
@@ -1139,7 +1893,6 @@ def _fmt_ts(ts: str) -> str:
     """Format a backup timestamp for human display."""
     if len(ts) >= 15:
         base = f"{ts[:4]}-{ts[4:6]}-{ts[6:8]} {ts[9:11]}:{ts[11:13]}:{ts[13:15]}"
-        # Append microseconds if available
         if len(ts) > 15:
             base += f".{ts[15:21]}"
         return base
@@ -1191,14 +1944,19 @@ def help_text() -> dict:
     """Return flat help text."""
     return {
         "commands": [
-            {"cmd": "!node list/search/view/add/delete", "desc": "Manage nodes"},
-            {"cmd": "!predicate list/search/add", "desc": "Manage predicates"},
-            {"cmd": "!triple list/add", "desc": "Manage triples"},
-            {"cmd": "!unit list/view/resolve/add", "desc": "Unit ontology"},
-            {"cmd": "!search <q>", "desc": "Full-text search"},
-            {"cmd": "!export", "desc": "Export as Turtle"},
+            {"cmd": "!node list/search/view/add/update/delete/merge/rename", "desc": "Manage nodes"},
+            {"cmd": "!predicate list/search/view/add/update/delete/rename", "desc": "Manage predicates"},
+            {"cmd": "!predicate-group list/view/add/rename/delete/search", "desc": "Manage predicate groups"},
+            {"cmd": "!triple list/add/delete/modify/view", "desc": "Manage triples"},
+            {"cmd": "!unit list/view/resolve/decompose/add", "desc": "Unit ontology"},
+            {"cmd": "!search <q> [--date-from] [--date-to]", "desc": "Full-text search with optional date filter"},
+            {"cmd": "!view <id>", "desc": "View all triples for a node"},
+            {"cmd": "!export [--output FILE] [--base-uri URI]", "desc": "Export as Turtle"},
+            {"cmd": "!import <data>", "desc": "Import Turtle data"},
             {"cmd": "!stats", "desc": "Graph statistics"},
-            {"cmd": "!review start/sessions", "desc": "Flashcard review"},
+            {"cmd": "!proof add/view/delete", "desc": "Manage proofs"},
+            {"cmd": "!review start/sessions/view/delete", "desc": "Flashcard review"},
+            {"cmd": "!trash list/restore/delete/purge", "desc": "Trash management"},
             {"cmd": "!llm show/new/set/clear", "desc": "LLM provider configuration"},
             {"cmd": "!llm profile list/show/load/delete", "desc": "LLM profile management"},
             {"cmd": "!backup now/list/restore/prune", "desc": "Database backup"},

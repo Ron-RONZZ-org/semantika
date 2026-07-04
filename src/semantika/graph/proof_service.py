@@ -65,3 +65,59 @@ class ProofService:
         """Delete a proof."""
         self.db.execute("DELETE FROM proofs WHERE uuid = ?", (proof_uuid,))
         return True
+
+    def cascade_delete_proofs(
+        self,
+        subject_id: str,
+        predicate_id: str,
+        object_value: str,
+    ) -> int:
+        """Delete all proofs for a specific triple (cascade on triple delete).
+
+        Args:
+            subject_id: Subject node ID of the triple.
+            predicate_id: Predicate ID of the triple.
+            object_value: Object value of the triple.
+
+        Returns:
+            Number of proofs deleted.
+        """
+        self.db.execute(
+            "DELETE FROM proofs WHERE subject_id = ? AND predicate_id = ? AND object_value = ?",
+            (subject_id, predicate_id, object_value),
+        )
+        result = self.db.execute_one("SELECT changes() AS cnt")
+        return result["cnt"] if result else 0
+
+    def get_proofs_for_arcs_batch(
+        self,
+        arc_keys: list[tuple[str, str, str]],
+    ) -> dict[tuple[str, str, str], list[str]]:
+        """Batch query: for each arc (s,p,o), return list of proof UUIDs.
+
+        Args:
+            arc_keys: List of ``(subject_id, predicate_id, object_value)`` tuples.
+
+        Returns:
+            Dict mapping each arc key to a list of proof UUIDs.
+        """
+        if not arc_keys:
+            return {}
+        # Build WHERE clause with OR of all arc keys
+        clauses: list[str] = []
+        params: list = []
+        for subj, pred, obj in arc_keys:
+            clauses.append(
+                "(subject_id = ? AND predicate_id = ? AND object_value = ?)"
+            )
+            params.extend([subj, pred, obj])
+        where = " OR ".join(clauses)
+        rows = self.db.execute(
+            f"SELECT subject_id, predicate_id, object_value, uuid FROM proofs WHERE {where}",
+            tuple(params),
+        )
+        result: dict[tuple[str, str, str], list[str]] = {}
+        for r in rows:
+            key = (r["subject_id"], r["predicate_id"], r["object_value"])
+            result.setdefault(key, []).append(r["uuid"])
+        return result

@@ -26,8 +26,22 @@ class TripleService:
         object_type: str = "uri",
         object_lang: str | None = None,
         object_datatype: str | None = None,
+        object_unit: str | None = None,
     ) -> dict:
-        """Add a triple."""
+        """Add a triple.
+
+        Args:
+            subject_id: Subject node ID.
+            predicate_id: Predicate ID.
+            object_value: Object value (URI or literal).
+            object_type: ``'uri'`` or ``'literal'``.
+            object_lang: Language tag (for string literals).
+            object_datatype: XSD datatype (for typed literals).
+            object_unit: Unit node ID (for numeric literals with units).
+
+        Raises:
+            ValueError: If the triple already exists.
+        """
         ts = now()
         row = {
             "subject_id": subject_id,
@@ -36,14 +50,15 @@ class TripleService:
             "object_type": object_type,
             "object_lang": object_lang,
             "object_datatype": object_datatype,
+            "object_unit": object_unit,
             "created_at": ts,
         }
         try:
             self.db.execute(
                 "INSERT INTO triples (subject_id, predicate_id, object_value, "
-                "object_type, object_lang, object_datatype, created_at) "
+                "object_type, object_lang, object_datatype, object_unit, created_at) "
                 "VALUES (:subject_id, :predicate_id, :object_value, "
-                ":object_type, :object_lang, :object_datatype, :created_at)",
+                ":object_type, :object_lang, :object_datatype, :object_unit, :created_at)",
                 row,
             )
         except sqlite3.IntegrityError:
@@ -60,10 +75,11 @@ class TripleService:
         object_type: str = "uri",
         object_lang: str | None = None,
         object_datatype: str | None = None,
+        object_unit: str | None = None,
     ) -> dict | None:
         """Update mutable metadata on an existing triple.
 
-        Only updates non-PK columns (object_lang, object_datatype).
+        Only updates non-PK columns (object_lang, object_datatype, object_unit).
         PK columns (subject_id, predicate_id, object_value, object_type)
         cannot change — the SPO identity is fixed. Preserves created_at.
 
@@ -85,6 +101,9 @@ class TripleService:
         if object_datatype is not None:
             set_parts.append("object_datatype = ?")
             params.append(object_datatype)
+        if object_unit is not None:
+            set_parts.append("object_unit = ?")
+            params.append(object_unit)
 
         if not set_parts:
             return None  # no metadata columns to update
