@@ -698,7 +698,7 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
         new_id = flags.get("new_id") or flags.get("new-id") or ""
         try:
             if new_id:
-                svc["predicate"].update_predicate_id(pred_id, new_id, updates=payload if payload else None)
+                svc["predicate"].update_predicate_id(pred_id, new_id, data=payload if payload else None)
                 return {"type": "status", "data": {"message": f"Renamed {pred_id} → {new_id}"}}
             elif payload:
                 svc["predicate"].update(pred_id, payload)
@@ -762,10 +762,8 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
         name = merged.get("name") or (remaining and remaining[0]) or ""
         if not name:
             raise CommandValidationError("Specify a group name")
-        group = svc["predicate_group"].get_by_field("group_name", name)
-        if not group:
-            raise CommandValidationError(f"Group not found: {name}")
-        members = svc["predicate_group"].list_members(name)
+        group = _resolve_group(svc, name)
+        members = svc["predicate_group"].list_members(group["uuid"])
         group["members"] = members
         return {"type": "status", "data": group}
 
@@ -784,8 +782,9 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
         new_name = merged.get("new_name") or (remaining and remaining[1] if len(remaining) > 1 else "") or ""
         if not name or not new_name:
             raise CommandValidationError("Specify current and new group name")
+        group = _resolve_group(svc, name)
         try:
-            svc["predicate_group"].rename(name, new_name)
+            svc["predicate_group"].update(group["uuid"], {"group_name": new_name})
             return {"type": "status", "data": {"message": f"Renamed '{name}' → '{new_name}'"}}
         except ValueError as e:
             raise CommandValidationError(str(e))
@@ -794,11 +793,12 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
         name = merged.get("name") or (remaining and remaining[0]) or ""
         if not name:
             raise CommandValidationError("Specify a group name")
-        group = svc["predicate_group"].get_by_field("group_name", name)
-        if not group:
-            raise CommandValidationError(f"Group not found: {name}")
+        group = _resolve_group(svc, name)
         try:
-            svc["predicate_group"].clear_members(group["uuid"])
+            # Delete members first, then group
+            svc["predicate_group"].db.execute(
+                "DELETE FROM predicate_group_members WHERE group_uuid = ?", (group["uuid"],)
+            )
             svc["predicate_group"].delete(group["uuid"])
             return {"type": "status", "data": {"message": f"Deleted group '{name}'"}}
         except ValueError as e:
@@ -820,8 +820,9 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
         pred_id = merged.get("predicate_id") or (remaining and remaining[1] if len(remaining) > 1 else "") or ""
         if not group_name or not pred_id:
             raise CommandValidationError("Specify group name and predicate_id")
+        group = _resolve_group(svc, group_name)
         try:
-            svc["predicate_group"].add_member(group_name, pred_id)
+            svc["predicate_group"].add_member(group["uuid"], pred_id)
             return {"type": "status", "data": {"message": f"Added {pred_id} to '{group_name}'"}}
         except ValueError as e:
             raise CommandValidationError(str(e))
@@ -831,8 +832,9 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
         pred_id = merged.get("predicate_id") or (remaining and remaining[1] if len(remaining) > 1 else "") or ""
         if not group_name or not pred_id:
             raise CommandValidationError("Specify group name and predicate_id")
+        group = _resolve_group(svc, group_name)
         try:
-            svc["predicate_group"].remove_member(group_name, pred_id)
+            svc["predicate_group"].remove_member(group["uuid"], pred_id)
             return {"type": "status", "data": {"message": f"Removed {pred_id} from '{group_name}'"}}
         except ValueError as e:
             raise CommandValidationError(str(e))
@@ -868,6 +870,10 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
         katex = flags.get("katex", None)
         str_dosiero = flags.get("str_dosiero", None) or flags.get("str-dosiero", None)
         kodlingvo = flags.get("kodlingvo", None)
+        object_type = "uri"
+        object_datatype = None
+        object_lang = None
+        str_dosiero_used = False
 
         # Resolve object source
         if katex is not None:
@@ -881,7 +887,7 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
                 raise CommandValidationError(f"Could not read file: {e}")
             object_type = "literal"
             object_datatype = "text/plain"
-            str_flag = True
+            str_dosiero_used = True
             if kodlingvo:
                 object_datatype = f"text/x-{kodlingvo}"
         elif str_flag:
@@ -899,7 +905,8 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
             object_type = "uri"
             object_datatype = None
 
-        object_lang = lang if str_flag else None
+        effective_str = str_flag or str_dosiero_used
+        object_lang = lang if effective_str else None
 
         # Resolve subject/object IDs for URI type
         try:
@@ -955,14 +962,16 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
 
         # Try to find the triple(s)
         if predicate and object_val:
-            # Full SPO — direct delete
-            triple = svc["triple"].get_one(subject, predicate, object_val)
+            # Full SPO — try literal first, then URI
+            triple = svc["triple"].get_one(subject, predicate, object_val, object_type="literal")
             if not triple:
-                # Try to resolve as URI
+                triple = svc["triple"].get_one(subject, predicate, object_val, object_type="uri")
+            if not triple:
+                # Try to resolve as URI with prefix
                 try:
                     obj_node = svc["node"].resolve_node_id_prefix(object_val)
                     if obj_node:
-                        triple = svc["triple"].get_one(subject, predicate, obj_node["node_id"])
+                        triple = svc["triple"].get_one(subject, predicate, obj_node["node_id"], object_type="uri")
                         if triple:
                             object_val = obj_node["node_id"]
                 except Exception:
@@ -1008,12 +1017,14 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
         # Find the existing triple
         triple = None
         if predicate and object_val:
-            triple = svc["triple"].get_one(subject, predicate, object_val) or None
+            triple = svc["triple"].get_one(subject, predicate, object_val, object_type="literal")
+            if not triple:
+                triple = svc["triple"].get_one(subject, predicate, object_val, object_type="uri")
             if not triple:
                 try:
                     obj_node = svc["node"].resolve_node_id_prefix(object_val)
                     if obj_node:
-                        triple = svc["triple"].get_one(subject, predicate, obj_node["node_id"])
+                        triple = svc["triple"].get_one(subject, predicate, obj_node["node_id"], object_type="uri")
                         if triple:
                             object_val = obj_node["node_id"]
                 except Exception:
@@ -1147,7 +1158,7 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
         node_id = merged.get("id") or (remaining and remaining[0]) or ""
         if not node_id:
             raise CommandValidationError("Specify a node ID")
-        svc["node"].permanent_delete(node_id)
+        svc["node"].delete(node_id, soft=False)
         return {"type": "status", "data": {"message": f"Permanently deleted {node_id}"}}
 
     if path == "trash.purge":
@@ -1164,7 +1175,7 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
             for item in items:
                 nid = item.get("node_id") or item.get(svc["node"]._pk_column)
                 if nid:
-                    svc["node"].permanent_delete(nid)
+                    svc["node"].delete(nid, soft=False)
         return {"type": "status", "data": {"message": f"Purged {count} item(s) from trash"}}
 
     # ── Review commands ───────────────────────────────────────────────
@@ -1845,6 +1856,14 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
+
+def _resolve_group(svc: dict, name: str) -> dict:
+    """Resolve a predicate group by name using resolve_group_name()."""
+    group = svc["predicate_group"].resolve_group_name(name)
+    if not group:
+        raise CommandValidationError(f"Group not found: '{name}'")
+    return group
+
 
 def _parse_lang_tag_pairs(text: str | list[str]) -> dict[str, str]:
     """Parse ``LANG::TEXT`` or ``LANG:TEXT`` pairs into a dict.

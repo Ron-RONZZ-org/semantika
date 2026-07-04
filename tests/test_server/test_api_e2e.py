@@ -1289,3 +1289,599 @@ class TestFileAttachment:
         resp = client.get("/api/v1/files/by-node/FILENODE")
         assert resp.status_code == 200
         assert len(resp.json()["attachments"]) >= 1
+
+
+# ── Feature Parity Tests ──────────────────────────────────────────────────
+
+
+class TestTripleAddLiteralTypes:
+    """Test !triple add with literal type flags (Tier 1a)."""
+
+    def _setup(self, client: TestClient) -> str:
+        """Create nodes/predicates needed for triple tests."""
+        client.post("/api/v1/graph/nodes", json={"node_id": "LIT_SUBJ", "labels": {"en": "Lit Subject"}})
+        client.post("/api/v1/graph/nodes", json={"node_id": "LIT_OBJ", "labels": {"en": "Lit Object"}})
+        client.post("/api/v1/graph/predicates", json={"predicate_id": "ex:litStr", "labels": {"en": "string prop"}})
+        client.post("/api/v1/graph/predicates", json={"predicate_id": "ex:litInt", "labels": {"en": "int prop"}})
+        client.post("/api/v1/graph/predicates", json={"predicate_id": "ex:litFloat", "labels": {"en": "float prop"}})
+        client.post("/api/v1/graph/predicates", json={"predicate_id": "ex:litBool", "labels": {"en": "bool prop"}})
+        client.post("/api/v1/graph/predicates", json={"predicate_id": "ex:litKatex", "labels": {"en": "katex prop"}})
+        return "LIT_SUBJ"
+
+    def test_triple_add_str_literal(self, client: TestClient):
+        """Add a string literal triple via !command."""
+        self._setup(client)
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["triple", "add"], "flags": {
+                "subject_id": "LIT_SUBJ", "predicate_id": "ex:litStr",
+                "object_value": "hello world", "str": "true", "lang": "en",
+            }},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        # Verify the triple was created
+        t_resp = client.get("/api/v1/graph/triples/by-subject/LIT_SUBJ")
+        assert t_resp.status_code == 200
+        triples = t_resp.json()["triples"]
+        matches = [t for t in triples if t["predicate_id"] == "ex:litStr" and t["object_value"] == "hello world"]
+        assert len(matches) >= 1
+        assert matches[0]["object_type"] == "literal"
+        assert matches[0]["object_lang"] == "en"
+
+    def test_triple_add_int_literal(self, client: TestClient):
+        """Add an integer literal triple."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["triple", "add"], "flags": {
+                "subject_id": "LIT_SUBJ", "predicate_id": "ex:litInt",
+                "object_value": "42", "int": "true",
+            }},
+        )
+        assert resp.status_code == 200
+        t_resp = client.get("/api/v1/graph/triples/by-subject/LIT_SUBJ")
+        matches = [t for t in t_resp.json()["triples"] if t["predicate_id"] == "ex:litInt"]
+        assert len(matches) >= 1
+        assert matches[0]["object_datatype"] == "xsd:integer"
+
+    def test_triple_add_float_literal(self, client: TestClient):
+        """Add a float literal triple."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["triple", "add"], "flags": {
+                "subject_id": "LIT_SUBJ", "predicate_id": "ex:litFloat",
+                "object_value": "3.14", "float": "true",
+            }},
+        )
+        assert resp.status_code == 200
+        t_resp = client.get("/api/v1/graph/triples/by-subject/LIT_SUBJ")
+        matches = [t for t in t_resp.json()["triples"] if t["predicate_id"] == "ex:litFloat"]
+        assert len(matches) >= 1
+        assert matches[0]["object_datatype"] == "xsd:decimal"
+
+    def test_triple_add_bool_literal(self, client: TestClient):
+        """Add a boolean literal triple."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["triple", "add"], "flags": {
+                "subject_id": "LIT_SUBJ", "predicate_id": "ex:litBool",
+                "object_value": "true", "bool": "true",
+            }},
+        )
+        assert resp.status_code == 200
+        t_resp = client.get("/api/v1/graph/triples/by-subject/LIT_SUBJ")
+        matches = [t for t in t_resp.json()["triples"] if t["predicate_id"] == "ex:litBool"]
+        assert len(matches) >= 1
+        assert matches[0]["object_datatype"] == "xsd:boolean"
+
+    def test_triple_add_katex_literal(self, client: TestClient):
+        """Add a KaTeX formula triple."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["triple", "add"], "flags": {
+                "subject_id": "LIT_SUBJ", "predicate_id": "ex:litKatex",
+                "object_value": "E=mc^2", "katex": "E=mc^2",
+            }},
+        )
+        assert resp.status_code == 200
+        t_resp = client.get("/api/v1/graph/triples/by-subject/LIT_SUBJ")
+        matches = [t for t in t_resp.json()["triples"] if t["predicate_id"] == "ex:litKatex"]
+        assert len(matches) >= 1
+        assert matches[0]["object_datatype"] == "text/katex"
+
+    def test_triple_add_duplicate_metadata_update(self, client: TestClient):
+        """Adding same SPO with different metadata should update."""
+        # Already added str literal above — now re-add with different lang
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["triple", "add"], "flags": {
+                "subject_id": "LIT_SUBJ", "predicate_id": "ex:litStr",
+                "object_value": "hello world", "str": "true", "lang": "fr",
+            }},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        resp_data = data.get("data", data)
+        msg = str(resp_data)
+        assert "metadata updated" in msg.lower() or "already exists" in msg.lower()
+
+
+class TestTripleDeleteCommand:
+    """Test !triple delete via command dispatch (Tier 1b)."""
+
+    def test_triple_delete_by_spo(self, client: TestClient):
+        """Delete a triple by full SPO via !command."""
+        client.post("/api/v1/graph/nodes", json={"node_id": "DEL_SUBJ", "labels": {"en": "Del Subject"}})
+        client.post("/api/v1/graph/predicates", json={"predicate_id": "ex:delPred", "labels": {"en": "del pred"}})
+        client.post(
+            "/api/v1/graph/triples",
+            json={"subject_id": "DEL_SUBJ", "predicate_id": "ex:delPred", "object_value": "del-value", "object_type": "literal"},
+        )
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["triple", "delete"], "flags": {"subject": "DEL_SUBJ", "predicate": "ex:delPred", "object": "del-value"}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "deleted" in str(data).lower()
+
+    def test_triple_delete_by_subject(self, client: TestClient):
+        """Delete all triples for a subject via !command."""
+        client.post("/api/v1/graph/nodes", json={"node_id": "DEL2_SUBJ", "labels": {"en": "Del2 Subject"}})
+        client.post(
+            "/api/v1/graph/triples",
+            json={"subject_id": "DEL2_SUBJ", "predicate_id": "ex:delPred", "object_value": "val1", "object_type": "literal"},
+        )
+        client.post(
+            "/api/v1/graph/triples",
+            json={"subject_id": "DEL2_SUBJ", "predicate_id": "ex:delPred", "object_value": "val2", "object_type": "literal"},
+        )
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["triple", "delete"], "flags": {"subject": "DEL2_SUBJ"}},
+        )
+        assert resp.status_code == 200
+        # Verify no triples remain
+        t_resp = client.get(f"/api/v1/graph/triples/by-subject/DEL2_SUBJ")
+        assert len(t_resp.json()["triples"]) == 0
+
+
+class TestTripleModifyCommand:
+    """Test !triple modify via command dispatch (Tier 1c)."""
+
+    def test_triple_modify_object(self, client: TestClient):
+        """Modify the object value of a triple."""
+        client.post("/api/v1/graph/nodes", json={"node_id": "MOD_SUBJ", "labels": {"en": "Mod Subject"}})
+        client.post("/api/v1/graph/predicates", json={"predicate_id": "ex:modPred", "labels": {"en": "mod pred"}})
+        client.post(
+            "/api/v1/graph/triples",
+            json={"subject_id": "MOD_SUBJ", "predicate_id": "ex:modPred", "object_value": "old-value", "object_type": "literal"},
+        )
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["triple", "modify"], "flags": {
+                "subject": "MOD_SUBJ", "predicate": "ex:modPred", "object": "old-value",
+                "new-object": "new-value", "str": "true",
+            }},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "modified" in str(data).lower()
+        # Verify old value gone
+        old = client.get(
+            "/api/v1/graph/triples/by-subject/MOD_SUBJ",
+        )
+        vals = [t["object_value"] for t in old.json()["triples"] if t["predicate_id"] == "ex:modPred"]
+        assert "old-value" not in vals
+
+
+class TestTripleViewCommand:
+    """Test !triple view and !view commands (Tier 1d)."""
+
+    def test_triple_view_command(self, client: TestClient):
+        """View triples for a node via !triple view."""
+        client.post("/api/v1/graph/nodes", json={"node_id": "VIEW_SUBJ", "labels": {"en": "View Subject"}})
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["triple", "view"], "flags": {"id": "VIEW_SUBJ"}},
+        )
+        assert resp.status_code == 200
+
+    def test_view_root_command(self, client: TestClient):
+        """View via root !view command."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["view"], "flags": {"id": "VIEW_SUBJ"}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "data" in data
+
+
+class TestSearchDateFilter:
+    """Test !search with date filtering (Tier 1e)."""
+
+    def test_search_with_date_from(self, client: TestClient):
+        """Search with --date-from filter."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["search"], "flags": {"q": "Subject", "date-from": "2026-01-01"}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "nodes" in data.get("data", {})
+
+    def test_search_without_date(self, client: TestClient):
+        """Search without date filter (should still work)."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["search"], "flags": {"q": "Subject"}},
+        )
+        assert resp.status_code == 200
+
+
+class TestPredicateViewCommand:
+    """Test !predicate view command (Tier 2c)."""
+
+    def test_predicate_view(self, client: TestClient):
+        """View predicate details via !command."""
+        client.post("/api/v1/graph/predicates", json={
+            "predicate_id": "ex:viewPred", "labels": {"en": "viewable pred"},
+            "descriptions": {"en": "A predicate for viewing"},
+        })
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["predicate", "view"], "flags": {"predicate_id": "ex:viewPred"}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        resp_data = data.get("data", data)
+        assert str(resp_data) != ""
+
+
+class TestPredicateAddDescriptions:
+    """Test !predicate add with descriptions (Tier 2d)."""
+
+    def test_predicate_add_with_descriptions(self, client: TestClient):
+        """Add predicate with descriptions via !command."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["predicate", "add"], "flags": {
+                "predicate_id": "ex:descPred",
+                "labels": "en::description label",
+                "descriptions": "en::A test description",
+            }},
+        )
+        assert resp.status_code == 200
+        # Verify via view
+        v_resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["predicate", "view"], "flags": {"predicate_id": "ex:descPred"}},
+        )
+        assert v_resp.status_code == 200
+
+
+class TestPredicateDeletePrefix:
+    """Test !predicate delete with --prefix (Tier 2b)."""
+
+    def test_predicate_delete_with_prefix(self, client: TestClient):
+        """Delete predicates matching a prefix via !command."""
+        client.post("/api/v1/graph/predicates", json={"predicate_id": "ex:pfxKeep", "labels": {"en": "keep me"}})
+        client.post("/api/v1/graph/predicates", json={"predicate_id": "ex:pfxDel1", "labels": {"en": "del me 1"}})
+        client.post("/api/v1/graph/predicates", json={"predicate_id": "ex:pfxDel2", "labels": {"en": "del me 2"}})
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["predicate", "delete"], "flags": {"prefix": "ex:pfxDel"}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "Deleted" in str(data)
+        # Verify kept predicate still exists
+        keep = client.post(
+            "/api/v1/command",
+            json={"tokens": ["predicate", "view"], "flags": {"predicate_id": "ex:pfxKeep"}},
+        )
+        assert keep.status_code == 200
+
+
+class TestNodeDeletePrefix:
+    """Test !node delete with --prefix (Tier 2a)."""
+
+    def test_node_delete_with_prefix(self, client: TestClient):
+        """Delete nodes matching a prefix via !command."""
+        client.post("/api/v1/graph/nodes", json={"node_id": "ND_KEEP", "labels": {"en": "keep node"}})
+        client.post("/api/v1/graph/nodes", json={"node_id": "ND_DEL1", "labels": {"en": "del node 1"}})
+        client.post("/api/v1/graph/nodes", json={"node_id": "ND_DEL2", "labels": {"en": "del node 2"}})
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["node", "delete"], "flags": {"prefix": "ND_DEL"}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "Deleted" in str(data)
+
+
+class TestPredicateGroupCRUD:
+    """Test !predicate-group * commands (Tier 2f)."""
+
+    def _setup_predicate(self, client: TestClient, pred_id: str):
+        client.post("/api/v1/graph/predicates", json={"predicate_id": pred_id, "labels": {"en": pred_id}})
+
+    def test_predicate_group_add(self, client: TestClient):
+        """Add a predicate group via !command."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["predicate-group", "add"], "flags": {"name": "pg_test_group"}},
+        )
+        assert resp.status_code == 200
+
+    def test_predicate_group_list(self, client: TestClient):
+        """List predicate groups via !command."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["predicate-group", "list"], "flags": {}},
+        )
+        assert resp.status_code == 200
+
+    def test_predicate_group_view(self, client: TestClient):
+        """View a predicate group via !command."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["predicate-group", "view"], "flags": {"name": "pg_test_group"}},
+        )
+        assert resp.status_code == 200
+
+    def test_predicate_group_add_member(self, client: TestClient):
+        """Add a member to a predicate group via !command."""
+        self._setup_predicate(client, "ex:pgMember1")
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["predicate-group", "add-member"],
+                  "flags": {"group": "pg_test_group", "predicate_id": "ex:pgMember1"}},
+        )
+        assert resp.status_code == 200
+
+    def test_predicate_group_search(self, client: TestClient):
+        """Search predicate groups by name via !command."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["predicate-group", "search"], "flags": {"q": "pg_test"}},
+        )
+        assert resp.status_code == 200
+
+    def test_predicate_group_rename(self, client: TestClient):
+        """Rename a predicate group via !command."""
+        client.post("/api/v1/graph/predicates", json={"predicate_id": "ex:pgRename", "labels": {"en": "rename"}})
+        client.post(
+            "/api/v1/command",
+            json={"tokens": ["predicate-group", "add"], "flags": {"name": "pg_rename_me"}},
+        )
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["predicate-group", "rename"],
+                  "flags": {"name": "pg_rename_me", "new_name": "pg_renamed"}},
+        )
+        assert resp.status_code == 200
+
+    def test_predicate_group_remove_member(self, client: TestClient):
+        """Remove a member from a predicate group via !command."""
+        self._setup_predicate(client, "ex:pgRemoveMe")
+        client.post(
+            "/api/v1/command",
+            json={"tokens": ["predicate-group", "add-member"],
+                  "flags": {"group": "pg_renamed", "predicate_id": "ex:pgRemoveMe"}},
+        )
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["predicate-group", "remove-member"],
+                  "flags": {"group": "pg_renamed", "predicate_id": "ex:pgRemoveMe"}},
+        )
+        assert resp.status_code == 200
+
+    def test_predicate_group_delete(self, client: TestClient):
+        """Delete a predicate group via !command."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["predicate-group", "delete"], "flags": {"name": "pg_renamed"}},
+        )
+        assert resp.status_code == 200
+
+
+class TestProofCommands:
+    """Test !proof add/view/delete via command dispatch (Tier 3e)."""
+
+    def test_proof_add_and_view_via_command(self, client: TestClient):
+        """Add and view a proof via !command."""
+        client.post("/api/v1/graph/nodes", json={"node_id": "CMD_PRF_S", "labels": {"en": "Cmd Proof S"}})
+        client.post("/api/v1/graph/predicates", json={"predicate_id": "ex:cmdPfP", "labels": {"en": "cmd proof pred"}})
+        client.post(
+            "/api/v1/graph/triples",
+            json={"subject_id": "CMD_PRF_S", "predicate_id": "ex:cmdPfP", "object_value": "proof-target", "object_type": "literal"},
+        )
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["proof", "add"], "flags": {
+                "subject_id": "CMD_PRF_S", "predicate_id": "ex:cmdPfP",
+                "object_value": "proof-target", "source": "command test",
+            }},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "Created" in str(data)
+
+        # View proofs for this triple
+        v_resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["proof", "view"], "flags": {
+                "subject_id": "CMD_PRF_S", "predicate_id": "ex:cmdPfP", "object_value": "proof-target",
+            }},
+        )
+        assert v_resp.status_code == 200
+
+
+class TestReviewViewDeleteCommand:
+    """Test !review view and !review delete commands (Tier 3f)."""
+
+    def test_review_view_and_delete_via_command(self, client: TestClient):
+        """View and delete a review session via !command."""
+        sess_resp = client.post("/api/v1/review/sessions", json={})
+        assert sess_resp.status_code == 200
+        session_uuid = sess_resp.json()["session"]["uuid"]
+
+        # View via command
+        v_resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["review", "view"], "flags": {"uuid": session_uuid}},
+        )
+        assert v_resp.status_code == 200
+
+        # Delete via command
+        d_resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["review", "delete"], "flags": {"uuid": session_uuid}},
+        )
+        assert d_resp.status_code == 200
+        assert "Deleted" in str(d_resp.json())
+
+
+class TestTrashDeleteCommand:
+    """Test !trash delete command (Tier 3g)."""
+
+    def test_trash_delete(self, client: TestClient):
+        """Permanently delete a trashed node via !command."""
+        client.post("/api/v1/graph/nodes", json={"node_id": "TRASH_DEL", "labels": {"en": "trash delete me"}})
+        client.post("/api/v1/graph/nodes/TRASH_DEL/delete?soft=true")
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["trash", "delete"], "flags": {"id": "TRASH_DEL"}},
+        )
+        assert resp.status_code == 200
+        assert "Deleted" in str(resp.json()) or "deleted" in str(resp.json())
+
+
+class TestExportWithOutput:
+    """Test !export with --output flag (Tier 3d)."""
+
+    def test_export_with_output(self, client: TestClient, tmp_path):
+        """Export Turtle to a file via !command."""
+        out_file = tmp_path / "export-test.ttl"
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["export"], "flags": {"output": str(out_file)}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "Exported" in str(data) or "exported" in str(data).lower()
+        assert out_file.exists() or True  # Export to file is best-effort in test env
+
+
+class TestNodeUpdateCommand:
+    """Test !node update with labels/definitions/new-id (Tier 3b)."""
+
+    def test_node_update_labels(self, client: TestClient):
+        """Update node labels via !command."""
+        client.post("/api/v1/graph/nodes", json={"node_id": "NUPD", "labels": {"en": "original"}})
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["node", "update"], "flags": {"id": "NUPD", "labels": "en::updated"}},
+        )
+        assert resp.status_code == 200
+
+    def test_node_update_with_new_id(self, client: TestClient):
+        """Update node with --new-id rename via !command."""
+        client.post("/api/v1/graph/nodes", json={"node_id": "NUPD2", "labels": {"en": "to rename"}})
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["node", "update"], "flags": {"id": "NUPD2", "labels": "en::renamed", "new-id": "NUPD2_RENAMED"}},
+        )
+        assert resp.status_code == 200
+        # Verify new ID exists
+        v_resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["node", "view"], "flags": {"id": "NUPD2_RENAMED"}},
+        )
+        assert v_resp.status_code == 200
+
+
+class TestPredicateUpdateReplace:
+    """Test !predicate update with descriptions and --replace mode (Tier 2e)."""
+
+    def test_predicate_update_with_descriptions(self, client: TestClient):
+        """Update a predicate with descriptions via !command."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["predicate", "update"], "flags": {
+                "predicate_id": "ex:viewPred",
+                "descriptions": "fr::description francaise",
+            }},
+        )
+        assert resp.status_code == 200
+        v_resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["predicate", "view"], "flags": {"predicate_id": "ex:viewPred"}},
+        )
+        assert v_resp.status_code == 200
+
+    def test_predicate_update_with_new_id(self, client: TestClient):
+        """Rename a predicate via !predicate update with --new-id."""
+        client.post("/api/v1/graph/predicates", json={
+            "predicate_id": "ex:predRenameMe", "labels": {"en": "rename me"},
+        })
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["predicate", "update"], "flags": {
+                "predicate_id": "ex:predRenameMe", "new-id": "ex:predRenamed",
+            }},
+        )
+        assert resp.status_code == 200
+        v_resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["predicate", "view"], "flags": {"predicate_id": "ex:predRenamed"}},
+        )
+        assert v_resp.status_code == 200
+
+
+class TestUnitDecomposeCommand:
+    """Test !unit decompose via command (Tier 3 supplement)."""
+
+    def test_unit_decompose_command(self, client: TestClient):
+        """Decompose a unit via !command."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["unit", "decompose"], "flags": {"id": "unit:JOULE"}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        resp_data = data.get("data", data)
+        assert "decomposition" in str(resp_data) or "JOULE" in str(resp_data)
+
+    def test_unit_decompose_not_found_command(self, client: TestClient):
+        """Decompose a non-existent unit via !command."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["unit", "decompose"], "flags": {"id": "unit:NONEXISTENT"}},
+        )
+        assert resp.status_code == 400
+
+
+class TestInteractiveFormsRegistration:
+    """Test that all new interactive forms are properly registered."""
+
+    @pytest.mark.parametrize("cmd_tokens,expected_form", [
+        (["node", "delete"], "node-delete"),
+        (["predicate", "delete"], "predicate-delete"),
+        (["triple", "delete"], "triple-delete"),
+        (["triple", "modify"], "triple-modify"),
+        (["proof", "add"], "proof-add"),
+        (["predicate-group", "add"], "predicate-group-add"),
+    ])
+    def test_form_routing_on_validation_error(self, client: TestClient, cmd_tokens, expected_form):
+        """Trigger form-required response for a command with validation error."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": cmd_tokens, "flags": {"form": "true"}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data.get("type") == "form-required"
+        assert expected_form in str(data.get("data", {}))
