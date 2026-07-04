@@ -158,6 +158,85 @@ class TestNodeService:
         results = services["node"].list()
         assert isinstance(results, list)
 
+    def test_get_nonexistent_returns_none(self, services: dict):
+        """get() returns None for nonexistent node."""
+        assert services["node"].get("NONEXISTENT") is None
+
+    def test_rename_node(self, services: dict):
+        ns = services["node"]
+        ns.create({"node_id": "OLDID", "labels": {"en": "Old"}})
+        ns.update_node_id("OLDID", "NEWID")
+        assert ns.get("OLDID") is None
+        assert ns.get("NEWID") is not None
+
+    def test_rename_nonexistent(self, services: dict):
+        ns = services["node"]
+        with pytest.raises(ValueError, match="not found"):
+            ns.update_node_id("NONEXISTENT", "NEWID")
+
+    def test_rename_to_existing(self, services: dict):
+        ns = services["node"]
+        ns.create({"node_id": "A", "labels": {"en": "A"}})
+        ns.create({"node_id": "B", "labels": {"en": "B"}})
+        with pytest.raises(ValueError, match="already exists"):
+            ns.update_node_id("A", "B")
+
+    def test_merge_nodes(self, services: dict):
+        ns = services["node"]
+        ns.create({"node_id": "SRC", "labels": {"en": "Source"}, "definitions": {"en": "src def"}})
+        ns.create({"node_id": "TGT", "labels": {"en": "Target"}, "definitions": {"en": "tgt def"}})
+        result = ns.merge_nodes("SRC", "TGT")
+        assert result["node_id"] == "TGT"
+        assert ns.get("SRC") is None
+
+    def test_merge_same_node(self, services: dict):
+        ns = services["node"]
+        ns.create({"node_id": "SAME", "labels": {"en": "Same"}})
+        with pytest.raises(ValueError, match="different"):
+            ns.merge_nodes("SAME", "SAME")
+
+    def test_merge_source_not_found(self, services: dict):
+        ns = services["node"]
+        ns.create({"node_id": "TGT", "labels": {"en": "Target"}})
+        with pytest.raises(ValueError, match="not found"):
+            ns.merge_nodes("NONEXISTENT", "TGT")
+
+    def test_merge_target_not_found(self, services: dict):
+        ns = services["node"]
+        ns.create({"node_id": "SRC", "labels": {"en": "Source"}})
+        with pytest.raises(ValueError, match="not found"):
+            ns.merge_nodes("SRC", "NONEXISTENT")
+
+    def test_update_with_definitions_dict(self, services: dict):
+        ns = services["node"]
+        ns.create({"node_id": "DEFNODE", "labels": {"en": "Def"}})
+        ns.update("DEFNODE", {"definitions": {"en": "Definition text"}})
+        node = ns.get("DEFNODE")
+        assert node is not None
+        assert "Definition text" in node.get("definition_text", "")
+
+    def test_trash_older_than(self, services: dict):
+        ns = services["node"]
+        ns.create({"node_id": "OLDTRASH", "labels": {"en": "Old trash"}})
+        ns.delete("OLDTRASH", soft=True)
+        items = ns.get_trash_older_than(0)
+        assert len(items) >= 1
+
+    def test_empty_all_trash(self, services: dict):
+        ns = services["node"]
+        ns.create({"node_id": "EMPTYME", "labels": {"en": "Empty"}})
+        ns.delete("EMPTYME", soft=True)
+        count = ns.empty_all_trash()
+        assert count >= 1
+        assert len(ns.list_trash()) == 0
+
+    def test_ensure_fts_creates_index(self, services: dict):
+        """_ensure_fts creates the FTS table."""
+        ns = services["node"]
+        ns._ensure_fts()
+        # Calling it twice should be idempotent
+        ns._ensure_fts()
+
 
 class TestPredicateService:
     def test_create_and_get(self, services: dict):
@@ -280,6 +359,80 @@ class TestReviewService:
         rs = services["review"]
         session = rs.create_session()
         assert "session" in session
+
+    def test_create_session_with_date_filter(self, services: dict):
+        ns = services["node"]
+        ps = services["predicate"]
+        ts = services["triple"]
+        ns.create({"node_id": "Y", "labels": {"en": "Y"}})
+        ps.create({"predicate_id": "ex:q", "labels": {"en": "q"}})
+        ts.add("Y", "ex:q", "Y", object_type="uri")
+
+        rs = services["review"]
+        session = rs.create_session(date_from="2020-01-01", date_to="2020-12-31")
+        assert "session" in session
+
+    def test_list_sessions_empty(self, services: dict):
+        sessions = services["review"].list_sessions()
+        assert isinstance(sessions, list)
+
+    def test_get_session_nonexistent(self, services: dict):
+        result = services["review"].get_session("00000000-0000-0000-0000-000000000000")
+        assert result is None
+
+    def test_delete_session_nonexistent(self, services: dict):
+        """Deleting a nonexistent session should not raise."""
+        services["review"].delete_session("00000000-0000-0000-0000-000000000000")
+
+    def test_answer_review(self, services: dict):
+        ns = services["node"]
+        ps = services["predicate"]
+        ts = services["triple"]
+        rs = services["review"]
+        ns.create({"node_id": "QA", "labels": {"en": "Q"}})
+        ps.create({"predicate_id": "ex:pa", "labels": {"en": "pa"}})
+        ts.add("QA", "ex:pa", "QA", object_type="uri")
+
+        session = rs.create_session()
+        session_uuid = session["session"]["uuid"]
+        # Get first result from the session
+        results = session.get("results", [])
+        if results:
+            result_uuid = results[0]["uuid"]
+            result = rs.answer_review(result_uuid, is_correct=True, response="test answer")
+            assert result is not None
+            if result:
+                assert "uuid" in result
+
+    def test_generate_distractors(self, services: dict):
+        ns = services["node"]
+        rs = services["review"]
+        ns.create({"node_id": "CORRECT", "labels": {"en": "Correct answer"}})
+        ns.create({"node_id": "D1", "labels": {"en": "Distractor one"}})
+        ns.create({"node_id": "D2", "labels": {"en": "Distractor two"}})
+        distractors = rs._generate_distractors("CORRECT", correct_type="uri", count=2)
+        assert len(distractors) <= 2
+        assert "CORRECT" not in distractors
+
+    def test_extract_first_label(self, services: dict):
+        rs = services["review"]
+        label = rs._extract_first_label('{"en": "Hello"}')
+        assert label == "Hello"
+
+    def test_extract_first_label_invalid_json(self, services: dict):
+        rs = services["review"]
+        label = rs._extract_first_label("not-json")
+        assert label == ""
+
+    def test_extract_first_label_invalid_type(self, services: dict):
+        rs = services["review"]
+        label = rs._extract_first_label(12345)
+        assert label == ""
+
+    def test_extract_first_label_empty_string(self, services: dict):
+        rs = services["review"]
+        label = rs._extract_first_label("")
+        assert label == ""
 
 
 class TestProofService:
