@@ -82,6 +82,13 @@ class TestNodeService:
         assert len(results) >= 1
         assert results[0]["node_id"] in ("DOG", "CAT")
 
+    def test_search_empty_query(self, services: dict):
+        """Empty search query falls back to list."""
+        ns = services["node"]
+        ns.create({"node_id": "ANY", "labels": {"en": "Anything"}})
+        results = ns.search("")
+        assert len(results) >= 1
+
     def test_prefix_resolution(self, services: dict):
         ns = services["node"]
         ns.create({"node_id": "HELLO_WORLD", "labels": {"en": "Hello"}})
@@ -89,11 +96,40 @@ class TestNodeService:
         assert result is not None
         assert result["node_id"] == "HELLO_WORLD"
 
+    def test_prefix_resolution_ambiguous(self, services: dict):
+        """Multiple matches raise AmbiguousIDError."""
+        from semantika.core.exceptions import AmbiguousIDError
+        ns = services["node"]
+        ns.create({"node_id": "HELLO_WORLD", "labels": {"en": "Hello"}})
+        ns.create({"node_id": "HELLO_THERE", "labels": {"en": "Hi"}})
+        with pytest.raises(AmbiguousIDError):
+            ns.resolve_node_id_prefix("HELLO")
+
+    def test_prefix_resolution_not_found(self, services: dict):
+        """No match returns None."""
+        ns = services["node"]
+        assert ns.resolve_node_id_prefix("NONEXISTENT") is None
+
     def test_update(self, services: dict):
         ns = services["node"]
         ns.create({"node_id": "UPD", "labels": {"en": "Original"}})
         ns.update("UPD", {"labels": {"en": "Updated"}})
         assert "Updated" in ns.get("UPD")["label_text"]
+
+    def test_update_with_definitions(self, services: dict):
+        """Update with definitions dict."""
+        ns = services["node"]
+        ns.create({"node_id": "UPDDEF", "labels": {"en": "Def"}})
+        ns.update("UPDDEF", {"definitions": {"en": "A definition"}})
+        node = ns.get("UPDDEF")
+        assert node is not None
+        assert "definition" in node.get("definition_text", "")
+
+    def test_update_not_found(self, services: dict):
+        """Updating nonexistent node raises ValueError."""
+        ns = services["node"]
+        with pytest.raises(ValueError, match="not found"):
+            ns.update("NONEXISTENT", {"labels": {"en": "Oops"}})
 
     def test_trash_and_restore(self, services: dict):
         ns = services["node"]
@@ -103,6 +139,24 @@ class TestNodeService:
         restored = ns.restore_from_trash("TRASH")
         assert restored is not None
         assert ns.get("TRASH") is not None
+
+    def test_soft_delete_twice(self, services: dict):
+        """Soft-deleting an already deleted node returns False."""
+        ns = services["node"]
+        ns.create({"node_id": "SD2", "labels": {"en": "Soft Del"}})
+        ns.delete("SD2", soft=True)
+        result = ns.delete("SD2", soft=True)
+        assert result is False
+
+    def test_restore_nonexistent(self, services: dict):
+        """Restoring a node that was never trashed returns None."""
+        ns = services["node"]
+        assert ns.restore_from_trash("NONEXISTENT") is None
+
+    def test_list_empty(self, services: dict):
+        """list returns at least auto-created nodes."""
+        results = services["node"].list()
+        assert isinstance(results, list)
 
 
 class TestPredicateService:
