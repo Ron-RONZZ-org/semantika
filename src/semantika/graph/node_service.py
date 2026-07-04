@@ -190,7 +190,7 @@ class NodeService(CRUDService):
     # ── Move to trash ─────────────────────────────────────────────────
 
     def _move_to_trash(self, node_id: str) -> None:
-        """Move a node to the trash table."""
+        """Move a node to the trash table, removing related triples first."""
         entry = self.db.execute_one(
             f"SELECT * FROM nodes WHERE node_id = ?", (node_id,)
         )
@@ -206,6 +206,11 @@ class NodeService(CRUDService):
 
         with self.db.transaction() as conn:
             self._remove_from_fts(node_id)
+            # Remove triples referencing this node (FK constraint)
+            conn.execute(
+                "DELETE FROM triples WHERE subject_id = ? OR (object_type = 'uri' AND object_value = ?)",
+                (node_id, node_id),
+            )
             conn.execute(
                 f"INSERT OR REPLACE INTO nodes_trash ({', '.join(columns)}) "
                 f"VALUES ({placeholders})", values,

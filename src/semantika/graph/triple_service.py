@@ -76,7 +76,8 @@ class TripleService:
         sql = f"DELETE FROM triples WHERE {' AND '.join(clauses)}"
         self.db.execute(sql, tuple(params))
         # Return count from the number of affected rows
-        return len(self.db.execute("SELECT changes() AS cnt")) > 0
+        result = self.db.execute_one("SELECT changes() AS cnt")
+        return result["cnt"] if result else 0
 
     # ── Queries ────────────────────────────────────────────────────────
 

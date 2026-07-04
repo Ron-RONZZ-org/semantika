@@ -101,13 +101,74 @@ def get_command_tree() -> list[dict]:
     ]
 
 
+# ── Tree-based command resolution ────────────────────────────────────────
+
+def _resolve_command_path(
+    tokens: list[str],
+    tree: list[dict],
+) -> tuple[list[str], list[str], dict] | None:
+    """Walk the command tree to separate path tokens from positional params.
+
+    Returns (cmd_tokens, remaining_tokens, merged_flags) or None if no match.
+    Extra positional tokens are injected into *merged_flags* using param names
+    defined on the leaf node.
+    """
+    cmd_tokens: list[str] = []
+    remaining = list(tokens)
+    current_level = tree
+    leaf_node = None
+
+    while remaining and current_level:
+        token = remaining[0].lower()
+        matched = None
+        for child in current_level:
+            if child["name"].lower() == token:
+                matched = child
+                break
+        if not matched:
+            break
+        cmd_tokens.append(remaining.pop(0))
+        if matched.get("children"):
+            current_level = matched["children"]
+        else:
+            leaf_node = matched
+            break
+
+    if not cmd_tokens:
+        return None
+
+    # Remaining tokens become positional params
+    params = leaf_node.get("params") if leaf_node else []
+    merged = {}
+    param_idx = 0
+    for val in remaining:
+        if param_idx < len(params):
+            merged[params[param_idx]["name"]] = val
+            param_idx += 1
+        else:
+            # Extra positional — store with numeric key
+            merged[f"_{param_idx}"] = val
+            param_idx += 1
+
+    # Command flags override positional auto-fill
+    return cmd_tokens, remaining, merged
+
+
 # ── Dispatch ─────────────────────────────────────────────────────────────
 
 def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
     """Dispatch a command to the appropriate handler."""
     from semantika.graph.db import get_services
 
-    path = ".".join(tokens).lower()
+    # Resolve command path using the tree
+    resolved = _resolve_command_path(tokens, get_command_tree())
+    if resolved is None:
+        raise CommandNotFound(tokens)
+    cmd_tokens, remaining, positional = resolved
+
+    # Merge: explicitly provided flags override positional auto-detection
+    merged = {**positional, **flags}
+    path = ".".join(cmd_tokens).lower()
     svc = get_services()
 
     if path == "stats":
@@ -118,25 +179,25 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
         return {"type": "status", "data": {"ttl": ttl[:500] + "..." if len(ttl) > 500 else ttl}}
 
     if path == "search":
-        q = " ".join(flags.values()) if flags else ""
+        q = merged.get("q") or ""
         if not q:
             raise CommandValidationError("Enter a search query")
         nodes = svc["node"].search(q)
         return {"type": "table", "data": nodes, "label": f"Search: {q}"}
 
     if path == "node.list":
-        nodes = svc["node"].list(limit=int(flags.get("limit", 100)))
+        nodes = svc["node"].list(limit=int(merged.get("limit", 100)))
         return {"type": "table", "data": nodes, "label": "Nodes"}
 
     if path == "node.search":
-        q = flags.get("q", "")
+        q = merged.get("q", "")
         if not q:
             raise CommandValidationError("Enter a search term")
         nodes = svc["node"].search(q)
         return {"type": "table", "data": nodes, "label": f"Nodes matching '{q}'"}
 
     if path == "node.view":
-        node_id = flags.get("id") or (tokens[2:] and tokens[2]) or ""
+        node_id = merged.get("id") or (remaining and remaining[0]) or ""
         if not node_id:
             raise CommandValidationError("Specify a node ID")
         node = svc["node"].resolve_node_id_prefix(node_id)
@@ -146,8 +207,20 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
         node["triples"] = triples
         return {"type": "status", "data": node}
 
+    if path == "node.add":
+        labels_raw = merged.get("labels") or (remaining and remaining[0]) or ""
+        payload = {"labels": {"en": labels_raw}} if labels_raw else {"labels": {}}
+        try:
+            node = svc["node"].create(payload)
+            msg = f"Created node {node['node_id']}"
+            if labels_raw:
+                msg += f" with label \"{labels_raw}\""
+            return {"type": "status", "data": {"message": msg, "node": node}}
+        except ValueError as e:
+            raise CommandValidationError(str(e))
+
     if path == "node.delete":
-        node_id = flags.get("id") or (tokens[2:] and tokens[2]) or ""
+        node_id = merged.get("id") or (remaining and remaining[0]) or ""
         if not node_id:
             raise CommandValidationError("Specify a node ID")
         svc["node"].delete(node_id, soft=True)
@@ -158,13 +231,35 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
         return {"type": "table", "data": preds, "label": "Predicates"}
 
     if path == "predicate.search":
-        q = flags.get("q", "")
+        q = merged.get("q", "")
         results = svc["predicate"].search(q)
         return {"type": "table", "data": results, "label": f"Predicates matching '{q}'"}
 
+    if path == "predicate.add":
+        pred_id = merged.get("predicate_id") or (remaining and remaining[0]) or ""
+        if not pred_id:
+            raise CommandValidationError("Specify a predicate_id")
+        try:
+            pred = svc["predicate"].create({"predicate_id": pred_id, "labels": {"en": pred_id}})
+            return {"type": "status", "data": {"message": f"Created predicate {pred['predicate_id']}", "predicate": pred}}
+        except ValueError as e:
+            raise CommandValidationError(str(e))
+
     if path == "triple.list":
-        triples = svc["triple"].db.execute("SELECT * FROM triples ORDER BY rowid LIMIT ?", (100,))
+        triples = svc["triple"].db.execute("SELECT * FROM triples ORDER BY subject_id, predicate_id LIMIT ?", (100,))
         return {"type": "table", "data": triples, "label": "Triples"}
+
+    if path == "triple.add":
+        subject_id = merged.get("subject_id") or (remaining and remaining[0]) or ""
+        predicate_id = merged.get("predicate_id") or (remaining and remaining[1] if len(remaining) > 1 else "") or ""
+        object_value = merged.get("object_value") or (remaining and remaining[2] if len(remaining) > 2 else "") or ""
+        if not subject_id or not predicate_id or not object_value:
+            raise CommandValidationError("Specify subject_id, predicate_id, and object_value")
+        try:
+            triple = svc["triple"].add(subject_id, predicate_id, object_value, object_type="uri")
+            return {"type": "status", "data": {"message": f"Added triple: {subject_id} → {predicate_id} → {object_value}", "triple": triple}}
+        except ValueError as e:
+            raise CommandValidationError(str(e))
 
     if path == "unit.list":
         from semantika.graph.unit_service import UnitService
@@ -173,7 +268,7 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
         return {"type": "table", "data": units, "label": "Units"}
 
     if path == "unit.view":
-        node_id = flags.get("id") or (tokens[2:] and tokens[2]) or ""
+        node_id = merged.get("id") or (remaining and remaining[0]) or ""
         from semantika.graph.unit_service import UnitService
         us = UnitService(svc["node"].db, svc["node"], svc["triple"])
         info = us.get_unit_info(node_id)
@@ -182,7 +277,7 @@ def _dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
         return {"type": "status", "data": info}
 
     if path == "unit.resolve":
-        expr = flags.get("expr") or (tokens[2:] and tokens[2]) or ""
+        expr = merged.get("expr") or (remaining and remaining[0]) or ""
         from semantika.graph.unit_service import UnitService
         us = UnitService(svc["node"].db, svc["node"], svc["triple"])
         nid = us.resolve_unit(expr)

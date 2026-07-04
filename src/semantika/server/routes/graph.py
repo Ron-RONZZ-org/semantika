@@ -144,7 +144,7 @@ async def list_triples(limit: int = 100, offset: int = 0):
     """List all triples."""
     svc = _svc()["triple"]
     all_t = svc.db.execute(
-        "SELECT * FROM triples ORDER BY rowid LIMIT ? OFFSET ?", (limit, offset)
+        "SELECT * FROM triples ORDER BY subject_id, predicate_id LIMIT ? OFFSET ?", (limit, offset)
     )
     return {"triples": all_t, "total": svc.count()}
 
