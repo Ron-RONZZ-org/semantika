@@ -12,6 +12,7 @@ from typing import Any
 
 from semantika.core import SemantikaDB
 from semantika.core.crud import CRUDService, now
+from semantika.graph.constants import FTS5_KEYWORDS
 from semantika.graph.node_helpers import extract_label_text
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,110 @@ class PredicateService(CRUDService):
 
     def __init__(self, db: SemantikaDB) -> None:
         super().__init__(db=db, table="predicates", pk_column="predicate_id")
+
+    # ── FTS5 Management ──────────────────────────────────────────────
+
+    def _ensure_fts(self) -> bool:
+        """Ensure predicates_fts exists and is populated. Returns True if usable."""
+        vt = self.db.execute_one(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='predicates_fts'"
+        )
+        if not vt:
+            try:
+                self.db.execute(
+                    "CREATE VIRTUAL TABLE predicates_fts USING fts5("
+                    "  predicate_id UNINDEXED, labels, descriptions, aliases,"
+                    "  content=predicates, content_rowid=rowid, tokenize='unicode61'"
+                    ")"
+                )
+            except sqlite3.DatabaseError:
+                return False
+
+        count = self.db.execute_one("SELECT COUNT(*) AS cnt FROM predicates_fts")
+        if count and count["cnt"] == 0:
+            self._populate_fts()
+        return True
+
+    def _populate_fts(self) -> None:
+        """Populate predicates_fts from content table."""
+        try:
+            self.db.execute(
+                "INSERT INTO predicates_fts (rowid, predicate_id, labels, descriptions, aliases)"
+                " SELECT rowid, predicate_id, labels, descriptions, aliases FROM predicates"
+            )
+        except sqlite3.DatabaseError:
+            logger.warning("Predicate FTS population failed — LIKE fallback will work")
+
+    def _rebuild_fts(self) -> None:
+        """Rebuild the predicates FTS index from all content."""
+        try:
+            self.db.execute(
+                "INSERT INTO predicates_fts(predicates_fts) VALUES('rebuild')"
+            )
+        except sqlite3.DatabaseError:
+            self.db.execute("DROP TABLE IF EXISTS predicates_fts")
+            self._ensure_fts()
+
+    def _index_fts(self, predicate_id: str) -> None:
+        """Index a single predicate in FTS5."""
+        entry = self.db.execute_one(
+            "SELECT rowid, predicate_id, labels, descriptions, aliases"
+            " FROM predicates WHERE predicate_id = ?",
+            (predicate_id,),
+        )
+        if not entry:
+            return
+        try:
+            self.db.execute(
+                "INSERT INTO predicates_fts(rowid, predicate_id, labels, descriptions, aliases)"
+                " VALUES(?, ?, ?, ?, ?)",
+                (entry["rowid"], predicate_id,
+                 entry.get("labels", ""), entry.get("descriptions", ""),
+                 entry.get("aliases", "")),
+            )
+        except sqlite3.DatabaseError:
+            pass
+
+    def _remove_from_fts(self, predicate_id: str) -> bool:
+        """Remove a predicate from FTS index using FTS5 'delete' command."""
+        row = self.db.execute_one(
+            "SELECT rowid FROM predicates WHERE predicate_id = ?",
+            (predicate_id,),
+        )
+        if not row or row.get("rowid") is None:
+            return False
+        return self._remove_fts_by_rowid(predicate_id, row["rowid"])
+
+    def _remove_fts_by_rowid(self, predicate_id: str, rowid: int) -> bool:
+        """Remove a rowid from the predicates FTS index."""
+        try:
+            self.db.execute(
+                "INSERT INTO predicates_fts(predicates_fts, rowid) VALUES('delete', ?)",
+                (rowid,),
+            )
+            return True
+        except sqlite3.DatabaseError as exc:
+            logger.warning("FTS 'delete' failed for %s (rowid=%s): %s", predicate_id, rowid, exc)
+            self._rebuild_fts()
+            return False
+
+    def _sanitize_fts_query(self, query: str) -> str:
+        """Sanitize a user query string for FTS5 MATCH."""
+        if not query or "_" in query or "%" in query:
+            return ""
+        safe_tokens = []
+        for word in query.strip().split():
+            cleaned = "".join(c for c in word if c.isalnum())
+            if not cleaned:
+                continue
+            if cleaned.upper() in FTS5_KEYWORDS:
+                cleaned = cleaned.lower()
+            safe_tokens.append(f"{cleaned}*")
+        if not safe_tokens:
+            return ""
+        return " OR ".join(safe_tokens)
+
+    # ── Create / Update / Search with FTS5 support ────────────────────
 
     def create(self, data: dict[str, Any]) -> dict[str, Any]:
         """Create a predicate with JSON-serialized dict fields."""
@@ -47,6 +152,7 @@ class PredicateService(CRUDService):
             raise ValueError(
                 f"Predicate '{data['predicate_id']}' already exists."
             ) from e
+        self._index_fts(raw["predicate_id"])
         return dict(raw)
 
     def update(self, predicate_id: str, data: dict[str, Any]) -> dict[str, Any]:
@@ -82,7 +188,10 @@ class PredicateService(CRUDService):
         sql = f"UPDATE predicates SET {', '.join(set_parts)} WHERE predicate_id = ?"
 
         with self.db.transaction() as conn:
+            removed = self._remove_from_fts(predicate_id)
             conn.execute(sql, params)
+            if removed:
+                self._index_fts(predicate_id)
 
         return self.get(predicate_id)
 
@@ -179,9 +288,12 @@ class PredicateService(CRUDService):
         updates["predicate_id"] = new_id
         updates["updated_at"] = ts
 
-        with self.db.transaction() as conn:
-            conn.execute("PRAGMA defer_foreign_keys=ON")
+        # Remove old FTS entry BEFORE transaction (uses own DB connection)
+        self._remove_from_fts(old_id)
 
+        # Set defer_foreign_keys before the transaction starts
+        self.db.execute("PRAGMA defer_foreign_keys=ON")
+        with self.db.transaction() as conn:
             set_parts = [f"{k} = ?" for k in updates]
             params = list(updates.values()) + [old_id]
             conn.execute(
@@ -201,13 +313,48 @@ class PredicateService(CRUDService):
                 (new_id, old_id),
             )
 
+        # Re-index FTS after the transaction completes
+        self._index_fts(new_id)
+
         return self.get(new_id)
 
     def search(self, query: str, limit: int = 50) -> list[dict]:
-        """Search predicates by ID, labels, descriptions, or aliases."""
+        """Search predicates using FTS5, falling back to LIKE.
+
+        Uses FTS5 on labels/descriptions/aliases first for relevance-ranked
+        results, then falls back to LIKE on all text fields for edge cases.
+        """
+        if not query or not query.strip():
+            return self.list(limit=limit)
+
+        # Try FTS5 first
+        fts_ok = self._ensure_fts()
+        fts_query = self._sanitize_fts_query(query) if fts_ok else ""
+        if fts_query:
+            fts_sql = """
+                SELECT p.*, bm25(predicates_fts, 1.2, 0.75, 0.0, -5.0, -1.0, -0.5) AS _rank
+                FROM predicates p
+                JOIN predicates_fts f ON p.rowid = f.rowid
+                WHERE predicates_fts MATCH ?
+                ORDER BY _rank
+                LIMIT ?
+            """
+            try:
+                results = self.db.execute(fts_sql, (fts_query, limit))
+            except sqlite3.DatabaseError:
+                logger.warning("Predicate FTS search failed — rebuilding and retrying")
+                try:
+                    self._rebuild_fts()
+                    results = self.db.execute(fts_sql, (fts_query, limit))
+                except sqlite3.DatabaseError:
+                    results = []
+            if results:
+                return results
+
+        # Fallback: LIKE on predicate_id and JSON text fields
         escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         return self.db.execute(
-            "SELECT * FROM predicates WHERE "
+            "SELECT *, 0 AS _rank FROM predicates WHERE "
             "predicate_id LIKE ? COLLATE NOCASE OR "
             "labels LIKE ? ESCAPE '\\' COLLATE NOCASE OR "
             "descriptions LIKE ? ESCAPE '\\' COLLATE NOCASE OR "

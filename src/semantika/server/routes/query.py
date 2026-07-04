@@ -25,15 +25,22 @@ async def search_triples(
     predicate: str | None = None,
     object: str | None = None,  # noqa: A002
     limit: int = 100,
+    created_after: str | None = None,
+    created_before: str | None = None,
 ):
     """Search triples by resolving partial labels/IDs to exact IDs.
 
     Accepts partial node IDs, predicate IDs, or label text for each
     of the three SPO components.  Returns triples that match all
     provided criteria (logical AND).
+
+    Optional date filtering via *created_after* and *created_before*
+    (ISO 8601 format, e.g. ``2026-01-01T00:00:00``).
     """
     triples = get_services()["triple"].search_by_labels(
-        subject=subject, predicate=predicate, object=object, limit=limit,
+        subject=subject, predicate=predicate, object=object,
+        limit=limit,
+        created_after=created_after, created_before=created_before,
     )
     return {"triples": triples}
 

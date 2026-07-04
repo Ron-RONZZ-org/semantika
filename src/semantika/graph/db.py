@@ -229,8 +229,9 @@ def init_db() -> None:
         if cursor.fetchone() is None:
             conn.executescript(sql)
 
-    # Create FTS table for nodes
+    # Create FTS tables
     _ensure_nodes_fts(conn)
+    _ensure_predicates_fts(conn)
 
     conn.commit()
 
@@ -260,6 +261,30 @@ def _ensure_nodes_fts(conn: sqlite3.Connection) -> None:
             )
         except sqlite3.DatabaseError:
             pass  # FTS population failed — LIKE fallback will work
+
+
+def _ensure_predicates_fts(conn: sqlite3.Connection) -> None:
+    """Create the predicates FTS5 virtual table if it doesn't exist."""
+    conn.execute("""
+        CREATE VIRTUAL TABLE IF NOT EXISTS predicates_fts USING fts5(
+            predicate_id UNINDEXED,
+            labels,
+            descriptions,
+            aliases,
+            content=predicates,
+            content_rowid=rowid,
+            tokenize='unicode61'
+        )
+    """)
+    count = conn.execute("SELECT COUNT(*) AS cnt FROM predicates_fts").fetchone()
+    if count and count["cnt"] == 0:
+        try:
+            conn.execute(
+                "INSERT INTO predicates_fts (rowid, predicate_id, labels, descriptions, aliases)"
+                " SELECT rowid, predicate_id, labels, descriptions, aliases FROM predicates"
+            )
+        except sqlite3.DatabaseError:
+            pass  # LIKE fallback still works
 
 
 def _seed_default_predicates(db: SemantikaDB) -> None:
