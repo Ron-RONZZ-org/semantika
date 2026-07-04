@@ -8,7 +8,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
-from semantika.core import SemantikaDB
+from semantika.core import SemantikaDB, AmbiguousIDError
 from semantika.core.crud import now
 
 
@@ -51,6 +51,66 @@ class TripleService:
                 f"Triple already exists: {subject_id} → {predicate_id} → {object_value}"
             )
         return dict(row)
+
+    def update_metadata(
+        self,
+        subject_id: str,
+        predicate_id: str,
+        object_value: str,
+        object_type: str = "uri",
+        object_lang: str | None = None,
+        object_datatype: str | None = None,
+    ) -> dict | None:
+        """Update mutable metadata on an existing triple.
+
+        Only updates non-PK columns (object_lang, object_datatype).
+        PK columns (subject_id, predicate_id, object_value, object_type)
+        cannot change — the SPO identity is fixed. Preserves created_at.
+
+        Only columns explicitly provided (not None) are updated,
+        so passing only ``object_lang`` does not overwrite existing
+        ``object_datatype``.
+
+        Returns:
+            The updated triple dict, or ``None`` if no columns to update.
+
+        Raises:
+            ValueError: If no matching triple is found.
+        """
+        set_parts: list[str] = []
+        params: list = []
+        if object_lang is not None:
+            set_parts.append("object_lang = ?")
+            params.append(object_lang)
+        if object_datatype is not None:
+            set_parts.append("object_datatype = ?")
+            params.append(object_datatype)
+
+        if not set_parts:
+            return None  # no metadata columns to update
+
+        params.extend([subject_id, predicate_id, object_value, object_type])
+        sql = (
+            f"UPDATE triples SET {', '.join(set_parts)}"
+            " WHERE subject_id = ? AND predicate_id = ? AND object_value = ? AND object_type = ?"
+        )
+        with self.db.transaction() as conn:
+            conn.execute(sql, params)
+        return self.get_one(subject_id, predicate_id, object_value, object_type)
+
+    def get_one(
+        self,
+        subject_id: str,
+        predicate_id: str,
+        object_value: str,
+        object_type: str = "uri",
+    ) -> dict | None:
+        """Get a single triple by its compound key."""
+        return self.db.execute_one(
+            """SELECT * FROM triples
+               WHERE subject_id = ? AND predicate_id = ? AND object_value = ? AND object_type = ?""",
+            (subject_id, predicate_id, object_value, object_type),
+        )
 
     def remove(
         self,
@@ -105,6 +165,147 @@ class TripleService:
         return self.db.execute(
             "SELECT * FROM triples WHERE object_value = ?", (object_value,)
         )
+
+    def search_by_labels(
+        self,
+        subject: str | None = None,
+        predicate: str | None = None,
+        object: str | None = None,  # noqa: A002
+        limit: int = 100,
+    ) -> list[dict]:
+        """Search triples by resolving partial labels/IDs to exact IDs.
+
+        Resolves *subject*, *predicate*, and *object* texts to exact
+        node/predicate IDs via prefix matching and FTS5 label search,
+        then queries triples matching all provided criteria.
+
+        Args:
+            subject: Partial subject node ID or label.
+            predicate: Partial predicate ID or label.
+            object: Partial object node ID or label (URI objects only).
+            limit: Maximum results.
+
+        Returns:
+            List of matching triple dicts.
+        """
+        from semantika.graph.db import get_services
+        svc = get_services()
+        node_svc = svc["node"]
+        pred_svc = svc["predicate"]
+
+        subject_ids: list[str] | None = None
+        predicate_ids: list[str] | None = None
+        object_ids: list[str] | None = None
+
+        # Resolve subject
+        if subject:
+            subj_node = node_svc.resolve_node_id_prefix(subject)
+            if not subj_node:
+                # Try FTS5 label search
+                results = node_svc.search(subject, limit=5)
+                if results:
+                    subject_ids = [r["node_id"] for r in results]
+                else:
+                    return []
+            else:
+                subject_ids = [subj_node["node_id"]]
+
+        # Resolve predicate
+        if predicate:
+            pred = pred_svc.resolve_predicate_id_prefix(predicate)
+            if not pred:
+                # Try LIKE label search
+                results = pred_svc.search(predicate, limit=5)
+                if results:
+                    predicate_ids = [r["predicate_id"] for r in results]
+                else:
+                    return []
+            else:
+                predicate_ids = [pred["predicate_id"]]
+
+        # Resolve object
+        if object:
+            obj_node = node_svc.resolve_node_id_prefix(object)
+            if not obj_node:
+                results = node_svc.search(object, limit=5)
+                if results:
+                    object_ids = [r["node_id"] for r in results]
+                else:
+                    return []
+            else:
+                object_ids = [obj_node["node_id"]]
+
+        # Build query
+        clauses: list[str] = []
+        params: list = []
+
+        if subject_ids:
+            placeholders = ", ".join(["?"] * len(subject_ids))
+            clauses.append(f"subject_id IN ({placeholders})")
+            params.extend(subject_ids)
+
+        if predicate_ids:
+            placeholders = ", ".join(["?"] * len(predicate_ids))
+            clauses.append(f"predicate_id IN ({placeholders})")
+            params.extend(predicate_ids)
+
+        if object_ids:
+            placeholders = ", ".join(["?"] * len(object_ids))
+            clauses.append(
+                f"(object_type = 'uri' AND object_value IN ({placeholders}))"
+            )
+            params.extend(object_ids)
+
+        if not clauses:
+            return []
+
+        where = " AND ".join(clauses)
+        sql = f"SELECT * FROM triples WHERE {where} ORDER BY subject_id, predicate_id LIMIT ?"
+        params.append(limit)
+
+        triples = self.db.execute(sql, tuple(params))
+
+        # Annotate with labels
+        result = []
+        for t in triples:
+            subj = node_svc.get(t["subject_id"])
+            if subj:
+                t["_subject_label"] = self._label_from_node(subj)
+            else:
+                t["_subject_label"] = t["subject_id"]
+
+            pred = pred_svc.get(t["predicate_id"])
+            if pred:
+                t["_predicate_label"] = self._label_from_node(pred)
+            else:
+                t["_predicate_label"] = t["predicate_id"]
+
+            if t["object_type"] == "uri":
+                obj = node_svc.get(t["object_value"])
+                if obj:
+                    t["_object_label"] = self._label_from_node(obj)
+                else:
+                    t["_object_label"] = t["object_value"]
+            else:
+                t["_object_label"] = t["object_value"]
+
+            result.append(t)
+
+        return result
+
+    def _label_from_node(self, node: dict) -> str:
+        """Extract the first non-empty label from a node dict."""
+        import json
+        labels_raw = node.get("labels", "{}")
+        try:
+            labels = json.loads(labels_raw) if isinstance(labels_raw, str) else labels_raw
+            if isinstance(labels, dict):
+                for val in labels.values():
+                    if val and isinstance(val, str):
+                        return val
+        except (json.JSONDecodeError, TypeError):
+            pass
+        return node.get("node_id", node.get("predicate_id", ""))
 
     def get_by_sp(self, subject_id: str, predicate_id: str) -> list[dict]:
         """Get triples matching subject + predicate."""

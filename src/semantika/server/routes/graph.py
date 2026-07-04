@@ -30,11 +30,22 @@ class NodeUpdate(BaseModel):
     definitions: dict[str, str] | None = None
 
 
+class NodeRename(BaseModel):
+    new_id: str
+    labels: dict[str, str] | None = None
+    definitions: dict[str, str] | None = None
+
+
 class TripleCreate(BaseModel):
     subject_id: str
     predicate_id: str
     object_value: str
     object_type: str = "uri"
+    object_lang: str | None = None
+    object_datatype: str | None = None
+
+
+class TripleUpdate(BaseModel):
     object_lang: str | None = None
     object_datatype: str | None = None
 
@@ -105,6 +116,45 @@ async def update_node(node_id: str, data: NodeUpdate):
         raise HTTPException(404, str(e))
 
 
+@router.patch("/nodes/{node_id}/rename")
+async def rename_node(node_id: str, data: NodeRename):
+    """Rename a node's node_id, cascading to all referencing triples."""
+    svc = _svc()["node"]
+    try:
+        node = svc.update_node_id(
+            node_id, data.new_id,
+            data={"labels": data.labels, "definitions": data.definitions} if data.labels or data.definitions else None,
+        )
+        return {"node": node}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.patch("/predicates/{predicate_id}/rename")
+async def rename_predicate(predicate_id: str, new_id: str):
+    """Rename a predicate's predicate_id, cascading to all references."""
+    svc = _svc()["predicate"]
+    try:
+        pred = svc.update_predicate_id(predicate_id, new_id)
+        return {"predicate": pred}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.post("/nodes/merge")
+async def merge_nodes(source_id: str, target_id: str):
+    """Merge source node INTO target node.
+
+    Source is deleted after all triples and metadata are reassigned.
+    """
+    svc = _svc()["node"]
+    try:
+        merged = svc.merge_nodes(source_id, target_id)
+        return {"node": merged}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 @router.delete("/nodes/{node_id}")
 async def delete_node(node_id: str, soft: bool = True):
     """Delete a node."""
@@ -113,6 +163,43 @@ async def delete_node(node_id: str, soft: bool = True):
     if not deleted:
         raise HTTPException(404, f"Node not found: {node_id}")
     return {"deleted": True}
+
+
+# ── Trash (soft-deleted nodes) ─────────────────────────────────────────
+
+@router.get("/trash")
+async def list_trash(limit: int = 50, offset: int = 0):
+    """List soft-deleted nodes in the trash."""
+    items = _svc()["node"].list_trash(limit=limit, offset=offset)
+    return {"items": items, "total": len(items)}
+
+
+@router.post("/trash/{node_id}/restore")
+async def restore_node(node_id: str):
+    """Restore a soft-deleted node from trash."""
+    restored = _svc()["node"].restore_from_trash(node_id)
+    if not restored:
+        raise HTTPException(404, f"Node not found in trash: {node_id}")
+    return {"node": restored}
+
+
+@router.delete("/trash/purge")
+async def purge_trash(days: int = 30):
+    """Permanently delete trash entries older than *days*.
+
+    If *days* is 0, empties the entire trash.
+    """
+    svc = _svc()["node"]
+    if days <= 0:
+        count = svc.empty_all_trash()
+    else:
+        items = svc.get_trash_older_than(days)
+        count = len(items)
+        for item in items:
+            node_id = item.get("node_id") or item.get(svc._pk_column)
+            if node_id:
+                svc.permanent_delete(node_id)
+    return {"deleted": count}
 
 
 # ── Predicates ─────────────────────────────────────────────────────────
@@ -181,6 +268,31 @@ async def get_triples_by_subject(subject_id: str):
     """Get triples for a subject."""
     triples = _svc()["triple"].get_by_subject(subject_id)
     return {"triples": triples}
+
+
+@router.patch("/triples")
+async def update_triple_metadata(
+    subject_id: str,
+    predicate_id: str,
+    object_value: str,
+    object_type: str = "uri",
+    data: TripleUpdate | None = None,
+):
+    """Update metadata on an existing triple (object_lang, object_datatype)."""
+    if data is None:
+        raise HTTPException(400, "No update data provided")
+    svc = _svc()["triple"]
+    try:
+        triple = svc.update_metadata(
+            subject_id, predicate_id, object_value, object_type,
+            object_lang=data.object_lang,
+            object_datatype=data.object_datatype,
+        )
+        if triple is None:
+            raise HTTPException(404, "Triple not found")
+        return {"triple": triple}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @router.post("/triples")

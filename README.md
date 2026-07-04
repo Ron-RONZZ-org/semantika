@@ -30,10 +30,11 @@ Traditional knowledge management apps drown you in sidebars, nested menus, and f
 └──────────────────────────────────────────────┘
 ```
 
-- `!node add/list/view/modify/delete` — manage knowledge graph nodes
-- `!predicate add/list/search/update/delete` — manage predicates (semantic properties)
-- `!triple add/list/delete` — assert and query subject-predicate-object arcs
-- `!search <query>` — full-text search across labels and definitions
+- `!node add/list/view/modify/delete/merge/rename` — manage knowledge graph nodes; merge duplicates or rename IDs with full FK cascade
+- `!predicate add/list/search/update/delete/rename` — manage predicates; rename IDs with cascade to triples and groups
+- `!triple add/list/delete` (`PATCH` for metadata) — assert, query, and modify subject-predicate-object arcs
+- `!search <query>` — full-text search across nodes, predicates, and triples (by label)
+- `!trash list/restore/purge` — manage soft-deleted nodes (restore or permanently purge)
 - `!export` / `!import` — export/import the graph in Turtle (.ttl) format
 - `!review` — spaced-repetition flashcard review of triples
 - Just type naturally → the LLM translates your intent into commands

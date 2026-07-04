@@ -118,6 +118,94 @@ class TestNodeAPI:
         assert resp.status_code == 200
         assert resp.json()["node"]["node_id"] == "TESTNODE"
 
+    def test_rename_node(self, client: TestClient):
+        """Rename a node's node_id, cascading to triples."""
+        client.post(
+            "/api/v1/graph/nodes",
+            json={"node_id": "OLDNAME", "labels": {"en": "Old Name"}},
+        )
+        client.post(
+            "/api/v1/graph/predicates",
+            json={"predicate_id": "ex:rel", "labels": {"en": "rel"}},
+        )
+        client.post(
+            "/api/v1/graph/nodes",
+            json={"node_id": "TARGET", "labels": {"en": "Target"}},
+        )
+        client.post(
+            "/api/v1/graph/triples",
+            json={"subject_id": "OLDNAME", "predicate_id": "ex:rel", "object_value": "TARGET", "object_type": "uri"},
+        )
+
+        resp = client.patch(
+            "/api/v1/graph/nodes/OLDNAME/rename",
+            json={"new_id": "RENAMED"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["node"]["node_id"] == "RENAMED"
+
+        # Verify triple was cascaded
+        triples = client.get("/api/v1/graph/triples/by-subject/RENAMED")
+        assert triples.status_code == 200
+        assert len(triples.json()["triples"]) == 1
+
+    def test_merge_nodes(self, client: TestClient):
+        """Merge source node into target node."""
+        client.post(
+            "/api/v1/graph/nodes",
+            json={"node_id": "SOURCE_N", "labels": {"en": "Source Node"}},
+        )
+        client.post(
+            "/api/v1/graph/nodes",
+            json={"node_id": "TARGET_N", "labels": {"en": "Target Node"}},
+        )
+        client.post(
+            "/api/v1/graph/predicates",
+            json={"predicate_id": "ex:mergeRel", "labels": {"en": "merge rel"}},
+        )
+        client.post(
+            "/api/v1/graph/triples",
+            json={"subject_id": "SOURCE_N", "predicate_id": "ex:mergeRel", "object_value": "TARGET_N", "object_type": "uri"},
+        )
+
+        resp = client.post(
+            "/api/v1/graph/nodes/merge",
+            params={"source_id": "SOURCE_N", "target_id": "TARGET_N"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["node"]["node_id"] == "TARGET_N"
+
+        # Source should be deleted
+        get_resp = client.get("/api/v1/graph/nodes/SOURCE_N")
+        assert get_resp.status_code == 404
+
+    def test_trash_list_restore_purge(self, client: TestClient):
+        """Test trash lifecycle: create → soft-delete → list → restore."""
+        client.post(
+            "/api/v1/graph/nodes",
+            json={"node_id": "TRASHABLE", "labels": {"en": "Trashable"}},
+        )
+
+        # Soft-delete
+        resp = client.delete("/api/v1/graph/nodes/TRASHABLE?soft=true")
+        assert resp.status_code == 200
+
+        # List trash
+        resp = client.get("/api/v1/graph/trash")
+        assert resp.status_code == 200
+        assert any(item.get("node_id") == "TRASHABLE" for item in resp.json()["items"])
+
+        # Restore
+        resp = client.post("/api/v1/graph/trash/TRASHABLE/restore")
+        assert resp.status_code == 200
+        assert resp.json()["node"]["node_id"] == "TRASHABLE"
+
+        # Verify restored
+        resp = client.get("/api/v1/graph/nodes/TRASHABLE")
+        assert resp.status_code == 200
+
 
 # ── Predicate CRUD ───────────────────────────────────────────────────────
 
@@ -158,6 +246,38 @@ class TestPredicateAPI:
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["results"]) >= 1
+
+    def test_rename_predicate(self, client: TestClient):
+        """Rename a predicate's predicate_id, cascading to triples."""
+        client.post(
+            "/api/v1/graph/predicates",
+            json={"predicate_id": "ex:oldPred", "labels": {"en": "old pred"}},
+        )
+        client.post(
+            "/api/v1/graph/nodes",
+            json={"node_id": "PRED_SUBJ", "labels": {"en": "PS"}},
+        )
+        client.post(
+            "/api/v1/graph/nodes",
+            json={"node_id": "PRED_OBJ", "labels": {"en": "PO"}},
+        )
+        client.post(
+            "/api/v1/graph/triples",
+            json={"subject_id": "PRED_SUBJ", "predicate_id": "ex:oldPred", "object_value": "PRED_OBJ", "object_type": "uri"},
+        )
+
+        resp = client.patch(
+            "/api/v1/graph/predicates/ex:oldPred/rename",
+            params={"new_id": "ex:renamedPred"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["predicate"]["predicate_id"] == "ex:renamedPred"
+
+        # Verify triple was cascaded
+        triples = client.get("/api/v1/graph/triples")
+        assert triples.status_code == 200
+        assert any(t["predicate_id"] == "ex:renamedPred" for t in triples.json()["triples"])
 
 
 # ── Triple CRUD ──────────────────────────────────────────────────────────
@@ -238,6 +358,48 @@ class TestTripleAPI:
         assert resp.status_code == 200
         assert resp.json()["deleted"] >= 1
 
+    def test_update_triple_metadata(self, client: TestClient):
+        """Update triple metadata (object_lang, object_datatype)."""
+        # Create nodes + predicate + triple
+        client.post(
+            "/api/v1/graph/nodes",
+            json={"node_id": "META_SUBJ", "labels": {"en": "Meta Subject"}},
+        )
+        client.post(
+            "/api/v1/graph/nodes",
+            json={"node_id": "META_OBJ", "labels": {"en": "Meta Object"}},
+        )
+        client.post(
+            "/api/v1/graph/predicates",
+            json={"predicate_id": "ex:metaPred", "labels": {"en": "meta pred"}},
+        )
+        triple_resp = client.post(
+            "/api/v1/graph/triples",
+            json={
+                "subject_id": "META_SUBJ",
+                "predicate_id": "ex:metaPred",
+                "object_value": "Hello",
+                "object_type": "literal",
+            },
+        )
+        assert triple_resp.status_code == 200
+
+        # Update metadata
+        resp = client.patch(
+            "/api/v1/graph/triples",
+            params={
+                "subject_id": "META_SUBJ",
+                "predicate_id": "ex:metaPred",
+                "object_value": "Hello",
+                "object_type": "literal",
+            },
+            json={"object_lang": "en", "object_datatype": "xsd:string"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["triple"]["object_lang"] == "en"
+        assert data["triple"]["object_datatype"] == "xsd:string"
+
 
 # ── Query endpoints ──────────────────────────────────────────────────────
 
@@ -277,8 +439,10 @@ class TestQueryAPI:
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert data["type"] == "table"
-        assert len(data["data"]) >= 1
+        assert data["type"] == "status"
+        assert "nodes" in data["data"]
+        assert "predicates" in data["data"]
+        assert len(data["data"]["nodes"]) >= 1
 
     def test_stats_via_command(self, client: TestClient):
         resp = client.post(
@@ -867,6 +1031,46 @@ class TestSearchAPI:
         data = resp.json()
         assert "nodes" in data["results"]
         assert "predicates" in data["results"]
+
+    def test_triple_search_by_labels(self, client: TestClient):
+        """Search triples by partial subject/predicate/object labels/IDs."""
+        client.post(
+            "/api/v1/graph/nodes",
+            json={"node_id": "TS_SUBJ", "labels": {"en": "TripleSearchSubject"}},
+        )
+        client.post(
+            "/api/v1/graph/nodes",
+            json={"node_id": "TS_OBJ", "labels": {"en": "TripleSearchObject"}},
+        )
+        client.post(
+            "/api/v1/graph/predicates",
+            json={"predicate_id": "ex:tsPred", "labels": {"en": "triple search pred"}},
+        )
+        client.post(
+            "/api/v1/graph/triples",
+            json={
+                "subject_id": "TS_SUBJ",
+                "predicate_id": "ex:tsPred",
+                "object_value": "TS_OBJ",
+                "object_type": "uri",
+            },
+        )
+
+        # Search by subject ID (exact match)
+        resp = client.get(
+            "/api/v1/query/triples/search",
+            params={"subject": "TS_SUBJ", "limit": 10},
+        )
+        assert resp.status_code == 200
+        assert len(resp.json()["triples"]) >= 1
+
+        # Search by predicate ID prefix
+        resp = client.get(
+            "/api/v1/query/triples/search",
+            params={"predicate": "ex:tsPred", "limit": 10},
+        )
+        assert resp.status_code == 200
+        assert len(resp.json()["triples"]) >= 1
 
 
 # ── Deeper Unit Tests ─────────────────────────────────────────────────────
