@@ -1,1 +1,1 @@
-"""API route handlers."""
+"""Server routes package."""

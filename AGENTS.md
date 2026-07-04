@@ -76,33 +76,63 @@ semantika/
 ├── pyproject.toml
 ├── .gitignore
 ├── src/
-│   └── semantika/               # Main Python package
+│   └── semantika/               # Main Python package (21 source files)
 │       ├── __init__.py
 │       ├── __main__.py          # python -m semantika entry point
-│       ├── scripts/             # Dev tooling: seed data generator, dev CLI
+│       ├── core/                # Vendored from A-core (5 files)
 │       │   ├── __init__.py
-│       │   ├── dev_cli.py       # semantika-dev CLI entry point
-│       │   └── seed.py          # Seed data generator for test databases
-│       ├── core/                # Vendored from A-core: DB, crypto, paths, FTS
-│       ├── graph/               # Triple store services (forked from A-semantika)
+│       │   ├── db.py            # SemantikaDB — SQLite with WAL, per-thread conns
+│       │   ├── paths.py         # XDG path resolution with SEMANTIKA_DIR env
+│       │   ├── exceptions.py    # AmbiguousIDError, ProtectedPathError, SemantikaError
+│       │   ├── crud.py          # CRUDService base with soft-delete, FTS hooks
+│       │   └── fts.py           # FTSConfig dataclass
+│       ├── graph/               # Triple store services (forked from A-semantika, 9 files)
 │       │   ├── __init__.py
-│       │   └── services/        # NodeService, PredicateService, TripleService, etc.
-│       └── server/              # FastAPI web server
+│       │   ├── constants.py     # FTS5 keywords, heuristic helpers, EO→EN map
+│       │   ├── node_helpers.py  # Label/definition extraction, ID sanitization
+│       │   ├── node_service.py  # NodeService — CRUD, FTS5, prefix resolution, trash
+│       │   ├── predicate_service.py    # PredicateService — CRUD, LIKE search, merge
+│       │   ├── predicate_group_service.py  # PredicateGroupService — groups + members
+│       │   ├── triple_service.py         # TripleService — SPO CRUD, bulk queries
+│       │   ├── triple_turtle.py          # Turtle (.ttl) export
+│       │   ├── review_service.py         # ReviewService — spaced-repetition flashcards
+│       │   ├── proof_service.py          # ProofService — evidence attached to triples
+│       │   └── db.py                     # Schema DDL, get_db(), init_db(), seed defaults
+│       └── server/              # FastAPI web server (10 files)
 │           ├── __init__.py
 │           ├── app.py           # Application factory
-│           ├── routes/          # API routes
-│           ├── command/         # !command parsing + dispatch
-│           └── llm/             # LLM provider abstraction
-├── tests/                       # Shared tests root
-│   ├── test_core/
-│   ├── test_graph/
-│   └── test_server/
+│           └── routes/
+│               ├── __init__.py
+│               ├── graph.py     # /api/v1/graph/* — nodes, predicates, triples CRUD
+│               ├── query.py     # /api/v1/query/* — search, export, stats, sparql
+│               ├── command.py   # /api/v1/command/* — tree, execute, help
+│               ├── review.py    # /api/v1/review/* — session management
+│               ├── proof.py     # /api/v1/proof/* — proof CRUD
+│               └── llm.py       # /api/v1/llm/* — chat (stub with keyword routing)
+├── tests/                       # 19 pytest tests
+│   ├── __init__.py
+│   ├── conftest.py
+│   └── test_graph/
+│       └── test_services.py     # Integration tests for all 6 services
 ├── core/                        # AGENTS-core.md
 ├── graph/                       # AGENTS-graph.md
 ├── server/                      # AGENTS-server.md
 ├── scripts/                     # AGENTS-scripts.md
-└── web/                         # Svelte frontend (separate Node project)
-    └── AGENTS-web.md
+└── web/                         # Svelte frontend (10 files)
+    ├── package.json
+    ├── vite.config.js
+    ├── svelte.config.js
+    ├── index.html
+    └── src/
+        ├── main.js
+        ├── App.svelte           # Main app with tabs
+        └── lib/
+            ├── CommandBar.svelte  # !command input with autocomplete
+            ├── GraphView.svelte   # vis-network graph visualization
+            ├── ResultPanel.svelte # Command result display
+            ├── HomeTab.svelte     # Welcome screen
+            ├── GraphTab.svelte    # Graph view placeholder
+            └── SearchTab.svelte   # Search view placeholder
 ```
 
 ---

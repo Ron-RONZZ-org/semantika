@@ -25,7 +25,36 @@ Triple store services: NodeService, PredicateService, PredicateGroupService, Tri
 - Upstream source: `../A-semantika/src/A_semantika/`
 
 ## Domain-Specific Rules for Agents
-- **Esperanto → English mapping**: `nodo` → `node`, `predikato` → `predicate`, `rubujo` → `trash`, `etikedoj` → `labels`, `difinoj` → `definitions`, `kreita_je` → `created_at`, `modifita_je` → `updated_at`, `forigita_je` → `deleted_at`, `aldoni` → `add`, `forigi` → `delete`, `modifi` → `modify`, `vidi` → `view`, `serci` → `search`, `kunfandi` → `merge`, `recenzi` → `review`, `provo` → `proof`
-- Triple store schema uses compound primary key (S, P, O) like RDF
-- FTS5 on node labels + definitions for full-text search
-- When porting from A-semantika, preserve the business logic — only the naming changes
+- **Esperanto → English mapping** (applied in this port):
+
+| EO (A-semantika) | EN (Semantika) |
+|---|---|
+| `nodo` | `node` |
+| `predikato` | `predicate` |
+| `rubujo` | `trash` |
+| `etikedoj` | `labels` |
+| `difinoj` | `definitions` |
+| `kreita_je` | `created_at` |
+| `modifita_je` | `updated_at` |
+| `forigita_je` | `deleted_at` |
+| `aldoni` | `add` |
+| `forigi` | `delete` |
+| `modifi` | `modify` |
+| `vidi` | `view` |
+| `serci` | `search` |
+| `kunfandi` | `merge` |
+| `recenzi` | `review` |
+| `provo` | `proof` |
+| `subject_uuid` | `subject_id` |
+| `difin_text` | `definition_text` |
+| `label_text` | (kept) |
+| `object_node_uuid` | `object_node_id` |
+| `node_id` | (kept) |
+| `predicate_id` | (kept) |
+
+- Triple store schema uses compound primary key (subject_id, predicate_id, object_value, object_type) like RDF
+- FTS5 on node `label_text` + `definition_text` for full-text search
+- The nodes table uses `node_id TEXT PRIMARY KEY` (not UUID) for human-readable IDs
+- When porting more files from A-semantika, preserve the business logic — only the naming changes
+- The `_trash_table` for NodeService is `nodes_trash` with pk_column=`node_id`
+- CRUD operations with FK constraints (triples referencing nodes) require cascade deletion or `PRAGMA defer_foreign_keys`
