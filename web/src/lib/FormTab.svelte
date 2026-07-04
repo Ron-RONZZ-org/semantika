@@ -1,7 +1,4 @@
 <script>
-  /** FormTab — routes form types to specific form components.
-   *  Ported from lighterbird's FormTab.svelte.
-   */
   import { tabStore } from "./tabStore.svelte.js";
   import DynamicForm from "./DynamicForm.svelte";
 
@@ -31,7 +28,8 @@
         body: JSON.stringify(payload),
       });
       const result = await resp.json();
-      tabStore.open(result.type || "status", "Result", result);
+      // Unwrap: backend returns {type, title, data}; use result.data for the tab's content
+      tabStore.open(result.type || "status", result.title || "Result", result.data || result);
     } catch (err) {
       tabStore.open("error", "Error", { type: "error", data: { message: String(err) } });
     } finally { submitting = false; }
@@ -45,5 +43,5 @@
 
 <style>
   .form-tab { padding: 1rem; }
-  .form-tab h3 { margin: 0 0 1rem; font-size: 1rem; color: #333; }
+  .form-tab h3 { margin: 0 0 1rem; font-size: 1rem; color: #e0e0e0; text-transform: capitalize; }
 </style>

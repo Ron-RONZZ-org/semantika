@@ -1,104 +1,175 @@
 <script>
-  import { onMount } from "svelte";
+  import PopupOverlay from "./lib/PopupOverlay.svelte";
+  import BannerContainer from "./lib/BannerContainer.svelte";
+  import { popup } from "./lib/popupStore.svelte.js";
   import { tabStore } from "./lib/tabStore.svelte.js";
-  import { initCommandTree } from "./lib/commandTree.js";
-  import { getAllShortcuts } from "./lib/keyboardShortcuts.svelte.js";
-  import CommandBar from "./lib/CommandBar.svelte";
-  import TabView from "./lib/TabView.svelte";
-  import KeyboardShortcutOverlay from "./lib/KeyboardShortcutOverlay.svelte";
+  import { dirtyFormStore } from "./lib/dirtyFormStore.svelte.js";
+  import { execute } from "./lib/commandExecutor.js";
+  import { shouldIntercept } from "./lib/commandRouter.js";
+  import { findNode } from "./lib/commandTree.js";
+  import { parseCommand } from "./lib/parser.js";
 
-  let loading = $state(true);
-  let showShortcuts = $state(false);
+  let isLoading = $state(false);
 
-  onMount(async () => {
-    try {
-      await initCommandTree();
-    } catch { /* ignore */ }
-    loading = false;
-  });
-
-  function handleCommand(result) {
-    if (!result) return;
-    const type = result.type || "status";
-    const title = result.title || (type === "error" ? "Error" : "Result");
-    tabStore.open(type, title, result);
+  function loadingLabel(input) {
+    const t = input.trim();
+    if (!t.startsWith("!")) return "Thinking\u2026";
+    const parts = t.slice(1).split(/\s+/);
+    const cmd = parts.slice(0, 2).join(" ");
+    if (!cmd) return "Working\u2026";
+    return `${cmd}\u2026`;
   }
 
-  function handleGlobalKeydown(e) {
-    if (e.target?.tagName === "INPUT" || e.target?.tagName === "TEXTAREA") return;
-    if (e.key === "h" && !e.ctrlKey && !e.metaKey) { showShortcuts = !showShortcuts; e.preventDefault(); }
-    if (e.key === "i" && !e.ctrlKey && !e.metaKey) {
-      document.querySelector(".command-bar input")?.focus();
-      e.preventDefault();
-    }
-    if (e.key === "q" && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
-      const active = tabStore.active;
-      if (active && active.closable) tabStore.close(active.id);
-      e.preventDefault();
-    }
-    if (e.key === "Escape") {
-      if (showShortcuts) { showShortcuts = false; e.preventDefault(); return; }
-      const active = tabStore.active;
-      if (active && active.closable && active.id !== "home") {
-        tabStore.close(active.id); e.preventDefault();
+  async function handleCommand(input) {
+    const trimmed = input.trim();
+    if (!trimmed) return;
+
+    isLoading = true;
+
+    try {
+      if (trimmed.startsWith("!")) {
+        const routing = shouldIntercept(trimmed);
+        if (routing.intercept) {
+          const listInput = "!" + routing.listTokens.join(" ");
+          const listResult = await execute(listInput);
+          if (listResult.type === "error") {
+            popup.show("error", "Error", listResult.data);
+          } else {
+            popup.showPersistent(
+              listResult.type,
+              listResult.title,
+              listResult.data || {},
+              routing.listIdKey,
+            );
+            popup.updateCache(listResult.data || {});
+            const enrichedInitial = {
+              ...(routing.initialData || {}),
+              _returnIdKey: routing.listIdKey ? `persistent-${routing.listIdKey}` : undefined,
+            };
+            tabStore.open("form", routing.addTitle || "Add", {
+              form: routing.addFormType,
+              initialData: enrichedInitial,
+            }, { idKey: `form-${routing.addFormType}` });
+          }
+          isLoading = false;
+          return;
+        }
       }
+
+      popup.showLoading(loadingLabel(input));
+
+      const result = await execute(input);
+
+      if (result.type === "form-required") {
+        const { form, initialData } = result.data || {};
+        if (form) {
+          const activeId = tabStore.active?.id;
+          if (activeId) tabStore.close(activeId);
+          tabStore.open("form", result.title || "Complete Form", {
+            form,
+            initialData: initialData || {},
+          }, { idKey: `form-${form}` });
+          isLoading = false;
+          return;
+        }
+      }
+
+      // Transform "table" results into a format StatusPopup can render
+      if (result.type === "table") {
+        popup.show("status", result.title || result.label || "Results", {
+          type: "table",
+          data: result.data,
+          label: result.label || "",
+        });
+        isLoading = false;
+        return;
+      }
+
+      const dataType = detectPersistentType(input);
+      if (dataType) {
+        popup.showPersistent(result.type, result.title, result.data, dataType);
+      } else {
+        popup.show(result.type, result.title, result.data);
+      }
+    } catch (err) {
+      popup.show("error", "Error", {
+        message: err.message || String(err),
+        suggestion: err.suggestion || "",
+      });
+    } finally {
+      isLoading = false;
     }
+  }
+
+  function detectPersistentType(input) {
+    const t = input.trim();
+    if (/^!(email\s+)?account\s+list\s*$/i.test(t)) return "accounts";
+    if (/^!(calendar\s+)?account\s+list\s*$/i.test(t)) return "calendars";
+    if (/^!contacts?\s+(list|search)\b/i.test(t)) return "contacts-list";
+    if (/^!todo\s+(list|search)\b/i.test(t)) return "todos";
+    if (/^!journal\s+(list|search)\b/i.test(t)) return "journal";
+    if (/^!calendar\s+(list|search)\b/i.test(t)) return "calendar-events";
+    if (/^!email\s+(list|search)\b/i.test(t)) return "email-list";
+    if (/^!user\s+saved-commands\s+list\s*$/i.test(t)) return "saved-commands";
+    return null;
   }
 </script>
 
-<svelte:window onkeydown={handleGlobalKeydown} />
+<svelte:window onbeforeunload={(e) => {
+    if (dirtyFormStore.hasAnyDirty) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  }} />
 
-<div id="semantika-app">
-  <header>
-    <div class="header-row">
-      <h1>Semantika</h1>
-      <span class="subtitle">knowledge graph</span>
-      <span class="shortcuts"><kbd>i</kbd> focus · <kbd>h</kbd> help · <kbd>q</kbd> close</span>
-    </div>
-    <CommandBar oncommand={handleCommand} />
-  </header>
-
-  {#if loading}
-    <div class="loading-screen">Loading…</div>
-  {:else}
-    <TabView />
+<main>
+  <BannerContainer />
+  {#if isLoading}
+    <div class="loading-bar" aria-label="Loading"></div>
   {/if}
-
-  {#if showShortcuts}
-    <KeyboardShortcutOverlay onclose={() => showShortcuts = false} />
-  {/if}
-
-  <footer class="tab-bar">
-    <button class="tab-btn home-btn" class:active={tabStore.isHome}
-      onclick={() => tabStore.goHome()}>🏠 Home</button>
-    {#each tabStore.tabs as tab (tab.id)}
-      {#if tab.id !== "home"}
-        <button class="tab-btn" class:active={tabStore.active.id === tab.id}
-          onclick={() => tabStore.setActive(tab.id)}>
-          {tab.title || tab.type}
-          {#if tab.closable}
-            <span class="tab-close" onclick={(e) => { e.stopPropagation(); tabStore.close(tab.id); }}>✕</span>
-          {/if}
-        </button>
-      {/if}
-    {/each}
-  </footer>
-</div>
+  <PopupOverlay />
+</main>
 
 <style>
-  #semantika-app { display: flex; flex-direction: column; height: 100vh; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; }
-  header { background: #fff; border-bottom: 1px solid #ddd; padding: 0.4rem 1rem; flex-shrink: 0; }
-  .header-row { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.4rem; }
-  h1 { margin: 0; font-size: 1.1rem; font-weight: 700; }
-  .subtitle { color: #888; font-size: 0.8rem; }
-  .shortcuts { margin-left: auto; color: #aaa; font-size: 0.75rem; }
-  .shortcuts kbd { background: #f0f0f0; padding: 0.1rem 0.3rem; border-radius: 2px; border: 1px solid #ddd; font-family: inherit; }
-  .loading-screen { flex: 1; display: flex; align-items: center; justify-content: center; color: #999; }
-  .tab-bar { display: flex; gap: 2px; padding: 2px 4px; background: #e8e8e8; border-top: 1px solid #ccc; overflow-x: auto; flex-shrink: 0; }
-  .tab-btn { display: flex; align-items: center; gap: 4px; padding: 4px 10px; border: none; background: #ddd; border-radius: 4px 4px 0 0; cursor: pointer; font-size: 0.8rem; white-space: nowrap; }
-  .tab-btn.active { background: #fff; font-weight: 600; }
-  .tab-btn:hover { background: #eee; }
-  .tab-close { margin-left: 4px; padding: 0 2px; border-radius: 2px; cursor: pointer; font-size: 0.7rem; }
-  .tab-close:hover { background: #ccc; }
-  .home-btn { font-weight: 600; }
+  :global(*) {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+  :global(:root) {
+    --clr-muted: #82829a;
+    --clr-sub:   #9292aa;
+    --clr-dim:   #888;
+    --clr-kbd:   #999;
+    --clr-accent:#7c7c9a;
+  }
+  :global(body) {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  main {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    width: 100%;
+  }
+  .loading-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 3px;
+    background: linear-gradient(90deg, #7c7c9a 0%, #a4a4d0 50%, #7c7c9a 100%);
+    background-size: 200% 100%;
+    animation: bar-slide 1.5s ease-in-out infinite;
+    z-index: 1000;
+  }
+  @keyframes bar-slide {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
 </style>
