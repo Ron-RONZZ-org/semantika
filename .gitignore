@@ -34,3 +34,4 @@ htmlcov/
 *.bak
 /dev-data/
 .dev
+*.7z
