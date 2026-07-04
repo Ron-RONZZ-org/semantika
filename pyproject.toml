@@ -39,8 +39,10 @@ packages = ["src/semantika"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
 markers = [
     "e2e: E2E browser tests (skipped by default; use --e2e to run)",
+    "asyncio: async tests using pytest-asyncio",
 ]
 
 [tool.ruff.lint]
