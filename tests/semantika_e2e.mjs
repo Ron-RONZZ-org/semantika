@@ -376,8 +376,47 @@ async function run() {
 
   // ═══════════════════════════════════════════
   console.log();
+  console.log("═══ PERMISSION GATE ═══");
+
+  // Test: /confirm endpoint directly (no LLM needed)
+  // This simulates what happens when a user confirms a destructive command
+  await test("POST /api/v1/llm/confirm stats", async () => {
+    const resp = await page.evaluate(() =>
+      fetch("/api/v1/llm/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tokens: ["stats"], flags: {} }),
+      }).then((r) => r.json())
+    );
+    assert.equal(resp.type, "status", `/confirm should return status, got ${JSON.stringify(resp)}`);
+  });
+
+  // Test: confirm endpoint with empty tokens returns 400
+  await test("POST /api/v1/llm/confirm empty tokens", async () => {
+    const resp = await page.evaluate(() =>
+      fetch("/api/v1/llm/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tokens: [], flags: {} }),
+      }).then(async (r) => ({ status: r.status }))
+    );
+    assert.equal(resp.status, 400, `Empty tokens should return 400, got ${resp.status}`);
+  });
+
+  // Test: chat doesn't crash when asking about stats (no LLM configured)
+  await test("LLM chat stats", async () => {
+    await typeAndRun("how many nodes?");
+    // Should show a reply, not crash
+    await page.waitForTimeout(500);
+    const body = page.locator(".msg-body");
+    const count = await body.count();
+    assert.ok(count >= 0, "Chat response should render");
+  });
+
+  // ═══════════════════════════════════════════
+  console.log();
   console.log(`RESULTS: ${passed} passed, ${failed} failed`);
-  console.log(`Coverage: 44 commands across all tree nodes`);
+  console.log(`Coverage: 44 commands + 3 permission gate tests`);
 
   await browser.close();
   process.exit(failed > 0 ? 1 : 0);

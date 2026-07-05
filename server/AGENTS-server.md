@@ -27,4 +27,5 @@ FastAPI web server: application factory, API routes, middleware, command engine,
 - **Command response types**: `status` (simple message), `form-required` (redirect to GUI form), `table` (data table), `graph` (graph visualization data), `error`
 - **Interactive commands**: Commands with `interactive: true` in `tree.py` trigger a form popup in the GUI when required params are missing
 - **LLM integration**: The chat endpoint can call graph query methods. Keep LLM calls async with timeout.
+- **Permission gate**: The LLM chat route checks command `permission_level` before dispatch. Commands with level >= DESTRUCTIVE return `{"type": "confirm", ...}` instead of executing immediately. Use `POST /api/v1/llm/confirm` for user-approved dispatch. Permission levels come from `@command(permission_level=...)` metadata; unset defaults to `WRITE`.
 - **When adding new routes**, always add corresponding `!command` entries in `tree.py`
