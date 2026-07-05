@@ -2,6 +2,8 @@
 
 Ported from A-semantika's ``_node_service.py``, ``_node_search.py``, ``_node_merge_mixin.py``
 with Esperanto-to-English migration.
+
+FTS5 management is in ``node_fts.py`` (NodeFtsMixin).
 """
 
 from __future__ import annotations
@@ -15,13 +17,13 @@ from typing import Any
 from semantika.core import SemantikaDB, AmbiguousIDError
 from semantika.core.crud import CRUDService, now
 from semantika.core.fts import FTSConfig
-from semantika.graph.constants import FTS5_KEYWORDS
 from semantika.graph.node_helpers import (
     extract_definition_text,
     extract_label_text,
     get_label_from_node,
     sanitize_node_id,
 )
+from semantika.graph.node_fts import NodeFtsMixin
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +34,7 @@ FTS_CONFIG = FTSConfig(
 )
 
 
-class NodeService(CRUDService):
+class NodeService(NodeFtsMixin, CRUDService):
     """Service for managing knowledge graph nodes with FTS5 search and label support."""
 
     def __init__(self, db: SemantikaDB) -> None:
@@ -50,14 +52,12 @@ class NodeService(CRUDService):
             return None
         prefix = sanitize_node_id(prefix)
 
-        # Exact match first
         node = self.db.execute_one(
             "SELECT * FROM nodes WHERE node_id = ? COLLATE NOCASE", (prefix,)
         )
         if node:
             return node
 
-        # Prefix search via LIKE
         escaped = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         matches = self.db.execute(
             "SELECT * FROM nodes WHERE node_id LIKE ? COLLATE NOCASE ESCAPE '\\'",
@@ -206,7 +206,6 @@ class NodeService(CRUDService):
 
         with self.db.transaction() as conn:
             self._remove_from_fts(node_id)
-            # Remove triples referencing this node (FK constraint)
             conn.execute(
                 "DELETE FROM triples WHERE subject_id = ? OR (object_type = 'uri' AND object_value = ?)",
                 (node_id, node_id),
@@ -219,171 +218,10 @@ class NodeService(CRUDService):
                 f"DELETE FROM nodes WHERE node_id = ?", (node_id,)
             )
 
-    # ── FTS5 Management ────────────────────────────────────────────────
-
-    def search(self, query: str, limit: int = 50) -> list[dict]:
-        """Full-text search on nodes via FTS5, falling back to LIKE."""
-        if not query or not query.strip():
-            return self.list(limit=limit)
-
-        safe_tokens = []
-        for word in query.strip().split():
-            cleaned = "".join(c for c in word if c.isalnum() or c == "_")
-            if not cleaned:
-                continue
-            if cleaned.upper() in FTS5_KEYWORDS:
-                cleaned = cleaned.lower()
-            safe_tokens.append(f"{cleaned}*")
-        if not safe_tokens:
-            return self.list(limit=limit)
-
-        fts_query = " OR ".join(safe_tokens)
-        # BM25 ranking with column weights:
-        #   label_text (-5.0): most important — matches here ranked highest
-        #   definition_text (-1.0): moderately important
-        #   node_id (0.0): unindexed, zero weight
-        # bm25() returns lower scores for better matches.
-        fts_sql = """
-            SELECT n.*, bm25(nodes_fts, 1.2, 0.75, 0.0, -5.0, -1.0) AS _rank
-            FROM nodes n
-            JOIN nodes_fts f ON n.node_id = f.node_id
-            WHERE nodes_fts MATCH ?
-            ORDER BY _rank
-            LIMIT ?
-        """
-        try:
-            results = self.db.execute(fts_sql, (fts_query, limit))
-        except sqlite3.DatabaseError:
-            logger.warning("FTS search failed — rebuilding and retrying")
-            try:
-                self._rebuild_fts()
-                results = self.db.execute(fts_sql, (fts_query, limit))
-            except sqlite3.DatabaseError:
-                logger.error("FTS rebuild failed — using LIKE fallback")
-                results = []
-
-        if results:
-            return results
-
-        # Fallback: LIKE on label_text (no BM25 rank — set _rank to 0)
-        escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        return self.db.execute(
-            "SELECT *, 0 AS _rank FROM nodes WHERE label_text LIKE ? ESCAPE '\\' COLLATE NOCASE LIMIT ?",
-            (f"%{escaped}%", limit),
-        )
-
-    def _ensure_fts(self) -> None:
-        """Ensure FTS5 virtual table exists and is populated."""
-        self.db.execute(
-            "CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5("
-            "  node_id UNINDEXED,"
-            "  label_text,"
-            "  definition_text,"
-            "  content=nodes,"
-            "  content_rowid=rowid,"
-            "  tokenize='unicode61'"
-            ")"
-        )
-        count = self.db.execute_one("SELECT COUNT(*) AS cnt FROM nodes_fts")
-        if count and count["cnt"] == 0:
-            self._populate_fts()
-
-    def _populate_fts(self) -> None:
-        """Populate FTS from content table."""
-        try:
-            self.db.execute(
-                "INSERT INTO nodes_fts (rowid, node_id, label_text, definition_text)"
-                " SELECT rowid, node_id, label_text, definition_text FROM nodes"
-            )
-        except sqlite3.DatabaseError:
-            logger.warning("FTS population failed — using LIKE fallback")
-
-    def _index_fts(self, node_id: str) -> None:
-        """Index a single node in FTS5."""
-        entry = self.db.execute_one(
-            "SELECT rowid, node_id, label_text, definition_text "
-            "FROM nodes WHERE node_id = ?",
-            (node_id,),
-        )
-        if not entry:
-            return
-        try:
-            self.db.execute(
-                "INSERT INTO nodes_fts (rowid, node_id, label_text, definition_text) "
-                "VALUES (?, ?, ?, ?)",
-                (entry["rowid"], node_id, entry["label_text"] or "", entry["definition_text"] or ""),
-            )
-        except sqlite3.DatabaseError as exc:
-            logger.warning("FTS index insert failed for node %s: %s", node_id, exc)
-
-    def _remove_from_fts(self, node_id: str) -> None:
-        """Remove a node from FTS index."""
-        row = self.db.execute_one(
-            f"SELECT rowid FROM {self.table} WHERE node_id = ?", (node_id,)
-        )
-        if not row or row.get("rowid") is None:
-            return
-        self._remove_fts_by_rowid(node_id, row["rowid"])
-
-    def _remove_fts_by_rowid(self, node_id: str, rowid: int) -> None:
-        """Remove a rowid from the FTS index after node deletion."""
-        try:
-            self.db.execute(
-                "INSERT INTO nodes_fts(nodes_fts, rowid) VALUES('delete', ?)",
-                (rowid,),
-            )
-        except sqlite3.DatabaseError as exc:
-            logger.warning(
-                "FTS 'delete' failed for %s (rowid=%s): %s",
-                node_id, rowid, exc,
-            )
-
-    def _rebuild_fts(self) -> None:
-        """Rebuild the nodes FTS index from the content table.
-
-        Handles corruption by dropping and recreating the FTS table
-        if the FTS5 'rebuild' command fails.
-        """
-        try:
-            self.db.execute(
-                "INSERT INTO nodes_fts(nodes_fts) VALUES('rebuild')"
-            )
-        except sqlite3.DatabaseError:
-            logger.warning("Nodes FTS rebuild failed — recreating table")
-            # Drop shadow tables
-            for suffix in ("_data", "_idx", "_docsize", "_config", "_content"):
-                try:
-                    self.db.execute(f"DROP TABLE IF EXISTS nodes_fts{suffix}")
-                except sqlite3.DatabaseError:
-                    pass
-            try:
-                self.db.execute("DROP TABLE IF EXISTS nodes_fts")
-            except sqlite3.DatabaseError:
-                pass
-            # Recreate
-            self._ensure_fts()
-            self._populate_fts()
-
     # ── Node ID Rename ───────────────────────────────────────────────
 
     def update_node_id(self, old_id: str, new_id: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
-        """Rename a node's node_id, cascading to all referencing triples.
-
-        Manual SQL UPDATEs in a single transaction to handle FK
-        constraints through generated columns.
-
-        Args:
-            old_id: Current node_id.
-            new_id: New node_id.
-            data: Optional additional field updates (labels, definitions, etc.).
-
-        Returns:
-            Updated node dict.
-
-        Raises:
-            ValueError: If old_id not found, new_id already exists, or
-                PK collision would occur on triples.
-        """
+        """Rename a node's node_id, cascading to all referencing triples."""
         old = self.get(old_id)
         if not old:
             raise ValueError(f"Node not found: {old_id}")
@@ -394,7 +232,6 @@ class NodeService(CRUDService):
         if existing:
             raise ValueError(f"New node ID '{new_id}' already exists")
 
-        # Check triple PK collisions
         old_triples = self.db.execute(
             "SELECT predicate_id, object_value, object_type FROM triples "
             "WHERE subject_id = ?", (old_id,),
@@ -447,7 +284,6 @@ class NodeService(CRUDService):
         updates["node_id"] = new_id
         updates["updated_at"] = ts
 
-        # Save rowid before transaction for FTS cleanup
         old_rowid = None
         row = self.db.execute_one(
             f"SELECT rowid FROM {self.table} WHERE node_id = ?", (old_id,)
@@ -458,14 +294,12 @@ class NodeService(CRUDService):
         with self.db.transaction() as conn:
             conn.execute("PRAGMA defer_foreign_keys=ON")
 
-            # Delete old FTS entry
             if old_rowid is not None:
                 conn.execute(
-                    f"INSERT INTO nodes_fts(nodes_fts, rowid) VALUES('delete', ?)",
+                    "INSERT INTO nodes_fts(nodes_fts, rowid) VALUES('delete', ?)",
                     (old_rowid,),
                 )
 
-            # Update node PK + fields
             set_parts = [f"{k} = ?" for k in updates]
             params = list(updates.values()) + [old_id]
             conn.execute(
@@ -473,20 +307,16 @@ class NodeService(CRUDService):
                 params,
             )
 
-            # Cascade to triples (subject)
             conn.execute(
                 "UPDATE triples SET subject_id = ? WHERE subject_id = ?",
                 (new_id, old_id),
             )
-
-            # Cascade to triples (URI object)
             conn.execute(
                 "UPDATE triples SET object_value = ? "
                 "WHERE object_type = 'uri' AND object_value = ?",
                 (new_id, old_id),
             )
 
-            # Re-index FTS
             self._index_fts(new_id)
 
         return self.get(new_id)
@@ -497,26 +327,9 @@ class NodeService(CRUDService):
         """Merge source node INTO target node.
 
         All triples referencing *source* (as subject or URI object) are
-        reassigned to *target*.  Triple PK conflicts (where *target* already
-        has the same subject-predicate-object-type combination) are silently
-        skipped — target wins.
-
-        Labels and definitions are merged with target-first precedence:
-        source languages that do not exist in target are added; target
-        values are kept on collision.
-
-        The source node is deleted after reassignment.  ALL operations
-        happen in a single transaction with deferred FK checks.
-
-        Args:
-            source_id: Node ID of the source (will be deleted).
-            target_id: Node ID of the target (survives).
-
-        Returns:
-            Updated target node dict.
-
-        Raises:
-            ValueError: If either node is not found, or source equals target.
+        reassigned to *target*.  Triple PK conflicts are silently skipped.
+        Labels and definitions are merged with target-first precedence.
+        The source node is deleted after reassignment.
         """
         if source_id == target_id:
             raise ValueError("Source and target must be different nodes")
@@ -529,25 +342,24 @@ class NodeService(CRUDService):
         if not target:
             raise ValueError(f"Target node not found: {target_id}")
 
-        # Parse JSON column values
         try:
-            source_labels = json.loads(source["labels"]) if isinstance(source["labels"], str) else source.get("labels", {})
+            source_labels: dict = json.loads(source["labels"]) if isinstance(source["labels"], str) else source.get("labels", {})
         except (json.JSONDecodeError, TypeError):
             source_labels = {}
         try:
-            target_labels = json.loads(target["labels"]) if isinstance(target["labels"], str) else target.get("labels", {})
+            target_labels: dict = json.loads(target["labels"]) if isinstance(target["labels"], str) else target.get("labels", {})
         except (json.JSONDecodeError, TypeError):
             target_labels = {}
         try:
-            source_defns = json.loads(source["definitions"]) if isinstance(source["definitions"], str) else source.get("definitions", {})
+            source_defns: dict = json.loads(source["definitions"]) if isinstance(source["definitions"], str) else source.get("definitions", {})
         except (json.JSONDecodeError, TypeError):
             source_defns = {}
         try:
-            target_defns = json.loads(target["definitions"]) if isinstance(target["definitions"], str) else target.get("definitions", {})
+            target_defns: dict = json.loads(target["definitions"]) if isinstance(target["definitions"], str) else target.get("definitions", {})
         except (json.JSONDecodeError, TypeError):
             target_defns = {}
 
-        merged_labels = {**source_labels, **target_labels}  # target wins
+        merged_labels = {**source_labels, **target_labels}
         merged_defns = {**source_defns, **target_defns}
 
         ts = now()
@@ -555,11 +367,9 @@ class NodeService(CRUDService):
         with self.db.transaction() as conn:
             conn.execute("PRAGMA defer_foreign_keys=ON")
 
-            # 1. Remove old FTS entries
             self._remove_from_fts(source_id)
             self._remove_from_fts(target_id)
 
-            # 2. Update target with merged labels/definitions
             conn.execute(
                 "UPDATE nodes SET labels = ?, label_text = ?, definitions = ?, "
                 "definition_text = ?, updated_at = ? WHERE node_id = ?",
@@ -573,8 +383,6 @@ class NodeService(CRUDService):
                 ),
             )
 
-            # 3. Reassign triples where source is subject → target
-            #    Skip collisions with target's existing triples
             conn.execute(
                 """UPDATE triples SET subject_id = ?
                    WHERE subject_id = ?
@@ -585,7 +393,6 @@ class NodeService(CRUDService):
                 (target_id, source_id, target_id),
             )
 
-            # 4. Reassign triples where source is URI object → target
             conn.execute(
                 """UPDATE triples SET object_value = ?
                    WHERE object_type = 'uri' AND object_value = ?
@@ -596,17 +403,14 @@ class NodeService(CRUDService):
                 (target_id, source_id, target_id),
             )
 
-            # 5. Clean up skipped collision triples still referencing source
             conn.execute(
                 "DELETE FROM triples WHERE subject_id = ? "
                 "OR (object_type = 'uri' AND object_value = ?)",
                 (source_id, source_id),
             )
 
-            # 6. Delete source node
             conn.execute("DELETE FROM nodes WHERE node_id = ?", (source_id,))
 
-            # 7. Re-index target FTS
             self._index_fts(target_id)
 
         return self.get(target_id)
