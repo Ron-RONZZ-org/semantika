@@ -10,6 +10,9 @@
   import FormTab from "./FormTab.svelte";
   import QuizPanel from "./QuizPanel.svelte";
   import KeyboardShortcutOverlay from "./KeyboardShortcutOverlay.svelte";
+  import NodeListTab from "./NodeListTab.svelte";
+  import PredicateListTab from "./PredicateListTab.svelte";
+  import TripleListTab from "./TripleListTab.svelte";
 
   let showGlobalHelp = $state(false);
   let inputFocused = $state(false);
@@ -117,6 +120,12 @@
         <QuizPanel data={tabStore.active.data} />
       {:else if tabStore.active.type === "form"}
         <FormTab data={tabStore.active.data} />
+      {:else if tabStore.active.type === "node-list"}
+        <NodeListTab data={tabStore.active.data} />
+      {:else if tabStore.active.type === "predicate-list"}
+        <PredicateListTab data={tabStore.active.data} />
+      {:else if tabStore.active.type === "triple-list"}
+        <TripleListTab data={tabStore.active.data} />
       {:else}
         <StatusPopup data={tabStore.active.data} />
       {/if}
@@ -196,6 +205,9 @@
     const icons = {
       home: "\u2302",
       status: "\ud83d\udccb",
+      "node-list": "\u25c9",
+      "predicate-list": "\u25ce",
+      "triple-list": "\u25c8",
       graph: "\ud83c\udf10",
       error: "\u26a0",
       help: "?",

@@ -176,7 +176,7 @@ def cmd_node_list(remaining: list[str], flags: dict[str, str]) -> dict:
     """List all non-trashed nodes."""
     svc = get_services()
     nodes = svc["node"].list(limit=int(flags.get("limit", 100)))
-    return {"type": "table", "data": nodes, "label": "Nodes"}
+    return {"type": "node-list", "data": nodes}
 
 
 @command("node.search", description="Search nodes by label",

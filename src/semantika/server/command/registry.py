@@ -158,13 +158,17 @@ def get_command_tree() -> list[dict[str, Any]]:
                     existing = current[part]
                     group_desc = _group_descriptions.get(".".join(parts[:idx + 1]), "")
                     children = {}
-                    desc = existing.get("description", group_desc)
+                    desc = existing.get("description") or group_desc
                     current[part] = {"name": part, "description": desc, "children": children}
                 elif is_last and "children" in current[part]:
                     # Node has children and also a direct command handler — set description
                     if meta.get("description"):
                         current[part]["description"] = meta.get("description")
-            current = current[part]
+            if not is_last:
+                # Navigate into the group node's children dict, not the node itself
+                current = current[part]["children"]
+            else:
+                current = current[part]
 
     def _to_list(node: dict) -> dict[str, Any]:
         result: dict[str, Any] = {

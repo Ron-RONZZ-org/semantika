@@ -297,9 +297,8 @@ class TestCommandTree:
     def test_tree_has_expected_groups(self):
         tree = get_command_tree()
         names = [n["name"] for n in tree]
-        for expected in ("node", "predicate", "triple", "unit", "search",
-                         "view", "export", "import", "stats", "trash",
-                         "review", "proof", "llm", "backup", "reset"):
+        for expected in ("node", "predicate", "triple", "unit", "graph",
+                         "trash", "review", "proof", "llm", "backup", "reset"):
             assert expected in names, f"Missing {expected} in command tree"
 
     def test_tree_leaves_have_descriptions(self):

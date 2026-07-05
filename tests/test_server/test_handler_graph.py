@@ -1,9 +1,9 @@
 """Tests for graph command handlers via dispatch().
 
-Covers !stats, !export, !import, !search, !view,
+Covers !graph stats, !graph export, !graph import, !graph search, !graph view,
 !node list/search/view/add/update/delete/rename/merge,
 !predicate list/search/view/add/rename/delete,
-!predicate-group list/view/add/rename/delete/search/add-member/remove-member,
+!predicate group list/view/add/rename/delete/search/add-member/remove-member,
 !triple list/view/add/delete/modify.
 
 Uses isolated DB via shared fixtures (see ``conftest.py``).
@@ -33,42 +33,42 @@ def seeded(services: dict) -> dict:
     return services
 
 
-# ── Top-level command tests ─────────────────────────────────────────────
+# ── Graph-level command tests ────────────────────────────────────────────
 
 
-class TestCmdStats:
-    """!stats"""
+class TestCmdGraphStats:
+    """!graph stats"""
 
     def test_stats(self, seeded: dict) -> None:
-        result = dispatch(["stats"], {})
+        result = dispatch(["graph", "stats"], {})
         assert result["type"] == "status"
 
     def test_stats_empty(self, services: dict) -> None:
-        result = dispatch(["stats"], {})
+        result = dispatch(["graph", "stats"], {})
         assert result["type"] == "status"
 
 
-class TestCmdExport:
-    """!export"""
+class TestCmdGraphExport:
+    """!graph export"""
 
     def test_export(self, seeded: dict) -> None:
-        result = dispatch(["export"], {})
+        result = dispatch(["graph", "export"], {})
         assert result["type"] == "status"
 
     def test_export_triples(self, seeded: dict) -> None:
-        result = dispatch(["export"], {"triples": "true"})
+        result = dispatch(["graph", "export"], {"triples": "true"})
         assert result["type"] == "status"
 
 
-class TestCmdImport:
-    """!import"""
+class TestCmdGraphImport:
+    """!graph import"""
 
     def test_import_turtle(self, seeded: dict) -> None:
         ttl = (
             "@prefix ex: <http://example.org/> .\n"
             '<http://example.org/ALICE> ex:knows <http://example.org/BOB> .\n'
         )
-        result = dispatch(["import"], {"data": ttl})
+        result = dispatch(["graph", "import"], {"data": ttl})
         assert result["type"] == "status"
 
     def test_import_with_labels(self, seeded: dict) -> None:
@@ -82,7 +82,7 @@ class TestCmdImport:
         svc = seeded
         import json
         from semantika.server.command.registry import dispatch
-        result = dispatch(["import"], {"data": ttl})
+        result = dispatch(["graph", "import"], {"data": ttl})
         assert result["type"] == "status"
         assert result["data"]["nodes_created"] >= 2
 
@@ -97,34 +97,34 @@ class TestCmdImport:
 
     def test_import_no_data(self, services: dict) -> None:
         with pytest.raises(Exception, match="Provide TTL"):
-            dispatch(["import"], {})
+            dispatch(["graph", "import"], {})
 
 
-class TestCmdSearch:
-    """!search"""
+class TestCmdGraphSearch:
+    """!graph search"""
 
     def test_search_matches(self, seeded: dict) -> None:
-        result = dispatch(["search", "Alice"], {})
+        result = dispatch(["graph", "search", "Alice"], {})
         assert result["type"] == "table" or result["type"] == "status"
 
     def test_search_no_matches(self, seeded: dict) -> None:
-        result = dispatch(["search", "Nonexistent"], {})
+        result = dispatch(["graph", "search", "Nonexistent"], {})
         assert result["type"] == "status"
 
     def test_search_with_type(self, seeded: dict) -> None:
-        result = dispatch(["search", "Alice"], {"type": "node"})
+        result = dispatch(["graph", "search", "Alice"], {"type": "node"})
         assert result["type"] in ("table", "status")
 
     def test_search_all(self, seeded: dict) -> None:
-        result = dispatch(["search", "Alice"], {"all": "true"})
+        result = dispatch(["graph", "search", "Alice"], {"all": "true"})
         assert result["type"] in ("table", "status")
 
 
-class TestCmdView:
-    """!view"""
+class TestCmdGraphView:
+    """!graph view"""
 
     def test_view_node(self, seeded: dict) -> None:
-        result = dispatch(["view", "ALICE"], {})
+        result = dispatch(["graph", "view", "ALICE"], {})
         assert result["type"] == "status"
 
 
@@ -136,11 +136,11 @@ class TestCmdNodeList:
 
     def test_list_all(self, seeded: dict) -> None:
         result = dispatch(["node", "list"], {})
-        assert result["type"] == "table"
+        assert result["type"] == "node-list"
 
     def test_list_with_limit(self, seeded: dict) -> None:
         result = dispatch(["node", "list"], {"limit": "2"})
-        assert result["type"] == "table"
+        assert result["type"] == "node-list"
 
 
 class TestCmdNodeSearch:
@@ -245,7 +245,7 @@ class TestCmdPredicateList:
 
     def test_list(self, seeded: dict) -> None:
         result = dispatch(["predicate", "list"], {})
-        assert result["type"] == "table"
+        assert result["type"] == "predicate-list"
 
 
 class TestCmdPredicateSearch:
@@ -307,58 +307,58 @@ class TestCmdPredicateDelete:
 
 
 # ── Predicate group handler tests ────────────────────────────────────────
-# NOTE: Registered as "predicate-group.*" (hyphenated, not space-separated)
+# Registered as "predicate.group.*" (dotted sub-namespace)
 
 
 class TestCmdPredicateGroup:
-    """!predicate-group *"""
+    """!predicate group *"""
 
     def test_list(self, seeded: dict) -> None:
-        result = dispatch(["predicate-group", "list"], {})
+        result = dispatch(["predicate", "group", "list"], {})
         assert result["type"] == "table"
 
     def test_add(self, seeded: dict) -> None:
         result = dispatch(
-            ["predicate-group", "add", "social"],
+            ["predicate", "group", "add", "social"],
             {},
         )
         assert result["type"] == "status"
 
     def test_view(self, seeded: dict) -> None:
-        dispatch(["predicate-group", "add", "social"], {})
-        result = dispatch(["predicate-group", "view", "social"], {})
+        dispatch(["predicate", "group", "add", "social"], {})
+        result = dispatch(["predicate", "group", "view", "social"], {})
         assert result["type"] == "status"
 
     def test_rename(self, seeded: dict) -> None:
-        dispatch(["predicate-group", "add", "social"], {})
-        result = dispatch(["predicate-group", "rename", "social", "soc"], {})
+        dispatch(["predicate", "group", "add", "social"], {})
+        result = dispatch(["predicate", "group", "rename", "social", "soc"], {})
         assert result["type"] == "status"
 
     def test_delete(self, seeded: dict) -> None:
-        dispatch(["predicate-group", "add", "social"], {})
-        result = dispatch(["predicate-group", "delete", "social"], {})
+        dispatch(["predicate", "group", "add", "social"], {})
+        result = dispatch(["predicate", "group", "delete", "social"], {})
         assert result["type"] == "status"
 
     def test_search(self, seeded: dict) -> None:
-        dispatch(["predicate-group", "add", "social"], {})
-        result = dispatch(["predicate-group", "search", "Social"], {})
+        dispatch(["predicate", "group", "add", "social"], {})
+        result = dispatch(["predicate", "group", "search", "Social"], {})
         assert result["type"] == "table"
 
     def test_add_member(self, seeded: dict) -> None:
-        dispatch(["predicate-group", "add", "social"], {})
+        dispatch(["predicate", "group", "add", "social"], {})
         result = dispatch(
-            ["predicate-group", "add-member", "social", "ex:knows"],
+            ["predicate", "group", "add-member", "social", "ex:knows"],
             {},
         )
         assert result["type"] == "status"
 
     def test_remove_member(self, seeded: dict) -> None:
-        dispatch(["predicate-group", "add", "social"], {})
+        dispatch(["predicate", "group", "add", "social"], {})
         dispatch(
-            ["predicate-group", "add-member", "social", "ex:knows"], {}
+            ["predicate", "group", "add-member", "social", "ex:knows"], {}
         )
         result = dispatch(
-            ["predicate-group", "remove-member", "social", "ex:knows"],
+            ["predicate", "group", "remove-member", "social", "ex:knows"],
             {},
         )
         assert result["type"] == "status"
@@ -372,15 +372,15 @@ class TestCmdTripleList:
 
     def test_list(self, seeded: dict) -> None:
         result = dispatch(["triple", "list"], {})
-        assert result["type"] == "table"
+        assert result["type"] == "triple-list"
 
     def test_list_by_subject(self, seeded: dict) -> None:
         result = dispatch(["triple", "list", "ALICE"], {})
-        assert result["type"] == "table"
+        assert result["type"] == "triple-list"
 
     def test_list_by_subject_and_predicate(self, seeded: dict) -> None:
         result = dispatch(["triple", "list", "ALICE", "ex:knows"], {})
-        assert result["type"] == "table"
+        assert result["type"] == "triple-list"
 
 
 class TestCmdTripleView:

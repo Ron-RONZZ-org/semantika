@@ -19,7 +19,7 @@
       "triple-modify": ["triple", "modify"],
       "unit-add": ["unit", "add"],
       "proof-add": ["proof", "add"],
-      "predicate-group-add": ["predicate-group", "add"],
+      "predicate-group-add": ["predicate", "group", "add"],
       "reset-no-backup": ["reset"],
     };
     return map[formType] || [];

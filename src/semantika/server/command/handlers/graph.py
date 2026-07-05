@@ -7,15 +7,25 @@ from pathlib import Path
 
 from semantika.graph.db import get_services
 from semantika.server.command.errors import CommandValidationError
-from semantika.server.command.registry import command
+from semantika.server.command.registry import command, group_command
 
 logger = logging.getLogger(__name__)
+
+
+# ── Group root ────────────────────────────────────────────────────────────
+
+
+@group_command("graph", description="Graph-level operations: stats, export, import, search, view")
+def cmd_graph_root(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Graph group help."""
+    return {"type": "status", "title": "Graph Commands", "data": {
+        "_summary": "Available !graph commands:\n  !graph stats — Graph statistics\n  !graph export — Export as Turtle\n  !graph import — Import Turtle data\n  !graph search — Full-text search\n  !graph view — View all triples for a node"}}
 
 
 # ── Stats ─────────────────────────────────────────────────────────────────
 
 
-@command("stats", description="Graph statistics")
+@command("graph.stats", description="Graph statistics")
 def cmd_stats(remaining: list[str], flags: dict[str, str]) -> dict:
     """Show graph statistics."""
     svc = get_services()
@@ -25,7 +35,7 @@ def cmd_stats(remaining: list[str], flags: dict[str, str]) -> dict:
 # ── Export ────────────────────────────────────────────────────────────────
 
 
-@command("export", description="Export as Turtle",
+@command("graph.export", description="Export as Turtle",
          flags=[{"name": "output", "type": "string", "help": "Output file path"},
                 {"name": "base_uri", "type": "string", "help": "Base URI"}])
 def cmd_export(remaining: list[str], flags: dict[str, str]) -> dict:
@@ -46,7 +56,7 @@ def cmd_export(remaining: list[str], flags: dict[str, str]) -> dict:
 # ── Import ────────────────────────────────────────────────────────────────
 
 
-@command("import", description="Import Turtle data",
+@command("graph.import", description="Import Turtle data",
          params=[{"name": "data", "type": "string", "required": False}],
          flags=[{"name": "file", "type": "string", "help": "Path to .ttl file to import (alternative to data=)"}])
 def cmd_import(remaining: list[str], flags: dict[str, str]) -> dict:
@@ -96,7 +106,7 @@ def _annotate_triples_with_proofs(
     return annotated
 
 
-@command("search", description="Full-text search",
+@command("graph.search", description="Full-text search",
          params=[{"name": "q", "type": "string", "required": True}],
          flags=[{"name": "date_from", "type": "string", "help": "Start date"},
                 {"name": "date_to", "type": "string", "help": "End date"},
@@ -131,7 +141,7 @@ def cmd_search(remaining: list[str], flags: dict[str, str]) -> dict:
 # ── View ──────────────────────────────────────────────────────────────────
 
 
-@command("view", description="View all triples for a node",
+@command("graph.view", description="View all triples for a node",
          params=[{"name": "id", "type": "string", "required": True}])
 def cmd_view(remaining: list[str], flags: dict[str, str]) -> dict:
     """View a node, predicate, or triple by ID."""

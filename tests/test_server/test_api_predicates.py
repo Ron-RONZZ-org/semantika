@@ -273,7 +273,7 @@ class TestPredicateGroupCRUD:
         """Add a predicate group via !command."""
         resp = client.post(
             "/api/v1/command",
-            json={"tokens": ["predicate-group", "add"], "flags": {"name": "pg_test_group"}},
+            json={"tokens": ["predicate", "group", "add"], "flags": {"name": "pg_test_group"}},
         )
         assert resp.status_code == 200
 
@@ -281,7 +281,7 @@ class TestPredicateGroupCRUD:
         """List predicate groups via !command."""
         resp = client.post(
             "/api/v1/command",
-            json={"tokens": ["predicate-group", "list"], "flags": {}},
+            json={"tokens": ["predicate", "group", "list"], "flags": {}},
         )
         assert resp.status_code == 200
 
@@ -289,7 +289,7 @@ class TestPredicateGroupCRUD:
         """View a predicate group via !command."""
         resp = client.post(
             "/api/v1/command",
-            json={"tokens": ["predicate-group", "view"], "flags": {"name": "pg_test_group"}},
+            json={"tokens": ["predicate", "group", "view"], "flags": {"name": "pg_test_group"}},
         )
         assert resp.status_code == 200
 
@@ -298,7 +298,7 @@ class TestPredicateGroupCRUD:
         self._setup_predicate(client, "ex:pgMember1")
         resp = client.post(
             "/api/v1/command",
-            json={"tokens": ["predicate-group", "add-member"],
+            json={"tokens": ["predicate", "group", "add-member"],
                   "flags": {"group": "pg_test_group", "predicate_id": "ex:pgMember1"}},
         )
         assert resp.status_code == 200
@@ -307,7 +307,7 @@ class TestPredicateGroupCRUD:
         """Search predicate groups by name via !command."""
         resp = client.post(
             "/api/v1/command",
-            json={"tokens": ["predicate-group", "search"], "flags": {"q": "pg_test"}},
+            json={"tokens": ["predicate", "group", "search"], "flags": {"q": "pg_test"}},
         )
         assert resp.status_code == 200
 
@@ -316,11 +316,11 @@ class TestPredicateGroupCRUD:
         client.post("/api/v1/graph/predicates", json={"predicate_id": "ex:pgRename", "labels": {"en": "rename"}})
         client.post(
             "/api/v1/command",
-            json={"tokens": ["predicate-group", "add"], "flags": {"name": "pg_rename_me"}},
+            json={"tokens": ["predicate", "group", "add"], "flags": {"name": "pg_rename_me"}},
         )
         resp = client.post(
             "/api/v1/command",
-            json={"tokens": ["predicate-group", "rename"],
+            json={"tokens": ["predicate", "group", "rename"],
                   "flags": {"name": "pg_rename_me", "new_name": "pg_renamed"}},
         )
         assert resp.status_code == 200
@@ -330,12 +330,12 @@ class TestPredicateGroupCRUD:
         self._setup_predicate(client, "ex:pgRemoveMe")
         client.post(
             "/api/v1/command",
-            json={"tokens": ["predicate-group", "add-member"],
+            json={"tokens": ["predicate", "group", "add-member"],
                   "flags": {"group": "pg_renamed", "predicate_id": "ex:pgRemoveMe"}},
         )
         resp = client.post(
             "/api/v1/command",
-            json={"tokens": ["predicate-group", "remove-member"],
+            json={"tokens": ["predicate", "group", "remove-member"],
                   "flags": {"group": "pg_renamed", "predicate_id": "ex:pgRemoveMe"}},
         )
         assert resp.status_code == 200
@@ -344,7 +344,7 @@ class TestPredicateGroupCRUD:
         """Delete a predicate group via !command."""
         resp = client.post(
             "/api/v1/command",
-            json={"tokens": ["predicate-group", "delete"], "flags": {"name": "pg_renamed"}},
+            json={"tokens": ["predicate", "group", "delete"], "flags": {"name": "pg_renamed"}},
         )
         assert resp.status_code == 200
 
@@ -359,6 +359,6 @@ class TestPredicateEdgeCases:
         """predicate-group search without query raises error."""
         resp = client.post(
             "/api/v1/command",
-            json={"tokens": ["predicate-group", "search"], "flags": {}},
+            json={"tokens": ["predicate", "group", "search"], "flags": {}},
         )
         assert resp.status_code == 400

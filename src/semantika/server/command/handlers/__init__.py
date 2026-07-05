@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from . import graph  # noqa: F401 — stats, export, import, search, view
+from . import graph  # noqa: F401 — graph stats, export, import, search, view
 from . import node  # noqa: F401 — node CRUD
-from . import predicate  # noqa: F401 — predicate + predicate-group CRUD
+from . import predicate  # noqa: F401 — predicate CRUD
+from . import predicate_group  # noqa: F401 — predicate group CRUD
 from . import triple  # noqa: F401 — triple CRUD
 from . import unit  # noqa: F401
 from . import trash  # noqa: F401
