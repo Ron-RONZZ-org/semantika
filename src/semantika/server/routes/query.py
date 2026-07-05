@@ -73,16 +73,16 @@ async def import_turtle(req: ImportRequest):
     return stats
 
 
-class SparqlQuery(BaseModel):
+class RawQuery(BaseModel):
     query: str
 
 
 def _readonly_conn() -> sqlite3.Connection:
     """Open a read-only connection to the SQLite database.
 
-    This is the primary security boundary for the SPARQL endpoint —
-    even if an attacker crafts a malicious query, they **cannot** modify
-    any data.  The SQLite engine enforces this at the storage level.
+    This is the primary security boundary — even if an attacker crafts
+    a malicious query, they **cannot** modify any data. The SQLite
+    engine enforces this at the storage level.
     """
     db_path = get_db_path()
     uri = f"file:{db_path}?mode=ro"
@@ -91,13 +91,16 @@ def _readonly_conn() -> sqlite3.Connection:
     return conn
 
 
-@router.post("/sparql")
-async def sparql_query(req: SparqlQuery):
-    """Execute a raw SQL query (read-only).
+@router.post("/raw")
+async def raw_query(req: RawQuery):
+    """Execute a read-only SQL SELECT query against the triple store.
 
-    Only SELECT queries are allowed.  The connection is opened in
-    read-only mode so no modifications are possible regardless of
-    the query content.
+    This is **not** SPARQL — it runs raw SQL against the internal
+    SQLite schema (``nodes``, ``predicates``, ``triples``, etc.).
+
+    The connection is opened in read-only mode (``mode=ro``), so no
+    modifications are possible regardless of query content.  Only
+    ``SELECT`` statements are accepted.
     """
     query = req.query.strip()
     if not query.upper().startswith("SELECT"):
