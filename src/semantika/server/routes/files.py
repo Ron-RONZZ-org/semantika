@@ -9,11 +9,11 @@ from pydantic import BaseModel
 
 from semantika.graph.db import get_services
 from semantika.graph.file_helpers import (
+    async_download_file,
     classify_attachment,
     copy_file,
     delete_file,
     detect_mime,
-    download_file,
     get_file_size,
     is_managed_file,
     move_file,
@@ -56,7 +56,7 @@ async def attach_file(req: FileAttachRequest):
 
         try:
             if is_url:
-                stored_path = download_file(req.source, node_id)
+                stored_path = await async_download_file(req.source, node_id)
                 source_path = req.source
             elif req.move:
                 stored_path = move_file(Path(req.source), node_id)
