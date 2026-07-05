@@ -5,10 +5,119 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from semantika.core.exceptions import AmbiguousIDError
 from semantika.graph.db import get_services
 from semantika.server.command.errors import CommandValidationError
 from semantika.server.command.helpers import parse_lang_tag_pairs, resolve_group, safe_json_loads
 from semantika.server.command.registry import command
+
+
+# ── Shared helpers ─────────────────────────────────────────────────────────
+
+
+def _is_flag_set(flag_name: str, flags: dict[str, str]) -> bool:
+    """Check if a flag was passed, supporting bare flags and --name value forms."""
+    return flag_name in flags or flags.get(flag_name, "").lower() in ("true", "1", "yes")
+
+
+def _resolve_triple_type(
+    raw_object: str,
+    flags: dict[str, str],
+) -> tuple[str, str, str | None, str | None]:
+    """Resolve object type/datatype/lang from user flags.
+
+    Handles the if/elif chain for katex → str_dosiero → str → int → float → bool → uri fallback.
+
+    Returns:
+        (object_value, object_type, object_datatype, object_lang)
+    """
+    str_flag = _is_flag_set("str", flags)
+    int_flag = _is_flag_set("int", flags)
+    float_flag = _is_flag_set("float", flags)
+    bool_flag = _is_flag_set("bool", flags)
+    lang = flags.get("lang", None)
+    katex = flags.get("katex", None)
+    str_dosiero = flags.get("str_dosiero", None) or flags.get("str-dosiero", None)
+    kodlingvo = flags.get("kodlingvo", None)
+
+    object_value = raw_object
+    object_type = "uri"
+    object_datatype: str | None = None
+    object_lang: str | None = None
+    was_str = False
+
+    if katex is not None:
+        object_value = katex.strip().strip("$")
+        object_type = "literal"
+        object_datatype = "text/katex"
+    elif str_dosiero is not None:
+        try:
+            object_value = Path(str_dosiero).read_text(encoding="utf-8")
+        except (FileNotFoundError, OSError) as e:
+            raise CommandValidationError(f"Could not read file: {e}")
+        object_type = "literal"
+        object_datatype = "text/plain" if not kodlingvo else f"text/x-{kodlingvo}"
+        was_str = True
+    elif str_flag:
+        object_type = "literal"
+        was_str = True
+    elif int_flag:
+        object_type = "literal"
+        object_datatype = "xsd:integer"
+    elif float_flag:
+        object_type = "literal"
+        object_datatype = "xsd:decimal"
+    elif bool_flag:
+        object_type = "literal"
+        object_datatype = "xsd:boolean"
+
+    if was_str and lang:
+        object_lang = lang
+
+    return (object_value, object_type, object_datatype, object_lang)
+
+
+def _resolve_object_node(svc: dict, object_value: str) -> str:
+    """Resolve an object value to a confirmed node ID.
+
+    Tries prefix match.  (``resolve_node_id_substring`` was previously called
+    here but that method does not exist on ``NodeService`` — the old
+    ``except Exception: pass`` silently swallowed the AttributeError.)
+
+    Raises:
+        CommandValidationError: If the node is not found or reference is ambiguous.
+    """
+    try:
+        obj_node = svc["node"].resolve_node_id_prefix(object_value)
+    except AmbiguousIDError as e:
+        raise CommandValidationError(str(e))
+    if not obj_node:
+        raise CommandValidationError(f"Object node not found: {object_value}")
+    return obj_node["node_id"]
+
+
+def _find_triple(
+    svc: dict,
+    subject: str,
+    predicate: str,
+    object_val: str,
+) -> dict | None:
+    """Find a triple matching subject/predicate/object.
+
+    Tries literal match first, then URI match, then prefix resolution.
+    Handles AmbiguousIDError properly (unlike the old bare ``except Exception``).
+    """
+    triple = svc["triple"].get_one(subject, predicate, object_val, object_type="literal")
+    if not triple:
+        triple = svc["triple"].get_one(subject, predicate, object_val, object_type="uri")
+    if not triple:
+        try:
+            resolved = _resolve_object_node(svc, object_val)
+        except CommandValidationError:
+            resolved = None
+        if resolved:
+            triple = svc["triple"].get_one(subject, predicate, resolved, object_type="uri")
+    return triple
 
 
 # ── Stats ─────────────────────────────────────────────────────────────────
@@ -612,60 +721,14 @@ def cmd_triple_add(remaining: list[str], flags: dict[str, str]) -> dict:
     object_value = flags.get("object_value") or (remaining[2] if len(remaining) > 2 else "") or ""
     if not subject_id or not predicate_id or not object_value:
         raise CommandValidationError("Specify subject_id, predicate_id, and object_value")
-    str_flag = "str" in flags or flags.get("str", "").lower() in ("true", "1", "yes")
-    int_flag = "int" in flags or flags.get("int", "").lower() in ("true", "1", "yes")
-    float_flag = "float" in flags or flags.get("float", "").lower() in ("true", "1", "yes")
-    bool_flag = "bool" in flags or flags.get("bool", "").lower() in ("true", "1", "yes")
-    lang = flags.get("lang", None)
     unit = flags.get("unit", None)
-    katex = flags.get("katex", None)
-    str_dosiero = flags.get("str_dosiero", None) or flags.get("str-dosiero", None)
-    kodlingvo = flags.get("kodlingvo", None)
-    object_type = "uri"
-    object_datatype = None
-    object_lang = None
-    str_dosiero_used = False
-    if katex is not None:
-        object_value = katex.strip().strip("$")
-        object_type = "literal"
-        object_datatype = "text/katex"
-    elif str_dosiero is not None:
-        try:
-            object_value = Path(str_dosiero).read_text(encoding="utf-8")
-        except (FileNotFoundError, OSError) as e:
-            raise CommandValidationError(f"Could not read file: {e}")
-        object_type = "literal"
-        object_datatype = "text/plain"
-        str_dosiero_used = True
-        if kodlingvo:
-            object_datatype = f"text/x-{kodlingvo}"
-    elif str_flag:
-        object_type = "literal"
-    elif int_flag:
-        object_type = "literal"
-        object_datatype = "xsd:integer"
-    elif float_flag:
-        object_type = "literal"
-        object_datatype = "xsd:decimal"
-    elif bool_flag:
-        object_type = "literal"
-        object_datatype = "xsd:boolean"
-    else:
-        object_type = "uri"
-        object_datatype = None
-    effective_str = str_flag or str_dosiero_used
-    object_lang = lang if effective_str else None
+
+    object_value, object_type, object_datatype, object_lang = _resolve_triple_type(
+        object_value, flags
+    )
     if object_type == "uri":
-        try:
-            obj_node = svc["node"].resolve_node_id_prefix(object_value)
-            if not obj_node:
-                obj_node = svc["node"].resolve_node_id_substring(object_value)
-            if not obj_node:
-                raise CommandValidationError(f"Object node not found: {object_value}")
-            object_value = obj_node["node_id"]
-        except Exception as e:
-            if "Ambiguous" in str(e):
-                raise CommandValidationError(str(e))
+        object_value = _resolve_object_node(svc, object_value)
+
     try:
         triple = svc["triple"].add(
             subject_id=subject_id, predicate_id=predicate_id, object_value=object_value,
@@ -700,20 +763,10 @@ def cmd_triple_delete(remaining: list[str], flags: dict[str, str]) -> dict:
     if not subject:
         raise CommandValidationError("Specify a subject")
     if predicate and object_val:
-        triple = svc["triple"].get_one(subject, predicate, object_val, object_type="literal")
-        if not triple:
-            triple = svc["triple"].get_one(subject, predicate, object_val, object_type="uri")
-        if not triple:
-            try:
-                obj_node = svc["node"].resolve_node_id_prefix(object_val)
-                if obj_node:
-                    triple = svc["triple"].get_one(subject, predicate, obj_node["node_id"], object_type="uri")
-                    if triple:
-                        object_val = obj_node["node_id"]
-            except Exception:
-                pass
+        triple = _find_triple(svc, subject, predicate, object_val)
         if not triple:
             raise CommandValidationError("Triple not found")
+        object_val = triple["object_value"]
         svc["proof"].cascade_delete_proofs(subject, predicate, object_val)
         svc["triple"].remove(subject_id=subject, predicate_id=predicate, object_value=object_val)
         return {"type": "status", "data": {"message": "Triple deleted"}}
@@ -753,65 +806,26 @@ def cmd_triple_modify(remaining: list[str], flags: dict[str, str]) -> dict:
     object_val = flags.get("object") or (remaining[2] if len(remaining) > 2 else "") or ""
     if not subject:
         raise CommandValidationError("Specify a subject")
-    triple = None
-    if predicate and object_val:
-        triple = svc["triple"].get_one(subject, predicate, object_val, object_type="literal")
-        if not triple:
-            triple = svc["triple"].get_one(subject, predicate, object_val, object_type="uri")
-        if not triple:
-            try:
-                obj_node = svc["node"].resolve_node_id_prefix(object_val)
-                if obj_node:
-                    triple = svc["triple"].get_one(subject, predicate, obj_node["node_id"], object_type="uri")
-                    if triple:
-                        object_val = obj_node["node_id"]
-            except Exception:
-                pass
+    triple = _find_triple(svc, subject, predicate, object_val) if predicate and object_val else None
     if not triple:
         raise CommandValidationError("Triple not found")
+
     new_subject = flags.get("new_subject", None) or flags.get("new-subject", None) or triple["subject_id"]
     new_predicate = flags.get("new_predicate", None) or flags.get("new-predicate", None) or triple["predicate_id"]
     new_object_raw = flags.get("new_object", None) or flags.get("new-object", None) or triple["object_value"]
-    str_flag = "str" in flags
-    int_flag = "int" in flags
-    float_flag = "float" in flags
-    bool_flag = "bool" in flags
-    lang = flags.get("lang", None)
     unit = flags.get("unit", None)
-    katex = flags.get("katex", None)
-    str_dosiero = flags.get("str_dosiero", None) or flags.get("str-dosiero", None)
-    if katex is not None:
-        new_object = katex.strip().strip("$")
-        new_type = "literal"
-        new_datatype = "text/katex"
-    elif str_dosiero is not None:
-        try:
-            new_object = Path(str_dosiero).read_text(encoding="utf-8")
-        except (FileNotFoundError, OSError) as e:
-            raise CommandValidationError(f"Could not read file: {e}")
-        new_type = "literal"
-        new_datatype = "text/plain"
-    elif str_flag:
-        new_object = new_object_raw
-        new_type = "literal"
-        new_datatype = None
-    elif int_flag:
-        new_object = new_object_raw
-        new_type = "literal"
-        new_datatype = "xsd:integer"
-    elif float_flag:
-        new_object = new_object_raw
-        new_type = "literal"
-        new_datatype = "xsd:decimal"
-    elif bool_flag:
-        new_object = new_object_raw
-        new_type = "literal"
-        new_datatype = "xsd:boolean"
-    else:
-        new_object = new_object_raw
+
+    new_object, new_type, new_datatype, new_lang = _resolve_triple_type(new_object_raw, flags)
+    # For modify, if no type flag was specified, preserve the original triple's type/datatype/lang
+    flags_specified = any(k in flags for k in ("str", "int", "float", "bool", "katex", "str_dosiero", "str-dosiero"))
+    if not flags_specified:
         new_type = triple.get("object_type", "uri")
         new_datatype = triple.get("object_datatype", None)
-    new_lang = lang if str_flag else triple.get("object_lang", None)
+        new_lang = triple.get("object_lang", None)
+    else:
+        str_flag = _is_flag_set("str", flags)
+        new_lang = flags.get("lang", None) if str_flag else triple.get("object_lang", None)
+
     new_unit = unit or triple.get("object_unit", None)
     noop = (triple["subject_id"] == new_subject and triple["predicate_id"] == new_predicate
             and triple["object_value"] == new_object and triple.get("object_type", "uri") == new_type
@@ -824,4 +838,4 @@ def cmd_triple_modify(remaining: list[str], flags: dict[str, str]) -> dict:
                          object_value=triple["object_value"], object_type=old_type)
     svc["triple"].add(subject_id=new_subject, predicate_id=new_predicate, object_value=new_object,
                       object_type=new_type, object_lang=new_lang, object_datatype=new_datatype, object_unit=new_unit)
-    return {"type": "status", "data": {"message": f"Triple modified"}}
+    return {"type": "status", "data": {"message": "Triple modified"}}
