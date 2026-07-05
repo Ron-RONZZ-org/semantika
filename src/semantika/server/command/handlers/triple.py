@@ -124,7 +124,7 @@ def cmd_triple_list(remaining: list[str], flags: dict[str, str]) -> dict:
     """List triples, optionally filtered by subject."""
     svc = get_services()
     triples = svc["triple"].db.execute("SELECT * FROM triples ORDER BY subject_id, predicate_id LIMIT ?", (100,))
-    return {"type": "table", "data": triples, "label": "Triples"}
+    return {"type": "triple-list", "data": triples}
 
 
 @command("triple.view", description="View triples for a node",

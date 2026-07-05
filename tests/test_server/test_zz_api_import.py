@@ -58,7 +58,7 @@ class TestTTLImport:
     def test_import_via_command(self, client: TestClient):
         resp = client.post(
             "/api/v1/command",
-            json={"tokens": ["import"], "flags": {"data": SAMPLE_TTL}},
+            json={"tokens": ["graph", "import"], "flags": {"data": SAMPLE_TTL}},
         )
         assert resp.status_code == 200
 

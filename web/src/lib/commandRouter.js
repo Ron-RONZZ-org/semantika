@@ -133,6 +133,7 @@ function resolveAddFormType(tokens, leafName) {
 
   if (/^node\s+add$/i.test(path)) return "node-add";
   if (/^predicate\s+add$/i.test(path)) return "predicate-add";
+  if (/^predicate\s+group\s+add$/i.test(path)) return "predicate-group-add";
   if (/^triple\s+add$/i.test(path)) return "triple-add";
   if (/^unit\s+add$/i.test(path)) return "unit-add";
   if (/^llm\s+profile\s+new$/i.test(path)) return "llm-profile-new";

@@ -52,7 +52,7 @@ class TestQueryAPI:
     def test_export_via_command(self, client: TestClient):
         resp = client.post(
             "/api/v1/command",
-            json={"tokens": ["export"], "flags": {}},
+            json={"tokens": ["graph", "export"], "flags": {}},
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -67,7 +67,7 @@ class TestQueryAPI:
         )
         resp = client.post(
             "/api/v1/command",
-            json={"tokens": ["search", "TEST"], "flags": {}},
+            json={"tokens": ["graph", "search", "TEST"], "flags": {}},
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -79,7 +79,7 @@ class TestQueryAPI:
     def test_stats_via_command(self, client: TestClient):
         resp = client.post(
             "/api/v1/command",
-            json={"tokens": ["stats"], "flags": {}},
+            json={"tokens": ["graph", "stats"], "flags": {}},
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -103,7 +103,7 @@ class TestQueryAPI:
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert data["type"] == "table"
+        assert data["type"] == "triple-list"
 
     def test_command_not_found(self, client: TestClient):
         resp = client.post(
@@ -203,7 +203,7 @@ class TestSearchDateFilter:
         """Search with --date-from filter."""
         resp = client.post(
             "/api/v1/command",
-            json={"tokens": ["search"], "flags": {"q": "Subject", "date-from": "2026-01-01"}},
+            json={"tokens": ["graph", "search"], "flags": {"q": "Subject", "date-from": "2026-01-01"}},
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -213,7 +213,7 @@ class TestSearchDateFilter:
         """Search without date filter (should still work)."""
         resp = client.post(
             "/api/v1/command",
-            json={"tokens": ["search"], "flags": {"q": "Subject"}},
+            json={"tokens": ["graph", "search"], "flags": {"q": "Subject"}},
         )
         assert resp.status_code == 200
 
@@ -229,7 +229,7 @@ class TestExportWithOutput:
         out_file = tmp_path / "export-test.ttl"
         resp = client.post(
             "/api/v1/command",
-            json={"tokens": ["export"], "flags": {"output": str(out_file)}},
+            json={"tokens": ["graph", "export"], "flags": {"output": str(out_file)}},
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -246,7 +246,7 @@ class TestQueryEdgeCases:
         """Search with non-numeric limit defaults to 50."""
         resp = client.post(
             "/api/v1/command",
-            json={"tokens": ["search"], "flags": {"q": "Subject", "limit": "abc"}},
+            json={"tokens": ["graph", "search"], "flags": {"q": "Subject", "limit": "abc"}},
         )
         assert resp.status_code == 200
 
@@ -254,7 +254,7 @@ class TestQueryEdgeCases:
         """Import without data raises validation error."""
         resp = client.post(
             "/api/v1/command",
-            json={"tokens": ["import"], "flags": {}},
+            json={"tokens": ["graph", "import"], "flags": {}},
         )
         assert resp.status_code == 400
 
@@ -262,7 +262,7 @@ class TestQueryEdgeCases:
         """Search without query raises validation error."""
         resp = client.post(
             "/api/v1/command",
-            json={"tokens": ["search"], "flags": {}},
+            json={"tokens": ["graph", "search"], "flags": {}},
         )
         assert resp.status_code == 400
 

@@ -42,9 +42,7 @@ class TestCommandTree:
         assert any(cmd["name"] == "node" for cmd in data)
         assert any(cmd["name"] == "predicate" for cmd in data)
         assert any(cmd["name"] == "triple" for cmd in data)
-        assert any(cmd["name"] == "search" for cmd in data)
-        assert any(cmd["name"] == "export" for cmd in data)
-        assert any(cmd["name"] == "stats" for cmd in data)
+        assert any(cmd["name"] == "graph" for cmd in data)
 
     def test_help_text(self, client: TestClient):
         resp = client.get("/api/v1/command/help")
@@ -76,7 +74,7 @@ class TestCommandHandler:
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert data["type"] == "table"
+        assert data["type"] == "node-list"
 
 
 # ── Interactive form routing ───────────────────────────────────────────
@@ -136,7 +134,7 @@ class TestInteractiveFormsRegistration:
         (["triple", "delete"], "triple-delete"),
         (["triple", "modify"], "triple-modify"),
         (["proof", "add"], "proof-add"),
-        (["predicate-group", "add"], "predicate-group-add"),
+        (["predicate", "group", "add"], "predicate-group-add"),
     ])
     def test_form_routing_on_validation_error(self, client: TestClient, cmd_tokens, expected_form):
         """Trigger form-required response for a command with validation error."""
@@ -249,7 +247,7 @@ class TestCommandEdgeCases:
         """View without ID raises validation error."""
         resp = client.post(
             "/api/v1/command",
-            json={"tokens": ["view"], "flags": {}},
+            json={"tokens": ["graph", "view"], "flags": {}},
         )
         assert resp.status_code == 400
 
@@ -257,6 +255,6 @@ class TestCommandEdgeCases:
         """View a non-existent node returns 400."""
         resp = client.post(
             "/api/v1/command",
-            json={"tokens": ["view"], "flags": {"id": "ZZZDOESNOTEXIST"}},
+            json={"tokens": ["graph", "view"], "flags": {"id": "ZZZDOESNOTEXIST"}},
         )
         assert resp.status_code == 400

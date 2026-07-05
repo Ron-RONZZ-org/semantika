@@ -356,7 +356,7 @@ class TestTripleViewCommand:
         """View via root !view command."""
         resp = client.post(
             "/api/v1/command",
-            json={"tokens": ["view"], "flags": {"id": "VIEW_SUBJ"}},
+            json={"tokens": ["graph", "view"], "flags": {"id": "VIEW_SUBJ"}},
         )
         assert resp.status_code == 200
         data = resp.json()

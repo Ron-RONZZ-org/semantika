@@ -200,43 +200,43 @@ async function run() {
   });
 
   // ═══════════════════════════════════════════
-  //  SEARCH (global) — 1 command
+  //  GRAPH SEARCH — 1 command
   // ═══════════════════════════════════════════
   console.log();
-  console.log("═══ SEARCH (1) ═══");
+  console.log("═══ GRAPH SEARCH (1) ═══");
 
-  await test("!search (global full-text)", async () => {
-    await typeAndRun("!search E2E");
+  await test("!graph search (full-text)", async () => {
+    await typeAndRun("!graph search E2E");
   });
 
   // ═══════════════════════════════════════════
-  //  EXPORT — 1 command
+  //  GRAPH EXPORT — 1 command
   // ═══════════════════════════════════════════
   console.log();
-  console.log("═══ EXPORT (1) ═══");
+  console.log("═══ GRAPH EXPORT (1) ═══");
 
-  await test("!export (Turtle format)", async () => {
-    await typeAndRun("!export");
+  await test("!graph export (Turtle format)", async () => {
+    await typeAndRun("!graph export");
   });
 
   // ═══════════════════════════════════════════
-  //  IMPORT — 1 command (requires valid TTL data)
+  //  GRAPH IMPORT — 1 command (requires valid TTL data)
   // ═══════════════════════════════════════════
   console.log();
-  console.log("═══ IMPORT (1) ═══");
+  console.log("═══ GRAPH IMPORT (1) ═══");
 
-  await test("!import (Turtle data)", async () => {
-    await typeAndRun("!import '<http://example.org/s> <http://example.org/p> \"o\" .'");
+  await test("!graph import (Turtle data)", async () => {
+    await typeAndRun("!graph import '<http://example.org/s> <http://example.org/p> \"o\" .'");
   });
 
   // ═══════════════════════════════════════════
-  //  STATS — 1 command
+  //  GRAPH STATS — 1 command
   // ═══════════════════════════════════════════
   console.log();
-  console.log("═══ STATS (1) ═══");
+  console.log("═══ GRAPH STATS (1) ═══");
 
-  await test("!stats", async () => {
-    await typeAndRun("!stats");
+  await test("!graph stats", async () => {
+    await typeAndRun("!graph stats");
   });
 
   // ═══════════════════════════════════════════
@@ -380,12 +380,12 @@ async function run() {
 
   // Test: /confirm endpoint directly (no LLM needed)
   // This simulates what happens when a user confirms a destructive command
-  await test("POST /api/v1/llm/confirm stats", async () => {
+  await test("POST /api/v1/llm/confirm graph.stats", async () => {
     const resp = await page.evaluate(() =>
       fetch("/api/v1/llm/confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tokens: ["stats"], flags: {} }),
+        body: JSON.stringify({ tokens: ["graph", "stats"], flags: {} }),
       }).then((r) => r.json())
     );
     assert.equal(resp.type, "status", `/confirm should return status, got ${JSON.stringify(resp)}`);

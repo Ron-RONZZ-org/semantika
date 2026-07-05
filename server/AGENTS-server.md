@@ -11,14 +11,19 @@ FastAPI web server: application factory, API routes, middleware, command engine,
 
 ## Constraints and Invariants
 - All routes under `/api/v1/` namespace with version prefix
-- `command/tree.py` is the single source of truth for command metadata
-- Every `!command` must be registered in `tree.py` with proper response type
+- Command handlers use decorator-based registration in `command/registry.py` — tree auto-generates from registrations
+- Every `!command` must follow the **one concern, one root command** principle:
+  - `!graph stats`, `!graph export`, `!graph import`, `!graph search`, `!graph view` — graph-level operations
+  - `!node *`, `!predicate *`, `!triple *` — entity CRUD
+  - `!predicate group *` — predicate group sub-namespace
+  - `!backup *`, `!llm *` — feature groups
+- List-type commands return specific types: `"node-list"`, `"predicate-list"`, `"triple-list"` — not `"table"`
 - Static files mounted at `/` for Svelte SPA — the SPA handles client-side routing
 
 ## Input/Output Expectations
 - All route handlers return Pydantic models or dicts (auto-JSON serialization)
 - Errors return structured `{"error": "...", "detail": "..."}` responses
-- The `!command` engine returns typed responses: `status`, `form-required`, `table`, `graph`
+- The `!command` engine returns typed responses: `status`, `form-required`, `node-list`, `predicate-list`, `triple-list`, `graph`, `error`
 
 ## Documentation Reference
 - lighterbird's server module for proven patterns: `../lighterbird/src/lighterbird/server/`

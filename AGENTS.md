@@ -135,7 +135,7 @@ semantika/
 │           ├── __init__.py
 │           ├── app.py           # Application factory
 │           ├── tasks.py         # Background scheduled tasks
-│           ├── command/         # Command engine (models, parser, errors)
+│           ├── command/         # Command engine (models, parser, registry, handlers)
 │           ├── llm/             # LLM provider abstraction
 │           └── routes/
 │               ├── graph.py     # /api/v1/graph/* — CRUD for nodes, predicates, triples
@@ -166,6 +166,8 @@ semantika/
             ├── LoadingPopup.svelte / BannerContainer.svelte
             ├── HelpPopup.svelte / ConfirmDialog.svelte
             ├── LlmSetupModal.svelte / GraphView.svelte
+            ├── NodeListTab.svelte / PredicateListTab.svelte / TripleListTab.svelte
+            ├── listTabFormat.js / listTabSelection.svelte.js / listTabShared.svelte.js
             └── command*.js / popupStore.svelte.js / tabStore.svelte.js / api.js / markdown.js
 ```
 

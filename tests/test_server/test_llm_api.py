@@ -252,7 +252,7 @@ class TestConfirmEndpoint:
         """Confirm endpoint dispatches a simple command."""
         resp = client.post(
             "/api/v1/llm/confirm",
-            json={"tokens": ["stats"], "flags": {}},
+            json={"tokens": ["graph", "stats"], "flags": {}},
         )
         assert resp.status_code == 200
         data = resp.json()
