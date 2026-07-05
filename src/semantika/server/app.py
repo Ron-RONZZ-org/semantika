@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pathlib import Path
 
 from semantika.graph.db import init_db
+
+logger = logging.getLogger(__name__)
 
 
 def _resolve_cors_origins() -> list[str]:
@@ -21,12 +26,33 @@ def _resolve_cors_origins() -> list[str]:
     """
     raw = os.environ.get("SEMANTIKA_CORS_ORIGINS", "").strip()
     if not raw:
+        logger.warning(
+            "SEMANTIKA_CORS_ORIGINS not set — CORS defaulting to [\"*\"]! "
+            "Set this env var to your frontend origin(s) in production."
+        )
         return ["*"]
     return [o.strip() for o in raw.split(",") if o.strip()]
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Application lifespan: init DB + backup scheduler on start, shutdown on stop."""
+    init_db()
+    try:
+        from semantika.server.tasks import init_backup_scheduler
+        init_backup_scheduler()
+    except Exception:
+        logger.warning("Backup scheduler init failed (non-fatal)")
+    yield
+    try:
+        from semantika.server.tasks import shutdown_backup_scheduler
+        shutdown_backup_scheduler(timeout=3.0)
+    except Exception:
+        logger.warning("Backup scheduler shutdown failed (non-fatal)")
+
+
 def create_app() -> FastAPI:
-    app = FastAPI(title="Semantika", version="0.1.0")
+    app = FastAPI(title="Semantika", version="0.1.0", lifespan=lifespan)
 
     # CORS — restrict via SEMANTIKA_CORS_ORIGINS env var in production
     app.add_middleware(
@@ -36,30 +62,6 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    # Initialize DB on startup
-    @app.on_event("startup")
-    async def startup() -> None:
-        init_db()
-        try:
-            from semantika.server.tasks import init_backup_scheduler
-            init_backup_scheduler()
-        except Exception:
-            import logging
-            logging.getLogger(__name__).warning(
-                "Backup scheduler init failed (non-fatal)"
-            )
-
-    @app.on_event("shutdown")
-    async def shutdown() -> None:
-        try:
-            from semantika.server.tasks import shutdown_backup_scheduler
-            shutdown_backup_scheduler(timeout=3.0)
-        except Exception:
-            import logging
-            logging.getLogger(__name__).warning(
-                "Backup scheduler shutdown failed (non-fatal)"
-            )
 
     # API routes
     from semantika.server.routes import graph, query, command as cmd, review, proof, llm, unit, files

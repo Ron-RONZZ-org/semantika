@@ -210,7 +210,7 @@ async def purge_trash(days: int = 30):
         items = svc.get_trash_older_than(days)
         count = len(items)
         for item in items:
-            node_id = item.get("node_id") or item.get(svc._pk_column)
+            node_id = item.get("node_id")
             if node_id:
                 svc.permanent_delete(node_id)
     return {"deleted": count}

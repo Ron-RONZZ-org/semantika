@@ -68,7 +68,7 @@ class ReviewService:
             clauses.append("created_at <= ?")
             params.append(date_to)
 
-        fetch_limit = limit * 3
+        fetch_limit = min(limit * 3, 10000)
         triples = self.db.execute(
             f"SELECT * FROM triples WHERE {' AND '.join(clauses)} "
             f"ORDER BY subject_id LIMIT ?",

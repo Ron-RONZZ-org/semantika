@@ -66,6 +66,29 @@ class ProofService:
         self.db.execute("DELETE FROM proofs WHERE uuid = ?", (proof_uuid,))
         return True
 
+    def migrate_proofs(
+        self,
+        old: tuple[str, str, str],
+        new: tuple[str, str, str],
+    ) -> int:
+        """Migrate proofs from one triple key to another (triple modification).
+
+        Updates all proofs that match ``(subject_id, predicate_id, object_value)``
+        in *old* to point to the values in *new*.
+
+        Returns:
+            Number of proofs migrated.
+        """
+        old_subj, old_pred, old_obj = old
+        new_subj, new_pred, new_obj = new
+        self.db.execute(
+            "UPDATE proofs SET subject_id = ?, predicate_id = ?, object_value = ? "
+            "WHERE subject_id = ? AND predicate_id = ? AND object_value = ?",
+            (new_subj, new_pred, new_obj, old_subj, old_pred, old_obj),
+        )
+        result = self.db.execute_one("SELECT changes() AS cnt")
+        return result["cnt"] if result else 0
+
     def cascade_delete_proofs(
         self,
         subject_id: str,

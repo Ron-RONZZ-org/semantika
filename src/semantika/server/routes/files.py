@@ -107,16 +107,20 @@ async def get_attachments(node_id: str):
     if not node:
         raise HTTPException(404, f"Node not found: {node_id}")
 
-    file_paths = svc["triple"].get_by_sp(node["node_id"], ":hasFilePath")
+    nid = node["node_id"]
+    file_paths = svc["triple"].get_by_sp(nid, ":hasFilePath")
+    # Batch-fetch mime and size predicates to avoid N+1
+    mime_triples = svc["triple"].get_by_sp(nid, ":hasFileMime")
+    size_triples = svc["triple"].get_by_sp(nid, ":hasFileSize")
+    mime_map = {t["object_value"]: t for t in mime_triples}
+    size_map = {t["object_value"]: t for t in size_triples}
     result = []
     for fp in file_paths:
         path_str = fp["object_value"]
-        mime_row = svc["triple"].get_by_sp(node["node_id"], ":hasFileMime")
-        size_row = svc["triple"].get_by_sp(node["node_id"], ":hasFileSize")
         result.append({
             "path": path_str,
-            "mime": mime_row[0]["object_value"] if mime_row else None,
-            "size": size_row[0]["object_value"] if size_row else None,
+            "mime": path_str in mime_map,
+            "size": path_str in size_map,
         })
     return {"attachments": result}
 

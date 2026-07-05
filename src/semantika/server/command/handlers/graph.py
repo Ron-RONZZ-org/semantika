@@ -81,7 +81,7 @@ def cmd_search(remaining: list[str], flags: dict[str, str]) -> dict:
     predicates = svc["predicate"].search(q, limit=limit)
     triples = svc["triple"].search_by_labels(subject=q, limit=limit, created_after=date_from, created_before=date_to) or []
     pred_triples = svc["triple"].search_by_labels(predicate=q, limit=limit, created_after=date_from, created_before=date_to) or []
-    all_triples = list({t["subject_id"] + t["predicate_id"] + t["object_value"]: t for t in triples + pred_triples}.values())
+    all_triples = list({(t["subject_id"], t["predicate_id"], t["object_value"]): t for t in triples + pred_triples}.values())
     return {"type": "status", "data": {"nodes": nodes, "predicates": predicates, "triples": all_triples[:limit],
                                         "_summary": f"Nodes: {len(nodes)}, Predicates: {len(predicates)}, Triples: {len(all_triples)}"}}
 
