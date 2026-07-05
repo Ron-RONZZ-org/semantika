@@ -51,7 +51,8 @@ def cmd_node_view(remaining: list[str], flags: dict[str, str]) -> dict:
 
 
 @command("node.add", description="Create a new node", interactive=True,
-         params=[{"name": "labels", "type": "string"}])
+         params=[{"name": "labels", "type": "string"}],
+         flags=[{"name": "copy", "type": "flag", "help": "Copy node ID to clipboard"}])
 def cmd_node_add(remaining: list[str], flags: dict[str, str]) -> dict:
     """Add a new node."""
     svc = get_services()
@@ -62,7 +63,11 @@ def cmd_node_add(remaining: list[str], flags: dict[str, str]) -> dict:
         msg = f"Created node {node['node_id']}"
         if labels_raw:
             msg += f" with label \"{labels_raw}\""
-        return {"type": "status", "data": {"message": msg, "node": node}}
+        result: dict = {"message": msg, "node": node}
+        copy_flag = "copy" in flags or flags.get("copy", "").lower() in ("true", "1", "yes")
+        if copy_flag:
+            result["copy_clipboard"] = node["node_id"]
+        return {"type": "status", "data": result}
     except ValueError as e:
         raise CommandValidationError(str(e))
 
@@ -173,14 +178,70 @@ def cmd_node_rename(remaining: list[str], flags: dict[str, str]) -> dict:
 
 @command("node.merge", description="Merge source node into target node",
          params=[{"name": "source", "type": "string", "required": True},
-                 {"name": "target", "type": "string", "required": True}])
+                 {"name": "target", "type": "string", "required": True}],
+         flags=[{"name": "force", "type": "flag", "help": "Skip preview and merge immediately"}])
 def cmd_node_merge(remaining: list[str], flags: dict[str, str]) -> dict:
-    """Merge a source node into a target node."""
+    """Merge a source node into a target node.
+
+    Without ``--force``, shows a preview of label diffs and triple collision
+    counts before applying the merge.
+    """
     svc = get_services()
     source = flags.get("source") or (remaining[0] if len(remaining) > 0 else "") or ""
     target = flags.get("target") or (remaining[1] if len(remaining) > 1 else "") or ""
     if not source or not target:
         raise CommandValidationError("Specify source and target node IDs")
+
+    if source == target:
+        raise CommandValidationError("Source and target must be different nodes")
+
+    src_node = svc["node"].resolve_node_id_prefix(source)
+    if not src_node:
+        raise CommandValidationError(f"Source node not found: {source}")
+    tgt_node = svc["node"].resolve_node_id_prefix(target)
+    if not tgt_node:
+        raise CommandValidationError(f"Target node not found: {target}")
+
+    # Build preview
+    import json as _json
+    try:
+        src_labels = _json.loads(src_node["labels"]) if isinstance(src_node["labels"], str) else src_node.get("labels", {})
+    except (_json.JSONDecodeError, TypeError):
+        src_labels = {}
+    try:
+        tgt_labels = _json.loads(tgt_node["labels"]) if isinstance(tgt_node["labels"], str) else tgt_node.get("labels", {})
+        if not isinstance(tgt_labels, dict):
+            tgt_labels = {}
+    except (_json.JSONDecodeError, TypeError):
+        tgt_labels = {}
+
+    src_triples = svc["triple"].get_by_subject(src_node["node_id"])
+    tgt_triples = svc["triple"].get_by_subject(tgt_node["node_id"])
+    subject_collisions = sum(
+        1 for st in src_triples
+        if any(
+            tt["predicate_id"] == st["predicate_id"]
+            and tt["object_value"] == st["object_value"]
+            and tt["object_type"] == st["object_type"]
+            for tt in tgt_triples
+        )
+    )
+
+    preview = {
+        "source": source,
+        "target": target,
+        "source_labels": src_labels,
+        "target_labels": tgt_labels,
+        "added_labels": {k: v for k, v in src_labels.items() if k not in tgt_labels},
+        "source_triple_count": len(src_triples),
+        "target_triple_count": len(tgt_triples),
+        "triple_collisions": subject_collisions,
+    }
+
+    force_flag = "force" in flags or flags.get("force", "").lower() in ("true", "1", "yes")
+    if not force_flag:
+        return {"type": "status", "data": {"message": "Merge preview — use --force to proceed", "preview": preview}}
+
     try:
         result = svc["node"].merge_nodes(source, target)
         return {"type": "status", "data": {"message": f"Merged {source} into {target}", "node": result}}

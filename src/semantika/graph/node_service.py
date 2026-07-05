@@ -22,6 +22,7 @@ from semantika.graph.node_helpers import (
     extract_definition_text,
     extract_label_text,
     get_label_from_node,
+    normalize_label_to_id,
     sanitize_node_id,
 )
 from semantika.graph.node_fts import NodeFtsMixin
@@ -75,13 +76,54 @@ class NodeService(NodeFtsMixin, CRUDService):
 
     # ── Override create ────────────────────────────────────────────────
 
+    # ── Collision avoidance ────────────────────────────────────────────
+
+    _COLLISION_MAX = 99
+
+    def _generate_unique_node_id(self, base: str) -> str:
+        """Return *base* if available, otherwise ``base_2``, ``base_3``, etc.
+
+        Caps retries at ``_COLLISION_MAX`` (99) then falls back to a UUID.
+        """
+        if not self.get(base):
+            return base
+        for counter in range(2, self._COLLISION_MAX + 1):
+            candidate = f"{base}_{counter}"
+            if not self.get(candidate):
+                return candidate
+        return str(_uuid.uuid4())
+
+    # ── Override create ────────────────────────────────────────────────
+
     def create(self, data: dict[str, Any]) -> dict[str, Any]:
-        """Create a node with optional pre-assigned node_id."""
-        node_id_val = (
-            sanitize_node_id(data.get("node_id"))
-            if data.get("node_id")
-            else str(_uuid.uuid4())
-        )
+        """Create a node with optional pre-assigned node_id.
+
+        If no ``node_id`` is given, derives one from the first English label
+        (or first available label) via ``normalize_label_to_id``, with
+        collision avoidance (``_2``, ``_3``, … suffix). Falls back to UUID
+        if no labels are provided.
+        """
+        node_id_raw = data.get("node_id")
+        if node_id_raw:
+            node_id_val = sanitize_node_id(node_id_raw)
+        else:
+            labels = data.get("labels", {})
+            if isinstance(labels, str):
+                try:
+                    labels = json.loads(labels)
+                except (json.JSONDecodeError, TypeError):
+                    labels = {}
+            first_label = None
+            if isinstance(labels, dict):
+                # Try English first, then first available
+                first_label = labels.get("en") or next(
+                    (v for v in labels.values() if v and isinstance(v, str)), None
+                )
+            if first_label:
+                base_id = normalize_label_to_id(first_label)
+                node_id_val = self._generate_unique_node_id(base_id)
+            else:
+                node_id_val = str(_uuid.uuid4())
         ts = now()
 
         raw = {

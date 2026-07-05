@@ -27,15 +27,33 @@ def cmd_trash_restore(remaining: list[str], flags: dict[str, str]) -> dict:
     return {"type": "status", "data": {"message": f"Restored {restored.get('node_id', node_id)}"}}
 
 
-@command("trash.delete", description="Permanently delete a trashed node",
-         params=[{"name": "id", "type": "string", "required": True}])
+@command("trash.delete", description="Permanently delete one or more trashed nodes",
+         params=[{"name": "id", "type": "string"}])
 def cmd_trash_delete(remaining: list[str], flags: dict[str, str]) -> dict:
     svc = get_services()
-    node_id = flags.get("id") or (remaining[0] if remaining else "") or ""
-    if not node_id:
-        raise CommandValidationError("Specify a node ID")
-    svc["node"].delete(node_id, soft=False)
-    return {"type": "status", "data": {"message": f"Permanently deleted {node_id}"}}
+    ids: list[str] = []
+    pos_id = flags.get("id") or ""
+    if pos_id:
+        ids.append(pos_id)
+    for k, v in flags.items():
+        if k.startswith("_") and k[1:].isdigit() and v:
+            ids.append(v)
+    if remaining:
+        ids.extend(remaining)
+    if not ids:
+        raise CommandValidationError("Specify one or more node IDs")
+    deleted = 0
+    errors = []
+    for nid in ids:
+        try:
+            svc["node"].delete(nid, soft=False)
+            deleted += 1
+        except Exception as e:
+            errors.append(f"{nid}: {e}")
+    msg = f"Permanently deleted {deleted} node(s)"
+    if errors:
+        msg += f" ({len(errors)} error(s))"
+    return {"type": "status", "data": {"message": msg, "errors": errors}}
 
 
 @command("trash.purge", description="Purge old trashed nodes",

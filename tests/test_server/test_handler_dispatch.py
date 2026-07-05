@@ -61,7 +61,7 @@ class TestTrashHandler:
             dispatch(["trash", "restore"], {})
 
     def test_trash_delete_missing_id(self):
-        with pytest.raises(Exception, match="Specify a node ID"):
+        with pytest.raises(Exception, match="Specify one or more node IDs"):
             dispatch(["trash", "delete"], {})
 
     def test_trash_purge_positive_days(self, seeded):
