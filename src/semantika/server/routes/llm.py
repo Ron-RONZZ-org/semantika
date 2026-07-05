@@ -17,31 +17,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from lightercore.permissions import PermissionLevel
-from semantika.server.llm.provider import LLMProvider
+from semantika.server.llm.provider import get_provider, reset_provider
 from semantika.server.command.registry import get_command_definitions
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-# ── Singleton provider ───────────────────────────────────────────────────
-
-_provider_instance: LLMProvider | None = None
-
-
-def get_provider() -> LLMProvider:
-    """Return the singleton LLM provider (lazy-loaded from keyring)."""
-    global _provider_instance
-    if _provider_instance is not None:
-        return _provider_instance
-    _provider_instance = LLMProvider()
-    return _provider_instance
-
-
-def reset_provider() -> None:
-    """Force provider re-initialization on next access."""
-    global _provider_instance
-    _provider_instance = None
 
 
 # ── Pydantic models ──────────────────────────────────────────────────────
@@ -161,10 +142,7 @@ async def chat(req: ChatRequest):
         if not provider.available:
             return None
         try:
-            reply = await provider.chat(prompt_messages)
-            if reply.startswith("LLM error") or reply.startswith("LLM API error"):
-                return None
-            return reply
+            return await provider.chat(prompt_messages)
         except Exception:
             return None
 

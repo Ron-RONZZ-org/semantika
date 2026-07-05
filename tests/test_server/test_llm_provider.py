@@ -5,13 +5,14 @@ from __future__ import annotations
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
+from lightercore.exceptions import AIError
+from lightercore.llm import ProviderConfig
+from lightercore.llm.utils import parse_command_result
 from semantika.server.command.registry import get_command_definitions
-from semantika.server.llm.provider import (
-    LLMProvider,
-    ProviderConfig,
-)
+from semantika.server.llm.provider import LLMProvider, get_provider, reset_provider
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────────
@@ -40,6 +41,12 @@ def mock_keyring(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
     return store
 
 
+@pytest.fixture(autouse=True)
+def reset_singleton() -> None:
+    """Reset the provider singleton before each test."""
+    reset_provider()
+
+
 @pytest.fixture
 def provider(mock_keyring: dict) -> LLMProvider:
     """Freshly-created provider with no config."""
@@ -52,18 +59,15 @@ def provider(mock_keyring: dict) -> LLMProvider:
 class TestProviderConfig:
     def test_defaults(self):
         cfg = ProviderConfig()
-        assert cfg.provider_type == "deepseek"
+        assert cfg.provider_type == ""  # unopinionated in core
         assert cfg.api_key == ""
         assert cfg.temperature == 0.7
         assert cfg.max_tokens == 2048
 
-    def test_base_url_from_type(self):
-        cfg = ProviderConfig(provider_type="openai")
-        assert cfg.base_url == "https://api.openai.com/v1"
-
-    def test_model_from_type(self):
-        cfg = ProviderConfig(provider_type="ollama")
-        assert cfg.model == "llama3.2"
+    def test_provider_defaults_to_deepseek(self):
+        """LLMProvider creates a config defaulting to deepseek."""
+        p = LLMProvider()
+        assert p.config.provider_type == "deepseek"
 
     def test_custom_values(self):
         cfg = ProviderConfig(
@@ -75,9 +79,13 @@ class TestProviderConfig:
         assert cfg.model == "my-model"
         assert cfg.api_key == ""
 
-    def test_empty_base_url_falls_back(self):
-        cfg = ProviderConfig(provider_type="deepseek")
-        assert cfg.base_url == "https://api.deepseek.com"
+    def test_to_dict_and_from_dict_roundtrip(self):
+        cfg = ProviderConfig(provider_type="deepseek", api_key="sk-ds", model="deepseek-chat")
+        data = cfg.to_dict()
+        restored = ProviderConfig.from_dict(data)
+        assert restored.provider_type == "deepseek"
+        assert restored.api_key == "sk-ds"
+        assert restored.model == "deepseek-chat"
 
 
 # ── Configuration persistence ────────────────────────────────────────────
@@ -169,14 +177,14 @@ class TestProfiles:
 
 class TestChat:
     async def test_chat_not_available(self, provider: LLMProvider):
-        reply = await provider.chat([{"role": "user", "content": "hi"}])
-        assert "not configured" in reply
+        with pytest.raises(AIError, match="not configured"):
+            await provider.chat([{"role": "user", "content": "hi"}])
 
     async def test_chat_success(self, provider: LLMProvider):
         provider.configure("openai", api_key="sk-test")
 
-        mock_response = MagicMock()
-        mock_response.status_code = 200
+        mock_response = MagicMock(spec=httpx.Response)
+        mock_response.is_error = False
         mock_response.json.return_value = {
             "choices": [{"message": {"content": "Hello!"}}]
         }
@@ -185,52 +193,48 @@ class TestChat:
             reply = await provider.chat([{"role": "user", "content": "hi"}])
             assert reply == "Hello!"
 
-    async def test_chat_empty_choices(self, provider: LLMProvider):
+    async def test_chat_empty_choices_raises(self, provider: LLMProvider):
         provider.configure("openai", api_key="sk-test")
 
-        mock_response = MagicMock()
-        mock_response.status_code = 200
+        mock_response = MagicMock(spec=httpx.Response)
+        mock_response.is_error = False
         mock_response.json.return_value = {"choices": []}
 
         with patch("httpx.AsyncClient.post", new=AsyncMock(return_value=mock_response)):
-            reply = await provider.chat([{"role": "user", "content": "hi"}])
-            assert "No response" in reply
+            with pytest.raises(AIError, match="No response"):
+                await provider.chat([{"role": "user", "content": "hi"}])
 
-    async def test_chat_http_error(self, provider: LLMProvider):
+    async def test_chat_api_error_raises(self, provider: LLMProvider):
         provider.configure("openai", api_key="sk-test")
-        from httpx import HTTPStatusError, Request
 
-        mock_request = Request("POST", "http://example.com")
+        mock_response = MagicMock(spec=httpx.Response)
+        mock_response.is_error = True
+        mock_response.status_code = 401
+        mock_response.json.return_value = {"error": {"message": "Unauthorized"}}
+
+        with patch("httpx.AsyncClient.post", new=AsyncMock(return_value=mock_response)):
+            with pytest.raises(AIError, match="LLM API error"):
+                await provider.chat([{"role": "user", "content": "hi"}])
+
+    async def test_chat_timeout_raises(self, provider: LLMProvider):
+        provider.configure("openai", api_key="sk-test")
 
         with patch(
             "httpx.AsyncClient.post",
-            new=AsyncMock(
-                side_effect=HTTPStatusError("401", request=mock_request, response=MagicMock(status_code=401))
-            ),
+            new=AsyncMock(side_effect=httpx.TimeoutException("timeout")),
         ):
-            reply = await provider.chat([{"role": "user", "content": "hi"}])
-            assert "HTTP" in reply or "error" in reply
+            with pytest.raises(httpx.TimeoutException):
+                await provider.chat([{"role": "user", "content": "hi"}])
 
-    async def test_chat_timeout(self, provider: LLMProvider):
-        provider.configure("openai", api_key="sk-test")
-        from httpx import TimeoutException
-
-        with patch(
-            "httpx.AsyncClient.post",
-            new=AsyncMock(side_effect=TimeoutException("timeout")),
-        ):
-            reply = await provider.chat([{"role": "user", "content": "hi"}])
-            assert "timed out" in reply
-
-    async def test_chat_generic_error(self, provider: LLMProvider):
+    async def test_chat_generic_error_raises(self, provider: LLMProvider):
         provider.configure("openai", api_key="sk-test")
 
         with patch(
             "httpx.AsyncClient.post",
             new=AsyncMock(side_effect=RuntimeError("network error")),
         ):
-            reply = await provider.chat([{"role": "user", "content": "hi"}])
-            assert "LLM error" in reply or "network error" in reply
+            with pytest.raises(RuntimeError, match="network error"):
+                await provider.chat([{"role": "user", "content": "hi"}])
 
 
 # ── Command generation ───────────────────────────────────────────────────
@@ -240,8 +244,8 @@ class TestGenerateCommand:
     async def test_generates_command(self, provider: LLMProvider):
         provider.configure("openai", api_key="sk-test")
 
-        mock_response = MagicMock()
-        mock_response.status_code = 200
+        mock_response = MagicMock(spec=httpx.Response)
+        mock_response.is_error = False
         mock_response.json.return_value = {
             "choices": [{"message": {"content": '{"tokens": ["node", "list"], "flags": {}}'}}]
         }
@@ -255,14 +259,13 @@ class TestGenerateCommand:
         result = await provider.generate_command("list nodes", [])
         assert result is None
 
-    async def test_generate_error_returns_none(self, provider: LLMProvider):
+    async def test_generate_ai_error_returns_none(self, provider: LLMProvider):
         provider.configure("openai", api_key="sk-test")
 
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "choices": [{"message": {"content": "LLM error: something broke"}}]
-        }
+        mock_response = MagicMock(spec=httpx.Response)
+        mock_response.is_error = True
+        mock_response.status_code = 429
+        mock_response.json.return_value = {"error": {"message": "Rate limited"}}
 
         with patch("httpx.AsyncClient.post", new=AsyncMock(return_value=mock_response)):
             result = await provider.generate_command("list nodes", [])
@@ -273,41 +276,56 @@ class TestGenerateCommand:
 
 
 class TestParseCommandResult:
-    """Tests for LLMProvider._parse_command_result static method."""
+    """Tests for parse_command_result from lightercore.utils."""
 
     def test_parse_json(self):
-        result = LLMProvider._parse_command_result('{"tokens": ["node", "list"], "flags": {}}')
+        result = parse_command_result('{"tokens": ["node", "list"], "flags": {}}')
         assert result == {"tokens": ["node", "list"], "flags": {}}
 
     def test_parse_markdown_fenced(self):
-        result = LLMProvider._parse_command_result(
+        result = parse_command_result(
             '```json\n{"tokens": ["node", "add"], "flags": {"labels": "Dog"}}\n```'
         )
         assert result is not None
         assert result["tokens"] == ["node", "add"]
 
     def test_parse_plain_text_command(self):
-        result = LLMProvider._parse_command_result("Run !node list for me")
+        result = parse_command_result("Run !node list for me")
         assert result is not None
         assert result["tokens"][:2] == ["node", "list"]
 
     def test_parse_empty(self):
-        assert LLMProvider._parse_command_result("") is None
-        assert LLMProvider._parse_command_result(None) is None  # type: ignore[arg-type]
+        assert parse_command_result("") is None
+        assert parse_command_result(None) is None  # type: ignore[arg-type]
 
     def test_parse_invalid_json_without_command(self):
-        assert LLMProvider._parse_command_result("some random text") is None
+        assert parse_command_result("some random text") is None
 
     def test_parse_missing_tokens_key(self):
-        result = LLMProvider._parse_command_result('{"something": "else"}')
-        assert result is None  # Missing "tokens" key
+        assert parse_command_result('{"something": "else"}') is None
 
     def test_parse_markdown_fenced_with_lang(self):
-        result = LLMProvider._parse_command_result(
+        result = parse_command_result(
             '```\n{"tokens": ["predicate", "list"]}\n```'
         )
         assert result is not None
         assert result["tokens"] == ["predicate", "list"]
+
+
+# ── Singleton tests ──────────────────────────────────────────────────────
+
+
+class TestSingleton:
+    def test_get_provider_returns_same_instance(self):
+        p1 = get_provider()
+        p2 = get_provider()
+        assert p1 is p2
+
+    def test_reset_provider_creates_new_instance(self):
+        p1 = get_provider()
+        reset_provider()
+        p2 = get_provider()
+        assert p1 is not p2
 
 
 # ── Command definitions helper ───────────────────────────────────────────
@@ -336,7 +354,6 @@ class TestGetCommandDefinitions:
             }
         ]
         defs = get_command_definitions(tree)
-        # The walker includes the parent "node" plus both children
         assert len(defs) == 3
         by_path = {tuple(d["path"]): d for d in defs}
         assert ("node",) in by_path
