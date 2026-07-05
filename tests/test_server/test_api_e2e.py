@@ -1030,9 +1030,13 @@ class TestSparqlAPI:
         resp = client.post("/api/v1/query/sparql", json={"query": "DROP TABLE nodes"})
         assert resp.status_code == 400
 
-    def test_sparql_rejects_system_tables(self, client: TestClient):
+    def test_sparql_readonly_system_tables(self, client: TestClient):
+        # System table queries are allowed — the read-only connection
+        # prevents any modification regardless of query content.
         resp = client.post("/api/v1/query/sparql", json={"query": "SELECT * FROM sqlite_master"})
-        assert resp.status_code == 403
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "results" in data
 
 
 # ── Query Search ──────────────────────────────────────────────────────────

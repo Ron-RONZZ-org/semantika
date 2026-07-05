@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import sqlite3
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from semantika.graph.db import get_services
+from semantika.graph.db import get_db_path, get_services
 
 router = APIRouter()
 
@@ -75,33 +77,36 @@ class SparqlQuery(BaseModel):
     query: str
 
 
-_FORBIDDEN_SQL_KEYWORDS = [
-    "PRAGMA",
-    "SQLITE_MASTER",
-    "SQLITE_SCHEMA",
-    "SQLITE_TEMP_MASTER",
-    "SQLITE_TEMP_SCHEMA",
-]
+def _readonly_conn() -> sqlite3.Connection:
+    """Open a read-only connection to the SQLite database.
+
+    This is the primary security boundary for the SPARQL endpoint —
+    even if an attacker crafts a malicious query, they **cannot** modify
+    any data.  The SQLite engine enforces this at the storage level.
+    """
+    db_path = get_db_path()
+    uri = f"file:{db_path}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
 @router.post("/sparql")
 async def sparql_query(req: SparqlQuery):
-    """Execute a raw SQL query (limited SPARQL-like access).
+    """Execute a raw SQL query (read-only).
 
-    Only SELECT queries are allowed.  System tables (sqlite_master,
-    pragma_*) are blocked for security.
+    Only SELECT queries are allowed.  The connection is opened in
+    read-only mode so no modifications are possible regardless of
+    the query content.
     """
-    from semantika.graph.db import get_db
-
     query = req.query.strip()
     if not query.upper().startswith("SELECT"):
         raise HTTPException(400, "Only SELECT queries are allowed")
-    upper = query.upper()
-    for kw in _FORBIDDEN_SQL_KEYWORDS:
-        if kw in upper:
-            raise HTTPException(403, f"Query references forbidden system object: {kw}")
     try:
-        results = get_db().execute(query)
-        return {"results": results, "count": len(results)}
+        conn = _readonly_conn()
+        cursor = conn.execute(query)
+        rows = [dict(r) for r in cursor.fetchall()]
+        conn.close()
+        return {"results": rows, "count": len(rows)}
     except Exception as e:
         raise HTTPException(400, f"Query failed: {e}")
