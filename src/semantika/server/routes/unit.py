@@ -4,14 +4,13 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Any
 
 from semantika.graph.db import get_services
 
 router = APIRouter()
 
 
-def _unit_svc() -> Any:
+def _unit_svc():
     """Get UnitService from service singletons."""
     svc = get_services()
     from semantika.graph.unit_service import UnitService

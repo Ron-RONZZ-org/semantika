@@ -94,12 +94,10 @@ class TestParseExpanded:
         assert tokens == ["cmd"]
         assert flags == {"val": "-1"}
 
-    def test_invalid_quoting_falls_back_to_split(self):
-        """When shlex fails (e.g. unmatched quote), fall back to split()."""
-        tokens, flags = parse_expanded("!cmd unclosed'quote")
-        # Fallback: simple whitespace split
-        assert tokens == ["cmd", "unclosed'quote"]
-        assert flags == {}
+    def test_invalid_quoting_raises(self):
+        """When shlex fails (e.g. unmatched quote), raise ValueError."""
+        with pytest.raises(ValueError, match="Failed to parse command"):
+            parse_expanded("!cmd unclosed'quote")
 
     def test_flag_with_no_value_after_is_boolean(self):
         tokens, flags = parse_expanded("!cmd --flag")

@@ -33,8 +33,11 @@ def parse_expanded(cmd_str: str) -> tuple[list[str], dict[str, str]]:
 
     try:
         parts = shlex.split(text)
-    except ValueError:
-        parts = text.split()
+    except ValueError as e:
+        raise ValueError(
+            f"Failed to parse command: {e}. "
+            "Check for mismatched quotes or invalid escaping."
+        ) from e
 
     for part in parts:
         if part.startswith("--"):

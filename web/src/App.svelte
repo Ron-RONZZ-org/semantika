@@ -85,12 +85,7 @@
         return;
       }
 
-      const dataType = detectPersistentType(input);
-      if (dataType) {
-        popup.showPersistent(result.type, result.title, result.data, dataType);
-      } else {
-        popup.show(result.type, result.title, result.data);
-      }
+      popup.show(result.type, result.title, result.data);
     } catch (err) {
       popup.show("error", "Error", {
         message: err.message || String(err),
@@ -101,18 +96,7 @@
     }
   }
 
-  function detectPersistentType(input) {
-    const t = input.trim();
-    if (/^!(email\s+)?account\s+list\s*$/i.test(t)) return "accounts";
-    if (/^!(calendar\s+)?account\s+list\s*$/i.test(t)) return "calendars";
-    if (/^!contacts?\s+(list|search)\b/i.test(t)) return "contacts-list";
-    if (/^!todo\s+(list|search)\b/i.test(t)) return "todos";
-    if (/^!journal\s+(list|search)\b/i.test(t)) return "journal";
-    if (/^!calendar\s+(list|search)\b/i.test(t)) return "calendar-events";
-    if (/^!email\s+(list|search)\b/i.test(t)) return "email-list";
-    if (/^!user\s+saved-commands\s+list\s*$/i.test(t)) return "saved-commands";
-    return null;
-  }
+
 </script>
 
 <svelte:window onbeforeunload={(e) => {
