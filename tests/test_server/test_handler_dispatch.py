@@ -43,12 +43,12 @@ class TestTrashHandler:
             dispatch(["trash", "restore"], {"id": "NONEXISTENT"})
 
     def test_trash_delete(self, seeded):
-        dispatch(["node", "delete"], {"id": "ALICE"})
+        dispatch(["node", "delete"], {"id": "ALICE", "force": "1"})
         result = dispatch(["trash", "delete"], {"id": "ALICE"})
         assert "Permanently deleted" in result["data"]["message"]
 
     def test_trash_purge(self, seeded):
-        dispatch(["node", "delete"], {"id": "ALICE"})
+        dispatch(["node", "delete"], {"id": "ALICE", "force": "1"})
         result = dispatch(["trash", "purge"], {"days": "0"})
         assert "Purged" in result["data"]["message"]
 
@@ -65,7 +65,7 @@ class TestTrashHandler:
             dispatch(["trash", "delete"], {})
 
     def test_trash_purge_positive_days(self, seeded):
-        dispatch(["node", "delete"], {"id": "ALICE"})
+        dispatch(["node", "delete"], {"id": "ALICE", "force": "1"})
         result = dispatch(["trash", "purge"], {"days": "999"})
         assert "Purged" in result["data"]["message"]
 

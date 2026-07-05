@@ -107,7 +107,8 @@ def cmd_node_update(remaining: list[str], flags: dict[str, str]) -> dict:
 
 @command("node.delete", description="Delete nodes (multiple IDs or --prefix)", interactive=True,
          params=[{"name": "id", "type": "string"}],
-         flags=[{"name": "prefix", "type": "string", "help": "Delete all nodes with this ID prefix"}])
+         flags=[{"name": "prefix", "type": "string", "help": "Delete all nodes with this ID prefix"},
+                {"name": "force", "type": "string", "help": "Skip dependency warning and proceed"}])
 def cmd_node_delete(remaining: list[str], flags: dict[str, str]) -> dict:
     svc = get_services()
     ids: list[str] = []
@@ -127,12 +128,16 @@ def cmd_node_delete(remaining: list[str], flags: dict[str, str]) -> dict:
                 ids.append(n["node_id"])
     if not ids:
         raise CommandValidationError("Specify node ID(s) or use --prefix")
+    force = flags.get("force")
+    for nid in ids:
+        warning = svc["node"].get_delete_warning(nid)
+        if warning and not force:
+            raise CommandValidationError(warning)
     deleted = 0
     errors = []
     for nid in ids:
         try:
-            svc["triple"].remove(subject_id=nid)
-            svc["triple"].remove(object_value=nid)
+            # _move_to_trash handles triple cleanup; no need to remove separately
             svc["node"].delete(nid, soft=True)
             deleted += 1
         except Exception as e:

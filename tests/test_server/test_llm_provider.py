@@ -7,10 +7,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from semantika.server.command.registry import get_command_definitions
 from semantika.server.llm.provider import (
     LLMProvider,
     ProviderConfig,
-    get_command_definitions,
 )
 
 

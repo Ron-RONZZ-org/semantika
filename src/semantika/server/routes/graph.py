@@ -158,9 +158,17 @@ async def merge_nodes(source_id: str, target_id: str):
 
 
 @router.delete("/nodes/{node_id}")
-async def delete_node(node_id: str, soft: bool = True):
-    """Delete a node."""
+async def delete_node(node_id: str, soft: bool = True, force: bool = False):
+    """Delete a node.
+
+    If the node is referenced by triples, returns 409 with dependency
+    info unless ``force=true`` is set.
+    """
     svc = _svc()["node"]
+    if not force:
+        warning = svc.get_delete_warning(node_id)
+        if warning:
+            raise HTTPException(409, warning)
     deleted = svc.delete(node_id, soft=soft)
     if not deleted:
         raise HTTPException(404, f"Node not found: {node_id}")

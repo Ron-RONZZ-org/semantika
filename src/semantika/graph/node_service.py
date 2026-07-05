@@ -155,6 +155,35 @@ class NodeService(NodeFtsMixin, CRUDService):
 
         return self.get(node_id)
 
+    # ── Delete warning ─────────────────────────────────────────────────
+
+    def get_delete_warning(self, node_id: str) -> str | None:
+        """Check if deleting this node would cascade-delete triples.
+
+        Returns a warning message with triple counts, or None if safe.
+        """
+        subject_count = self.db.execute_one(
+            "SELECT COUNT(*) AS cnt FROM triples WHERE subject_id = ?",
+            (node_id,),
+        )["cnt"]
+        object_count = self.db.execute_one(
+            "SELECT COUNT(*) AS cnt FROM triples "
+            "WHERE object_type = 'uri' AND object_value = ?",
+            (node_id,),
+        )["cnt"]
+        total = subject_count + object_count
+        if total == 0:
+            return None
+        parts = []
+        if subject_count:
+            parts.append(f"{subject_count} as subject")
+        if object_count:
+            parts.append(f"{object_count} as URI object")
+        return (
+            f"Deleting '{node_id}' will also remove {total} triple(s) "
+            f"({', '.join(parts)}). Use --force to confirm."
+        )
+
     # ── Override delete ────────────────────────────────────────────────
 
     def delete(self, node_id: str, soft: bool = True) -> bool:

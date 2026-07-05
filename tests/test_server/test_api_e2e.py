@@ -623,6 +623,13 @@ class TestNodeDeleteCascade:
         )
         assert resp.status_code == 200
 
+        # Ensure the predicate exists (may already exist from shared module-scoped DB)
+        pred_resp = client.post(
+            "/api/v1/graph/predicates",
+            json={"predicate_id": "ex:rel", "labels": {"en": "rel"}},
+        )
+        assert pred_resp.status_code in (200, 400)  # 400 if already exists
+
         resp = client.post(
             "/api/v1/graph/triples",
             json={
@@ -634,8 +641,13 @@ class TestNodeDeleteCascade:
         )
         assert resp.status_code == 200
 
-        # Delete the target node (FK constraint would fail without cascade fix)
+        # Delete WITHOUT force should return 409 because there are dependent triples
         resp = client.delete("/api/v1/graph/nodes/FKTARGET?soft=true")
+        assert resp.status_code == 409
+        assert "triple" in resp.json()["detail"]
+
+        # Delete WITH force should succeed and cascade
+        resp = client.delete("/api/v1/graph/nodes/FKTARGET?soft=true&force=true")
         assert resp.status_code == 200
         assert resp.json()["deleted"] is True
 
