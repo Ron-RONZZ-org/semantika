@@ -290,6 +290,16 @@ class PredicateService(CRUDService):
             return matches[0]
         return None
 
+    def get_by_ids(self, predicate_ids: list[str]) -> list[dict]:
+        """Fetch multiple predicates in one query (O(1) vs O(N) loop)."""
+        if not predicate_ids:
+            return []
+        placeholders = ", ".join(["?"] * len(predicate_ids))
+        return self.db.execute(
+            f"SELECT * FROM predicates WHERE predicate_id IN ({placeholders})",
+            tuple(predicate_ids),
+        )
+
     def update_predicate_id(self, old_id: str, new_id: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
         """Rename a predicate's predicate_id, cascading to all references.
 

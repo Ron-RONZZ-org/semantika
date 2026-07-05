@@ -80,19 +80,22 @@ def dispatch(tokens: list[str], flags: dict[str, str]) -> dict[str, Any]:
             handler_fn, metadata = entry
             remaining = list(tokens[i:])
 
+            # Copy flags to avoid mutating the caller's dict
+            resolved = dict(flags)
+
             # Inject positional params into flags using metadata
             params = metadata.get("params", [])
             for idx, val in enumerate(remaining):
                 if idx < len(params):
                     pname = params[idx]["name"]
-                    if pname not in flags:
-                        flags[pname] = val
+                    if pname not in resolved:
+                        resolved[pname] = val
                 else:
                     fname = f"_{idx}"
-                    if fname not in flags:
-                        flags[fname] = val
+                    if fname not in resolved:
+                        resolved[fname] = val
 
-            return handler_fn(remaining, flags)
+            return handler_fn(remaining, resolved)
     raise CommandNotFound(tokens)
 
 

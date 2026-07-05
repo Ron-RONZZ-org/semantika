@@ -415,9 +415,12 @@ class NodeService(NodeFtsMixin, CRUDService):
             conn.execute(
                 """UPDATE triples SET subject_id = ?
                    WHERE subject_id = ?
-                     AND (predicate_id, object_value, object_type) NOT IN (
-                       SELECT predicate_id, object_value, object_type
-                       FROM triples WHERE subject_id = ?
+                     AND NOT EXISTS (
+                       SELECT 1 FROM triples AS t2
+                       WHERE t2.subject_id = ?
+                         AND t2.predicate_id = triples.predicate_id
+                         AND t2.object_value = triples.object_value
+                         AND t2.object_type = triples.object_type
                      )""",
                 (target_id, source_id, target_id),
             )
@@ -425,9 +428,13 @@ class NodeService(NodeFtsMixin, CRUDService):
             conn.execute(
                 """UPDATE triples SET object_value = ?
                    WHERE object_type = 'uri' AND object_value = ?
-                     AND (subject_id, predicate_id, object_type) NOT IN (
-                       SELECT subject_id, predicate_id, object_type
-                       FROM triples WHERE object_type = 'uri' AND object_value = ?
+                     AND NOT EXISTS (
+                       SELECT 1 FROM triples AS t2
+                       WHERE t2.object_type = 'uri'
+                         AND t2.object_value = ?
+                         AND t2.subject_id = triples.subject_id
+                         AND t2.predicate_id = triples.predicate_id
+                         AND t2.object_type = triples.object_type
                      )""",
                 (target_id, source_id, target_id),
             )

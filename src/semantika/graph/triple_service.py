@@ -297,28 +297,40 @@ class TripleService:
         params.append(limit)
 
         triples = self.db.execute(sql, tuple(params))
+        if not triples:
+            return []
+
+        # Bulk-fetch all referenced nodes and predicates (avoids N+1)
+        all_node_ids: set[str] = set()
+        all_pred_ids: set[str] = set()
+        for t in triples:
+            all_node_ids.add(t["subject_id"])
+            all_pred_ids.add(t["predicate_id"])
+            if t["object_type"] == "uri":
+                all_node_ids.add(t["object_value"])
+
+        node_map: dict[str, dict] = {}
+        if all_node_ids:
+            for n in node_svc.get_by_nodes(list(all_node_ids)):
+                node_map[n["node_id"]] = n
+
+        pred_map: dict[str, dict] = {}
+        if all_pred_ids:
+            for p in pred_svc.get_by_ids(list(all_pred_ids)):
+                pred_map[p["predicate_id"]] = p
 
         # Annotate with labels
         result = []
         for t in triples:
-            subj = node_svc.get(t["subject_id"])
-            if subj:
-                t["_subject_label"] = self._label_from_node(subj)
-            else:
-                t["_subject_label"] = t["subject_id"]
+            subj = node_map.get(t["subject_id"])
+            t["_subject_label"] = self._label_from_node(subj) if subj else t["subject_id"]
 
-            pred = pred_svc.get(t["predicate_id"])
-            if pred:
-                t["_predicate_label"] = self._label_from_node(pred)
-            else:
-                t["_predicate_label"] = t["predicate_id"]
+            pred = pred_map.get(t["predicate_id"])
+            t["_predicate_label"] = self._label_from_node(pred) if pred else t["predicate_id"]
 
             if t["object_type"] == "uri":
-                obj = node_svc.get(t["object_value"])
-                if obj:
-                    t["_object_label"] = self._label_from_node(obj)
-                else:
-                    t["_object_label"] = t["object_value"]
+                obj = node_map.get(t["object_value"])
+                t["_object_label"] = self._label_from_node(obj) if obj else t["object_value"]
             else:
                 t["_object_label"] = t["object_value"]
 
