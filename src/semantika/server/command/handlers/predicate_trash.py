@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from lightercore.permissions import PermissionLevel
 from semantika.graph.db import get_services
 from semantika.server.command.errors import CommandValidationError
 from semantika.server.command.registry import command
@@ -38,7 +39,8 @@ def cmd_predicate_trash_delete(remaining: list[str], flags: dict[str, str]) -> d
     return {"type": "status", "data": {"message": f"Permanently deleted predicate {pred_id}"}}
 
 
-@command("predicate-trash.purge", description="Empty the predicate trash permanently")
+@command("predicate-trash.purge", description="Empty the predicate trash permanently",
+         permission_level=PermissionLevel.DESTRUCTIVE)
 def cmd_predicate_trash_purge(remaining: list[str], flags: dict[str, str]) -> dict:
     svc = get_services()
     count = svc["predicate"].empty_trash()

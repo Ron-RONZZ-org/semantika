@@ -29,12 +29,12 @@ Semantika is the **third generation** in a toolchain. When implementing new feat
 |---------|------|-------------------|
 | **[A-semantika](../A-semantika)** | EO-first CLI ancestor | **Business logic**: NodeService, PredicateService, TripleService, Turtle export/import, review/proof mechanics, unit ontology. Forked with Esperanto→English migration. |
 | **[lighterbird](../lighterbird)** | Mature sister PIM app | **UX/LLM/DB**: Command-bar interaction, command tree + dispatch architecture, autocomplete engine, tab/result-panel UI, LLM provider integration (OpenAI/Ollama), text-based command generation, keyring-based config management. |
-| **[lightercore](../lightercore)** | Shared core library | **DB/paths/exceptions/CRUD/backup**: Canonical implementations consumed by both lighterbird and semantika. Replaces the earlier vendored A-core. |
+| **[lightercore](../lightercore)** | Shared core library | **DB/paths/exceptions/CRUD/backup/permissions**: Canonical implementations consumed by both lighterbird and semantika. Replaces the earlier vendored A-core. |
 | **[A-core](../A-core)** | First-gen core library | Historical reference only. Superseded by lightercore. |
 
-**Key rule**: When the task is about graph business logic (nodes, predicates, triples, TTL, review, proof, units), look at **A-semantika** first. When the task is about UX patterns (command routing, LLM, autocomplete, tabs, forms) or DB management, look at **lighterbird** first. For shared infrastructure (DB, paths, exceptions, CRUD, backup), look at **lightercore** first — that is the canonical source.
+**Key rule**: When the task is about graph business logic (nodes, predicates, triples, TTL, review, proof, units), look at **A-semantika** first. When the task is about UX patterns (command routing, LLM, autocomplete, tabs, forms) or DB management, look at **lighterbird** first. For shared infrastructure (DB, paths, exceptions, CRUD, backup, permissions), look at **lightercore** first — that is the canonical source.
 
-The backend is forked from proven code in [A-semantika](../A-semantika) (triple store services). Shared infrastructure (DB, paths, exceptions, CRUD, backup) comes from [lightercore](../lightercore), which supersedes the earlier vendored [A-core](../A-core). The frontend is a Svelte SPA served by a FastAPI Python server, with UX patterns ported from [lighterbird](../lighterbird).
+The backend is forked from proven code in [A-semantika](../A-semantika) (triple store services). Shared infrastructure (DB, paths, exceptions, CRUD, backup, permissions) comes from [lightercore](../lightercore), which supersedes the earlier vendored [A-core](../A-core). The frontend is a Svelte SPA served by a FastAPI Python server, with UX patterns ported from [lighterbird](../lighterbird).
 
 ---
 
@@ -58,7 +58,7 @@ The backend is forked from proven code in [A-semantika](../A-semantika) (triple 
 | Frontend build | Vite + svelte-spa-router | Fast dev, static export possible |
 | Database | SQLite (WAL mode) | Embedded, zero-config, sufficient for single-user |
 | Credential storage | System keyring (via `keyring` library) | Never store API keys in DB |
-| AI providers | OpenAI-compatible API + Ollama | BYOK: bring your own model/key; **two-phase command generation** (LLM parses NL → structured JSON command → dispatch → summarize) |
+| AI providers | OpenAI-compatible API + Ollama | BYOK: bring your own model/key; **three-phase command generation** (LLM parses NL → structured JSON command → permission check → dispatch → summarize) with permission gate guarding destructive commands behind user confirmation |
 | TTL parsing | `rdflib` | Standard Turtle (.ttl) import |
 | HTTP client | `httpx` | Async HTTP for LLM provider calls |
 | Package manager | `uv` (development), `pip` (user install) | Fast, modern, reproducible |
@@ -118,7 +118,7 @@ semantika/
 │   └── semantika/               # Main Python package
 │       ├── __init__.py
 │       ├── __main__.py          # python -m semantika entry point
-│       ├── core/                # Re-exports from lightercore + reset
+│       ├── core/                # Re-exports from lightercore (DB, paths, exceptions, CRUD, backup, permissions) + reset
 │       │   ├── __init__.py      # Re-exports SemantikaDB, paths, exceptions
 │       │   ├── db.py / paths.py / exceptions.py / backup.py / crud.py / fts.py
 │       │   └── reset.py         # Reset to fresh state

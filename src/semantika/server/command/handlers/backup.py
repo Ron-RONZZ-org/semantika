@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from lightercore.permissions import PermissionLevel
 from semantika.server.command.errors import CommandValidationError
 from semantika.server.command.helpers import backup_dir_abs, fmt_size, fmt_ts
 from semantika.server.command.registry import command, group_command
@@ -50,6 +51,7 @@ def cmd_backup_list(remaining: list[str], flags: dict[str, str]) -> dict:
 
 
 @command("backup.restore", description="Restore from backup",
+         permission_level=PermissionLevel.DESTRUCTIVE,
          flags=[{"name": "timestamp", "type": "string", "help": "Specific timestamp"}])
 def cmd_backup_restore(remaining: list[str], flags: dict[str, str]) -> dict:
     from semantika.core.backup import restore_latest, restore_by_timestamp
@@ -67,6 +69,7 @@ def cmd_backup_restore(remaining: list[str], flags: dict[str, str]) -> dict:
 
 
 @command("backup.prune", description="Delete old backups",
+         permission_level=PermissionLevel.DESTRUCTIVE,
          flags=[{"name": "keep", "type": "number", "help": "Number to keep"}])
 def cmd_backup_prune(remaining: list[str], flags: dict[str, str]) -> dict:
     from semantika.core.backup import prune_backups
@@ -206,6 +209,7 @@ def cmd_backup_export(remaining: list[str], flags: dict[str, str]) -> dict:
 
 
 @command("backup.import", description="Import data from export archive",
+         permission_level=PermissionLevel.DESTRUCTIVE,
          params=[{"name": "path", "type": "string", "required": True}],
          flags=[{"name": "force", "type": "flag", "help": "Force overwrite"}])
 def cmd_backup_import(remaining: list[str], flags: dict[str, str]) -> dict:

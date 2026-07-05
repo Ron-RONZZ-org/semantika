@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from lightercore.permissions import PermissionLevel
 from semantika.server.command.errors import CommandNotFound
 
 # ── Registry ──────────────────────────────────────────────────────────────
@@ -105,6 +106,18 @@ def get_handler_metadata(path: str) -> dict[str, Any] | None:
     if entry is not None:
         return entry[1]
     return None
+
+
+def get_command_level(path: str) -> PermissionLevel:
+    """Return the permission level for a command path.
+
+    Uses the ``permission_level`` metadata from the ``@command()`` decorator.
+    Defaults to :attr:`PermissionLevel.WRITE` when not explicitly set.
+    """
+    meta = get_handler_metadata(path)
+    if meta is None:
+        return PermissionLevel.WRITE
+    return meta.get("permission_level", PermissionLevel.WRITE)
 
 
 # ── Auto-generated command tree ──────────────────────────────────────────

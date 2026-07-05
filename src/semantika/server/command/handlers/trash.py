@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from lightercore.permissions import PermissionLevel
 from semantika.graph.db import get_services
 from semantika.server.command.errors import CommandValidationError
 from semantika.server.command.registry import command
@@ -57,6 +58,7 @@ def cmd_trash_delete(remaining: list[str], flags: dict[str, str]) -> dict:
 
 
 @command("trash.purge", description="Purge old trashed nodes",
+         permission_level=PermissionLevel.DESTRUCTIVE,
          params=[{"name": "days", "type": "number", "default": 30}])
 def cmd_trash_purge(remaining: list[str], flags: dict[str, str]) -> dict:
     svc = get_services()

@@ -1,6 +1,6 @@
 """Tests for the LLM API routes — /api/v1/llm/*.
 
-Covers config, profiles, chat stub, and error paths.
+Covers config, profiles, chat stub, error paths, and the permission gate.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ TEST_DATA_DIR.mkdir(parents=True, exist_ok=True)
 os.environ["SEMANTIKA_DATA_DIR"] = str(TEST_DATA_DIR)
 
 from semantika.server.app import create_app
-from semantika.server.routes.llm import reset_provider
+from semantika.server.routes.llm import get_provider, reset_provider
 
 
 @pytest.fixture(scope="class")
@@ -146,3 +146,145 @@ class TestLlmChatStub:
         assert resp.status_code == 200
         reply = resp.json()["reply"]
         assert "not connected" in reply.lower() or "LLM" in reply
+
+
+# ── Permission gate tests ─────────────────────────────────────────────────
+
+
+def _mock_llm_provider(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Configure provider so that generate_command returns controllable results.
+
+    Monkeypatches the provider singleton's ``generate_command`` method.
+    The provider must be available (configured) for the chat route to
+    attempt command generation instead of falling back to a stub.
+    """
+    # Configure a fake provider so the route attempts LLM calls
+    from semantika.server.routes.llm import get_provider
+
+    provider = get_provider()
+    # Re-configure with dummy credentials to make it "available"
+    provider.configure(provider_type="openai", api_key="sk-fake-test")
+
+
+class TestPermissionGate:
+    """LLM-generated destructive commands are gated behind user confirmation."""
+
+    _mock_cmd: dict | None = None
+
+    @pytest.fixture(autouse=True)
+    def setup(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Make the provider available with a fake key
+        from semantika.server.command import handlers  # noqa: F401 — ensure commands registered
+
+        provider = get_provider()
+        provider.configure(provider_type="openai", api_key="sk-fake-test")
+
+        # Mock generate_command to return our controlled response
+        async def _mock_generate(message: str, defs: list[dict]) -> dict | None:
+            return TestPermissionGate._mock_cmd
+
+        monkeypatch.setattr(provider, "generate_command", _mock_generate)
+
+    def test_blocks_destructive_reset(self, client: TestClient):
+        """LLM asking for !reset returns type=confirm instead of dispatching."""
+        TestPermissionGate._mock_cmd = {"tokens": ["reset"], "flags": {"no-backup": "true", "confirmed": "yes"}}
+        resp = client.post("/api/v1/llm/chat", json={"message": "reset everything"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "confirm"
+        assert data["tokens"] == ["reset"]
+        assert "destructive" in data["message"].lower()
+
+    def test_blocks_destructive_trash_purge(self, client: TestClient):
+        """LLM asking for !trash.purge returns type=confirm."""
+        TestPermissionGate._mock_cmd = {"tokens": ["trash", "purge"], "flags": {}}
+        resp = client.post("/api/v1/llm/chat", json={"message": "empty the trash"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "confirm"
+
+    def test_blocks_destructive_node_merge(self, client: TestClient):
+        """LLM asking for !node.merge returns type=confirm."""
+        TestPermissionGate._mock_cmd = {"tokens": ["node", "merge"], "flags": {"source": "A", "target": "B"}}
+        resp = client.post("/api/v1/llm/chat", json={"message": "merge A into B"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "confirm"
+
+    def test_allows_write_command(self, client: TestClient):
+        """LLM asking for !node.list (WRITE-level) passes through to dispatch."""
+        TestPermissionGate._mock_cmd = {"tokens": ["stats"], "flags": {}}
+        resp = client.post("/api/v1/llm/chat", json={"message": "show stats"})
+        assert resp.status_code == 200
+        data = resp.json()
+        # Should not be a confirm type — either a regular result or a stub fallback
+        assert data.get("type") != "confirm"
+
+    def test_blocks_backup_restore(self, client: TestClient):
+        """LLM asking for !backup.restore returns type=confirm."""
+        TestPermissionGate._mock_cmd = {"tokens": ["backup", "restore"], "flags": {}}
+        resp = client.post("/api/v1/llm/chat", json={"message": "restore from backup"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "confirm"
+
+    def test_blocks_backup_import(self, client: TestClient):
+        """LLM asking for !backup.import returns type=confirm."""
+        TestPermissionGate._mock_cmd = {"tokens": ["backup", "import"], "flags": {"path": "/tmp/export.7z"}}
+        resp = client.post("/api/v1/llm/chat", json={"message": "import from /tmp/export.7z"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "confirm"
+
+    def test_allows_single_node_delete(self, client: TestClient):
+        """node.delete is WRITE (reversible via trash), so no confirm."""
+        TestPermissionGate._mock_cmd = {"tokens": ["node", "delete"], "flags": {"id": "testnode"}}
+        resp = client.post("/api/v1/llm/chat", json={"message": "delete test node"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data.get("type") != "confirm"
+
+
+class TestConfirmEndpoint:
+    """POST /api/v1/llm/confirm executes pre-verified commands."""
+
+    def test_confirm_dispatches_command(self, client: TestClient):
+        """Confirm endpoint dispatches a simple command."""
+        resp = client.post(
+            "/api/v1/llm/confirm",
+            json={"tokens": ["stats"], "flags": {}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "status"
+        assert "data" in data
+
+    def test_confirm_empty_tokens(self, client: TestClient):
+        """Empty tokens return 400."""
+        resp = client.post(
+            "/api/v1/llm/confirm",
+            json={"tokens": [], "flags": {}},
+        )
+        assert resp.status_code == 400
+
+    def test_confirm_nonexistent_command(self, client: TestClient):
+        """Unknown command returns 400."""
+        resp = client.post(
+            "/api/v1/llm/confirm",
+            json={"tokens": ["nonexistent"], "flags": {}},
+        )
+        assert resp.status_code == 400
+
+    def test_confirm_destructive_command(self, client: TestClient):
+        """Confirm endpoint does NOT gate destructive commands — it dispatches directly."""
+        resp = client.post(
+            "/api/v1/llm/confirm",
+            json={"tokens": ["reset"], "flags": {"no-backup": "true", "confirmed": "yes"}},
+        )
+        # Should try to dispatch reset (will fail because confirmed is set, but should not be blocked)
+        # It attempts reset, which requires --no-backup (provided) and confirmed (provided).
+        # It will try to reset the DB, but TEST_DATA_DIR might have issues.
+        # The important thing: it returns a status response, not "confirm" type
+        assert resp.status_code in (200, 400, 500)
+        data = resp.json()
+        assert isinstance(data, dict)

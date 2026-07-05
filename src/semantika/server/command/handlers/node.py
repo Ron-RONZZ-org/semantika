@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from lightercore.permissions import PermissionLevel
 from semantika.core.exceptions import AmbiguousIDError
 from semantika.graph.db import get_services
 from semantika.server.command.errors import CommandValidationError
@@ -425,6 +426,7 @@ def cmd_node_rename(remaining: list[str], flags: dict[str, str]) -> dict:
 
 
 @command("node.merge", description="Merge source node into target node",
+         permission_level=PermissionLevel.DESTRUCTIVE,
          params=[{"name": "source", "type": "string", "required": True},
                  {"name": "target", "type": "string", "required": True}],
          flags=[{"name": "force", "type": "flag", "help": "Skip preview and merge immediately"}])

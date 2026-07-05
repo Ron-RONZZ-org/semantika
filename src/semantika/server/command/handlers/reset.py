@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from lightercore.permissions import PermissionLevel
 from semantika.server.command.errors import CommandValidationError
 from semantika.server.command.registry import command
 
 
 @command("reset", description="Reset to fresh state", interactive=True,
+         permission_level=PermissionLevel.DESTRUCTIVE,
          form_type="reset-no-backup",
          params=[{"name": "path", "type": "string"}],
          flags=[{"name": "no-backup", "type": "flag", "help": "Skip backup"},
