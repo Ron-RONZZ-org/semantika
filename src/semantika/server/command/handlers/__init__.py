@@ -12,3 +12,4 @@ from . import review  # noqa: F401
 from . import llm  # noqa: F401
 from . import backup  # noqa: F401
 from . import reset  # noqa: F401
+from . import predicate_trash  # noqa: F401 — predicate trash management

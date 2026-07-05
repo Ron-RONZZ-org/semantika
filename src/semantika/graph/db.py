@@ -117,6 +117,18 @@ SCHEMA = {
             updated_at    TEXT NOT NULL
         )
     """,
+    "predicates_trash": """
+        CREATE TABLE IF NOT EXISTS predicates_trash (
+            predicate_id  TEXT PRIMARY KEY,
+            source        TEXT NOT NULL DEFAULT 'manual',
+            labels        TEXT NOT NULL DEFAULT '{}',
+            descriptions  TEXT NOT NULL DEFAULT '{}',
+            aliases       TEXT NOT NULL DEFAULT '[]',
+            created_at    TEXT NOT NULL,
+            updated_at    TEXT NOT NULL,
+            deleted_at    TEXT NOT NULL
+        )
+    """,
     "predicate_groups": """
         CREATE TABLE IF NOT EXISTS predicate_groups (
             uuid         TEXT PRIMARY KEY,
