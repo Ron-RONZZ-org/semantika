@@ -2,8 +2,9 @@
 
 Port of lighterbird's two-phase chat flow:
 1. Generate structured command from natural language
-2. Execute command and return result
-3. If no command matched, respond as plain chat
+2. Check permission level — gate destructive commands behind user confirm
+3. Execute command and return result
+4. If no command matched, respond as plain chat
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from lightercore.permissions import PermissionLevel
 from semantika.server.llm.provider import LLMProvider
 from semantika.server.command.registry import get_command_definitions
 
@@ -68,6 +70,12 @@ class ProfileSaveRequest(BaseModel):
     model: str = ""
     temperature: float = 0.7
     max_tokens: int = 2048
+
+
+class ConfirmRequest(BaseModel):
+    """User confirmation to execute a destructive LLM-generated command."""
+    tokens: list[str]
+    flags: dict[str, str] = {}
 
 
 # ── Config routes ────────────────────────────────────────────────────────
@@ -170,10 +178,28 @@ async def chat(req: ChatRequest):
         cmd = None
 
     if cmd and cmd.get("tokens"):
-        # Phase 2: Execute the command
-        from semantika.server.command.registry import dispatch
+        # Phase 2a: Permission check — gate destructive commands
+        from semantika.server.command.registry import dispatch, get_command_level, get_handler_metadata
         from semantika.server.command.errors import CommandError
 
+        cmd_path = ".".join(cmd["tokens"])
+        level = get_command_level(cmd_path)
+        if level >= PermissionLevel.DESTRUCTIVE:
+            meta = get_handler_metadata(cmd_path)
+            desc = meta.get("description", "") if meta else ""
+            return {
+                "type": "confirm",
+                "tokens": cmd["tokens"],
+                "flags": cmd.get("flags", {}),
+                "message": (
+                    f"The LLM wants to run a destructive command "
+                    f"(`!{' '.join(cmd['tokens'])}`).\n\n"
+                    f"{desc}\n\n"
+                    "Confirm to proceed."
+                ),
+            }
+
+        # Phase 2b: Execute the command
         try:
             result = dispatch(cmd["tokens"], cmd.get("flags", {}))
         except CommandError as e:
@@ -204,6 +230,33 @@ async def chat(req: ChatRequest):
     # Phase 3b: No command or summarization failed — plain chat or stub
     reply = await _safe_chat(messages + [{"role": "user", "content": req.message}])
     return {"reply": reply or _stub_response(req.message)["reply"]}
+
+
+@router.post("/confirm")
+async def confirm_command(req: ConfirmRequest) -> dict:
+    """Execute a command after user confirmation.
+
+    Called by the frontend after the user confirms a destructive
+    LLM-generated command in the confirmation modal.  Dispatches
+    directly without the permission gate — the user has approved it.
+    """
+    from semantika.server.command.errors import CommandError
+    from semantika.server.command.registry import dispatch
+
+    if not req.tokens:
+        raise HTTPException(status_code=400, detail="No command tokens provided.")
+
+    try:
+        result = dispatch(req.tokens, req.flags)
+    except CommandError as e:
+        raise HTTPException(status_code=400, detail={
+            "error": str(e), "suggestion": getattr(e, "suggestion", "")})
+
+    return {
+        "type": result.get("type", "status"),
+        "title": result.get("title", ""),
+        "data": result.get("data", result),
+    }
 
 
 # ── Stub fallback ────────────────────────────────────────────────────────
