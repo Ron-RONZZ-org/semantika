@@ -6,6 +6,7 @@ from typing import Any
 
 from semantika.server.command.errors import CommandValidationError
 from semantika.server.command.registry import command, group_command
+from semantika.server.llm.provider import get_provider
 
 
 @group_command("llm", description="Manage LLM provider configuration")
@@ -16,8 +17,7 @@ def cmd_llm_root(remaining: list[str], flags: dict[str, str]) -> dict:
 
 @command("llm.show", description="Show current LLM configuration")
 def cmd_llm_show(remaining: list[str], flags: dict[str, str]) -> dict:
-    from semantika.server.llm.provider import LLMProvider
-    p = LLMProvider()
+    p = get_provider()
     cfg = p.config
     return {"type": "status", "title": "LLM Configuration", "data": {
         "provider_type": cfg.provider_type, "has_api_key": bool(cfg.api_key),
@@ -30,8 +30,7 @@ def cmd_llm_show(remaining: list[str], flags: dict[str, str]) -> dict:
          flags=[{"name": "api_key", "type": "string"}, {"name": "base_url", "type": "string"},
                 {"name": "model", "type": "string"}, {"name": "alias", "type": "string"}])
 def cmd_llm_new(remaining: list[str], flags: dict[str, str]) -> dict:
-    from semantika.server.llm.provider import LLMProvider
-    p = LLMProvider()
+    p = get_provider()
     protocol = flags.get("provider_type") or (remaining[0] if remaining else "") or ""
     if not protocol:
         raise CommandValidationError("Missing protocol.", "Usage: !llm new openai|deepseek|ollama|custom [--api-key KEY]")
@@ -53,8 +52,7 @@ def cmd_llm_new(remaining: list[str], flags: dict[str, str]) -> dict:
          flags=[{"name": "api_key", "type": "string"}, {"name": "base_url", "type": "string"},
                 {"name": "model", "type": "string"}, {"name": "alias", "type": "string"}])
 def cmd_llm_set(remaining: list[str], flags: dict[str, str]) -> dict:
-    from semantika.server.llm.provider import LLMProvider
-    p = LLMProvider()
+    p = get_provider()
     if not flags:
         raise CommandValidationError("No settings provided.", "Usage: !llm set --model gpt-4 --api-key sk-...")
     cfg = p.config
@@ -76,32 +74,28 @@ def cmd_llm_set(remaining: list[str], flags: dict[str, str]) -> dict:
 
 @command("llm.clear", description="Clear LLM configuration")
 def cmd_llm_clear(remaining: list[str], flags: dict[str, str]) -> dict:
-    from semantika.server.llm.provider import LLMProvider
-    p = LLMProvider()
+    p = get_provider()
     p.clear_config()
     return {"type": "status", "title": "LLM Cleared", "data": {"_summary": "done"}}
 
 
 @command("llm.profiles", description="List saved LLM profiles")
 def cmd_llm_profiles(remaining: list[str], flags: dict[str, str]) -> dict:
-    from semantika.server.llm.provider import LLMProvider
-    p = LLMProvider()
+    p = get_provider()
     profiles = p.list_profiles()
     return {"type": "status", "title": "LLM Profiles", "data": {"profiles": profiles, "active_profile": p.active_profile_name}}
 
 
 @command("llm.profile.list", description="List saved LLM profiles")
 def cmd_llm_profile_list(remaining: list[str], flags: dict[str, str]) -> dict:
-    from semantika.server.llm.provider import LLMProvider
-    p = LLMProvider()
+    p = get_provider()
     profiles = p.list_profiles()
     return {"type": "status", "title": "LLM Profiles", "data": {"profiles": profiles, "active_profile": p.active_profile_name}}
 
 
 @command("llm.profile.show", description="Show active LLM profile")
 def cmd_llm_profile_show(remaining: list[str], flags: dict[str, str]) -> dict:
-    from semantika.server.llm.provider import LLMProvider
-    p = LLMProvider()
+    p = get_provider()
     cfg = p.config
     return {"type": "status", "title": "Active Profile", "data": {
         "provider_type": cfg.provider_type, "has_api_key": bool(cfg.api_key), "base_url": cfg.base_url,
@@ -115,11 +109,24 @@ def cmd_llm_profile_load(remaining: list[str], flags: dict[str, str]) -> dict:
     name = flags.get("name") or (remaining[0] if remaining else "") or ""
     if not name:
         raise CommandValidationError("Missing profile name.", "Usage: !llm profile load <name>")
-    from semantika.server.llm.provider import LLMProvider
-    p = LLMProvider()
+    p = get_provider()
     config = p.switch_to_profile(name)
     if config is None:
         raise CommandValidationError(f"Profile not found: {name}")
+    return {"type": "status", "title": "Profile Loaded",
+            "data": {"name": name, "protocol": config.provider_type, "model": config.model, "available": p.available}}
+
+
+@command("llm.profile.delete", description="Delete a saved LLM profile",
+         params=[{"name": "name", "type": "string", "required": True}])
+def cmd_llm_profile_delete(remaining: list[str], flags: dict[str, str]) -> dict:
+    name = flags.get("name") or (remaining[0] if remaining else "") or ""
+    if not name:
+        raise CommandValidationError("Missing profile name.", "Usage: !llm profile delete <name>")
+    p = get_provider()
+    if p.delete_profile(name):
+        return {"type": "status", "title": "Profile Deleted", "data": {"removed": [name]}}
+    raise CommandValidationError(f"Profile not found: {name}")
     return {"type": "status", "title": "Profile Loaded",
             "data": {"name": name, "protocol": config.provider_type, "model": config.model, "available": p.available}}
 
