@@ -39,7 +39,7 @@ class TestTrashAPI:
         client.post("/api/v1/graph/nodes/TRASH_DEL/delete?soft=true")
         resp = client.post(
             "/api/v1/command",
-            json={"tokens": ["trash", "delete"], "flags": {"id": "TRASH_DEL"}},
+            json={"tokens": ["node", "trash", "delete"], "flags": {"id": "TRASH_DEL"}},
         )
         assert resp.status_code == 200
         assert "Deleted" in str(resp.json()) or "deleted" in str(resp.json())

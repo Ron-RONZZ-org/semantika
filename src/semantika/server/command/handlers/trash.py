@@ -8,14 +8,14 @@ from semantika.server.command.errors import CommandValidationError
 from semantika.server.command.registry import command
 
 
-@command("trash.list", description="List trashed nodes")
+@command("node.trash.list", description="List trashed nodes")
 def cmd_trash_list(remaining: list[str], flags: dict[str, str]) -> dict:
     svc = get_services()
     items = svc["node"].list_trash()
     return {"type": "table", "data": items, "label": "Trash"}
 
 
-@command("trash.restore", description="Restore a trashed node",
+@command("node.trash.restore", description="Restore a trashed node",
          params=[{"name": "id", "type": "string", "required": True}])
 def cmd_trash_restore(remaining: list[str], flags: dict[str, str]) -> dict:
     svc = get_services()
@@ -28,7 +28,7 @@ def cmd_trash_restore(remaining: list[str], flags: dict[str, str]) -> dict:
     return {"type": "status", "data": {"message": f"Restored {restored.get('node_id', node_id)}"}}
 
 
-@command("trash.delete", description="Permanently delete one or more trashed nodes",
+@command("node.trash.delete", description="Permanently delete one or more trashed nodes",
          params=[{"name": "id", "type": "string"}])
 def cmd_trash_delete(remaining: list[str], flags: dict[str, str]) -> dict:
     svc = get_services()
@@ -57,7 +57,7 @@ def cmd_trash_delete(remaining: list[str], flags: dict[str, str]) -> dict:
     return {"type": "status", "data": {"message": msg, "errors": errors}}
 
 
-@command("trash.purge", description="Purge old trashed nodes",
+@command("node.trash.purge", description="Purge old trashed nodes",
          permission_level=PermissionLevel.DESTRUCTIVE,
          params=[{"name": "days", "type": "number", "default": 30}])
 def cmd_trash_purge(remaining: list[str], flags: dict[str, str]) -> dict:

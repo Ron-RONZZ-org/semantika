@@ -197,7 +197,7 @@ class TestPermissionGate:
 
     def test_blocks_destructive_trash_purge(self, client: TestClient):
         """LLM asking for !trash.purge returns type=confirm."""
-        TestPermissionGate._mock_cmd = {"tokens": ["trash", "purge"], "flags": {}}
+        TestPermissionGate._mock_cmd = {"tokens": ["node", "trash", "purge"], "flags": {}}
         resp = client.post("/api/v1/llm/chat", json={"message": "empty the trash"})
         assert resp.status_code == 200
         data = resp.json()

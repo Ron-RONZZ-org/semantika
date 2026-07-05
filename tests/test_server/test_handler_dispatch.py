@@ -34,39 +34,39 @@ def seeded(services: dict) -> dict:
 
 class TestTrashHandler:
     def test_trash_list_empty(self):
-        result = dispatch(["trash", "list"], {})
+        result = dispatch(["node", "trash", "list"], {})
         assert result["type"] == "table"
         assert result["label"] == "Trash"
 
     def test_trash_restore_not_found(self):
         with pytest.raises(Exception, match="not found in trash"):
-            dispatch(["trash", "restore"], {"id": "NONEXISTENT"})
+            dispatch(["node", "trash", "restore"], {"id": "NONEXISTENT"})
 
     def test_trash_delete(self, seeded):
         dispatch(["node", "delete"], {"id": "ALICE", "force": "1"})
-        result = dispatch(["trash", "delete"], {"id": "ALICE"})
+        result = dispatch(["node", "trash", "delete"], {"id": "ALICE"})
         assert "Permanently deleted" in result["data"]["message"]
 
     def test_trash_purge(self, seeded):
         dispatch(["node", "delete"], {"id": "ALICE", "force": "1"})
-        result = dispatch(["trash", "purge"], {"days": "0"})
+        result = dispatch(["node", "trash", "purge"], {"days": "0"})
         assert "Purged" in result["data"]["message"]
 
     def test_trash_purge_invalid_days(self):
         with pytest.raises(Exception, match="Invalid days"):
-            dispatch(["trash", "purge"], {"days": "abc"})
+            dispatch(["node", "trash", "purge"], {"days": "abc"})
 
     def test_trash_restore_missing_id(self):
         with pytest.raises(Exception, match="Specify a node ID"):
-            dispatch(["trash", "restore"], {})
+            dispatch(["node", "trash", "restore"], {})
 
     def test_trash_delete_missing_id(self):
         with pytest.raises(Exception, match="Specify one or more node IDs"):
-            dispatch(["trash", "delete"], {})
+            dispatch(["node", "trash", "delete"], {})
 
     def test_trash_purge_positive_days(self, seeded):
         dispatch(["node", "delete"], {"id": "ALICE", "force": "1"})
-        result = dispatch(["trash", "purge"], {"days": "999"})
+        result = dispatch(["node", "trash", "purge"], {"days": "999"})
         assert "Purged" in result["data"]["message"]
 
 
@@ -298,7 +298,7 @@ class TestCommandTree:
         tree = get_command_tree()
         names = [n["name"] for n in tree]
         for expected in ("node", "predicate", "triple", "unit", "graph",
-                         "trash", "review", "proof", "llm", "backup", "reset"):
+                         "review", "proof", "llm", "backup", "reset"):
             assert expected in names, f"Missing {expected} in command tree"
 
     def test_tree_leaves_have_descriptions(self):

@@ -97,7 +97,7 @@ If the backend is on a different port (e.g. 8001 is taken, or you used `--port 0
 
 ```bash
 # Terminal 1: start backend on custom port
-uv run uvicorn semantika.server.app:create_app --factory --port 8765
+uv run uvicorn semantika.server.app:create_app --factory --port 8765 --reload
 
 # Terminal 2: tell Vite proxy where the backend is
 SEMANTIKA_PORT=8765 npm run dev
@@ -182,10 +182,10 @@ The first run creates tables and seeds default predicates automatically.
 
 ```bash
 # Start with persistent data from ~/.local/share/semantika/
-uv run uvicorn semantika.server.app:create_app --factory --port 8001
+uv run uvicorn semantika.server.app:create_app --factory --port 8001 --reload
 
 # Start with an isolated temporary database (for testing)
-SEMANTIKA_DATA_DIR=/tmp/semantika-dev uv run uvicorn semantika.server.app:create_app --factory --port 8001
+SEMANTIKA_DATA_DIR=/tmp/semantika-dev uv run uvicorn semantika.server.app:create_app --factory --port 8001 --reload
 ```
 
 To import your existing A-semantika data:

@@ -8,14 +8,14 @@ from semantika.server.command.errors import CommandValidationError
 from semantika.server.command.registry import command
 
 
-@command("predicate-trash.list", description="List trashed predicates")
+@command("predicate.trash.list", description="List trashed predicates")
 def cmd_predicate_trash_list(remaining: list[str], flags: dict[str, str]) -> dict:
     svc = get_services()
     items = svc["predicate"].list_trash()
     return {"type": "table", "data": items, "label": "Predicate Trash"}
 
 
-@command("predicate-trash.restore", description="Restore a trashed predicate",
+@command("predicate.trash.restore", description="Restore a trashed predicate",
          params=[{"name": "predicate_id", "type": "string", "required": True}])
 def cmd_predicate_trash_restore(remaining: list[str], flags: dict[str, str]) -> dict:
     svc = get_services()
@@ -28,7 +28,7 @@ def cmd_predicate_trash_restore(remaining: list[str], flags: dict[str, str]) -> 
     return {"type": "status", "data": {"message": f"Restored predicate {restored.get('predicate_id', pred_id)}"}}
 
 
-@command("predicate-trash.delete", description="Permanently delete a trashed predicate",
+@command("predicate.trash.delete", description="Permanently delete a trashed predicate",
          params=[{"name": "predicate_id", "type": "string", "required": True}])
 def cmd_predicate_trash_delete(remaining: list[str], flags: dict[str, str]) -> dict:
     svc = get_services()
@@ -39,7 +39,7 @@ def cmd_predicate_trash_delete(remaining: list[str], flags: dict[str, str]) -> d
     return {"type": "status", "data": {"message": f"Permanently deleted predicate {pred_id}"}}
 
 
-@command("predicate-trash.purge", description="Empty the predicate trash permanently",
+@command("predicate.trash.purge", description="Empty the predicate trash permanently",
          permission_level=PermissionLevel.DESTRUCTIVE)
 def cmd_predicate_trash_purge(remaining: list[str], flags: dict[str, str]) -> dict:
     svc = get_services()

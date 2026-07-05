@@ -127,6 +127,28 @@ def cmd_triple_list(remaining: list[str], flags: dict[str, str]) -> dict:
     return {"type": "triple-list", "data": triples}
 
 
+@command("triple.search", description="Search triples by subject/predicate/object",
+         params=[{"name": "q", "type": "string", "required": True}],
+         flags=[{"name": "limit", "type": "number", "help": "Max results"}])
+def cmd_triple_search(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Search triples by subject, predicate, or object labels/IDs."""
+    svc = get_services()
+    q = flags.get("q") or (remaining[0] if remaining else "") or ""
+    if not q:
+        raise CommandValidationError("Enter a search query")
+    raw_limit = flags.get("limit", "50")
+    try:
+        limit = int(raw_limit)
+    except ValueError:
+        limit = 50
+    triples = svc["triple"].search_by_labels(subject=q, limit=limit)
+    if not triples:
+        triples = svc["triple"].search_by_labels(predicate=q, limit=limit)
+    if not triples:
+        triples = svc["triple"].search_by_labels(object=q, limit=limit)
+    return {"type": "triple-list", "data": triples, "label": f"Triples matching '{q}'"}
+
+
 @command("triple.view", description="View triples for a node",
          params=[{"name": "id", "type": "string", "required": True}])
 def cmd_triple_view(remaining: list[str], flags: dict[str, str]) -> dict:
