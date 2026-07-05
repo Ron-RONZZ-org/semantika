@@ -425,7 +425,7 @@ class TestResolveTripleType:
 
     def test_uri_default(self) -> None:
         """No flags -> defaults to URI type."""
-        from semantika.server.command.handlers.graph import _resolve_triple_type
+        from semantika.server.command.handlers.triple import _resolve_triple_type
         val, typ, dt, lang = _resolve_triple_type("some:value", {})
         assert val == "some:value"
         assert typ == "uri"
@@ -434,41 +434,41 @@ class TestResolveTripleType:
 
     def test_str_flag(self) -> None:
         """--str flag sets literal type."""
-        from semantika.server.command.handlers.graph import _resolve_triple_type
+        from semantika.server.command.handlers.triple import _resolve_triple_type
         val, typ, dt, lang = _resolve_triple_type("hello", {"str": "true"})
         assert typ == "literal"
         assert dt is None
 
     def test_bare_str_flag(self) -> None:
         """Bare --str (no value) also sets literal type."""
-        from semantika.server.command.handlers.graph import _resolve_triple_type
+        from semantika.server.command.handlers.triple import _resolve_triple_type
         val, typ, dt, lang = _resolve_triple_type("hello", {"str": ""})
         assert typ == "literal"
 
     def test_int_flag(self) -> None:
         """--int flag sets integer datatype."""
-        from semantika.server.command.handlers.graph import _resolve_triple_type
+        from semantika.server.command.handlers.triple import _resolve_triple_type
         val, typ, dt, lang = _resolve_triple_type("42", {"int": "true"})
         assert typ == "literal"
         assert dt == "xsd:integer"
 
     def test_float_flag(self) -> None:
         """--float flag sets decimal datatype."""
-        from semantika.server.command.handlers.graph import _resolve_triple_type
+        from semantika.server.command.handlers.triple import _resolve_triple_type
         val, typ, dt, lang = _resolve_triple_type("3.14", {"float": "true"})
         assert typ == "literal"
         assert dt == "xsd:decimal"
 
     def test_bool_flag(self) -> None:
         """--bool flag sets boolean datatype."""
-        from semantika.server.command.handlers.graph import _resolve_triple_type
+        from semantika.server.command.handlers.triple import _resolve_triple_type
         val, typ, dt, lang = _resolve_triple_type("true", {"bool": "true"})
         assert typ == "literal"
         assert dt == "xsd:boolean"
 
     def test_katex_flag(self) -> None:
         """--katex overrides object value and sets KaTeX datatype."""
-        from semantika.server.command.handlers.graph import _resolve_triple_type
+        from semantika.server.command.handlers.triple import _resolve_triple_type
         val, typ, dt, lang = _resolve_triple_type("ignored", {"katex": "E=mc^2"})
         assert val == "E=mc^2"
         assert typ == "literal"
@@ -476,13 +476,13 @@ class TestResolveTripleType:
 
     def test_katex_strips_dollar_signs(self) -> None:
         """--katex strips $ delimiters."""
-        from semantika.server.command.handlers.graph import _resolve_triple_type
+        from semantika.server.command.handlers.triple import _resolve_triple_type
         val, typ, dt, lang = _resolve_triple_type("ignored", {"katex": "$E=mc^2$"})
         assert val == "E=mc^2"
 
     def test_str_with_lang(self) -> None:
         """--str with --lang sets language tag."""
-        from semantika.server.command.handlers.graph import _resolve_triple_type
+        from semantika.server.command.handlers.triple import _resolve_triple_type
         val, typ, dt, lang = _resolve_triple_type("bonjour", {"str": "true", "lang": "fr"})
         assert typ == "literal"
         assert lang == "fr"
@@ -490,7 +490,7 @@ class TestResolveTripleType:
     def test_str_takes_precedence_over_int(self) -> None:
         """Flag priority: katex > str_dosiero > str > int > float > bool > uri.
         str comes first in the elif chain, so it wins over int."""
-        from semantika.server.command.handlers.graph import _resolve_triple_type
+        from semantika.server.command.handlers.triple import _resolve_triple_type
         val, typ, dt, lang = _resolve_triple_type("42", {"str": "true", "int": "true"})
         assert typ == "literal"
         assert dt is None  # str branch doesn't set datatype
@@ -503,7 +503,7 @@ class TestResolveObjectNode:
         """Resolves a unique prefix to a node ID."""
         from semantika.graph.db import get_services
         svc = get_services()
-        from semantika.server.command.handlers.graph import _resolve_object_node
+        from semantika.server.command.handlers.triple import _resolve_object_node
         nid = _resolve_object_node(svc, "ALI")
         assert nid == "ALICE"
 
@@ -511,7 +511,8 @@ class TestResolveObjectNode:
         """Non-existent reference raises CommandValidationError."""
         from semantika.graph.db import get_services
         svc = get_services()
-        from semantika.server.command.handlers.graph import _resolve_object_node, CommandValidationError
+        from semantika.server.command.errors import CommandValidationError
+        from semantika.server.command.handlers.triple import _resolve_object_node
         with pytest.raises(CommandValidationError, match="not found"):
             _resolve_object_node(svc, "NONEXISTENT")
 
@@ -523,7 +524,7 @@ class TestFindTriple:
         """Finds a triple by its literal object value."""
         from semantika.graph.db import get_services
         svc = get_services()
-        from semantika.server.command.handlers.graph import _find_triple
+        from semantika.server.command.handlers.triple import _find_triple
         triple = _find_triple(svc, "ALICE", "ex:knows", "BOB")
         assert triple is not None
         assert triple["subject_id"] == "ALICE"
@@ -532,6 +533,6 @@ class TestFindTriple:
         """Non-existent triple returns None."""
         from semantika.graph.db import get_services
         svc = get_services()
-        from semantika.server.command.handlers.graph import _find_triple
+        from semantika.server.command.handlers.triple import _find_triple
         triple = _find_triple(svc, "ALICE", "ex:knows", "NONEXISTENT")
         assert triple is None
