@@ -29,6 +29,8 @@ def cmd_review_start(remaining: list[str], flags: dict[str, str]) -> dict:
     except ValueError:
         raise CommandValidationError(f"Invalid limit value: {raw_limit}")
     session = svc["review"].create_session(mode=mode, date_from=date_from, date_to=date_to, limit=limit)
+    if mode == "quiz":
+        return {"type": "quiz", "title": "Quiz", "data": session}
     return {"type": "status", "data": session}
 
 

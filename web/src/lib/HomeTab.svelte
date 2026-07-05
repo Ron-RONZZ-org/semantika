@@ -104,6 +104,13 @@
           }
         }
 
+        // Quiz mode: open interactive quiz panel
+        if (result.type === "quiz") {
+          tabStore.open("quiz", result.title || "Quiz", result.data, {});
+          scrollToBottom();
+          return;
+        }
+
         // Transform "table" results into a format StatusPopup can render
         if (result.type === "table") {
           popup.show("status", result.title || result.label || "Results", {

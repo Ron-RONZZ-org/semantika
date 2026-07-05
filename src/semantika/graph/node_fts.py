@@ -140,6 +140,20 @@ class NodeFtsMixin:
                 node_id, rowid, exc,
             )
 
+    def optimize_fts(self) -> None:
+        """Optimize the FTS5 index — merges b-tree segments.
+
+        Should be called periodically (e.g. every ~50 node creates) to
+        prevent search-performance degradation from accumulated incremental
+        updates. Non-critical — failures are silently logged.
+        """
+        try:
+            self.db.execute(
+                "INSERT INTO nodes_fts(nodes_fts) VALUES('optimize')"
+            )
+        except sqlite3.DatabaseError as exc:
+            logger.debug("FTS5 optimize failed (non-critical): %s", exc)
+
     def _rebuild_fts(self) -> None:
         """Rebuild the nodes FTS index from the content table.
 

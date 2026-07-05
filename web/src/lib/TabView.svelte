@@ -8,6 +8,7 @@
   import HelpPopup from "./HelpPopup.svelte";
   import GraphView from "./GraphView.svelte";
   import FormTab from "./FormTab.svelte";
+  import QuizPanel from "./QuizPanel.svelte";
   import KeyboardShortcutOverlay from "./KeyboardShortcutOverlay.svelte";
 
   let showGlobalHelp = $state(false);
@@ -112,6 +113,8 @@
         <ErrorPopup data={tabStore.active.data} />
       {:else if tabStore.active.type === "help"}
         <HelpPopup data={tabStore.active.data} />
+      {:else if tabStore.active.type === "quiz"}
+        <QuizPanel data={tabStore.active.data} />
       {:else if tabStore.active.type === "form"}
         <FormTab data={tabStore.active.data} />
       {:else}
@@ -199,6 +202,7 @@
       loading: "\u23f3",
       chat: "\ud83d\udcac",
       form: "\u270f",
+      quiz: "?",
     };
     return icons[type] || "\u2022";
   }

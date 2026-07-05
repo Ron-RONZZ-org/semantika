@@ -39,8 +39,11 @@ FTS_CONFIG = FTSConfig(
 class NodeService(NodeFtsMixin, CRUDService):
     """Service for managing knowledge graph nodes with FTS5 search and label support."""
 
+    _OPTIMIZE_INTERVAL = 50
+
     def __init__(self, db: SemantikaDB) -> None:
         super().__init__(db=db, table="nodes", trash_table="nodes_trash", pk_column="node_id")
+        self._create_count = 0
 
     # ── Node ID Resolution ──────────────────────────────────────────────
 
@@ -149,6 +152,16 @@ class NodeService(NodeFtsMixin, CRUDService):
             raise ValueError(
                 f"Node with ID '{node_id_val}' already exists."
             ) from e
+
+        # Throttled FTS5 optimization: merge b-tree segments periodically
+        # to prevent search-performance degradation from incremental updates.
+        self._create_count += 1
+        if self._create_count >= self._OPTIMIZE_INTERVAL:
+            self._create_count = 0
+            try:
+                self.optimize_fts()
+            except Exception:
+                logger.debug("FTS5 optimize skipped (non-critical)", exc_info=True)
 
         return dict(raw)
 
