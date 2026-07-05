@@ -256,10 +256,9 @@ def update_predicate(predicate_id: str, data: PredicateUpdate):
 
 @router.delete("/predicates/{predicate_id}")
 def delete_predicate(predicate_id: str):
-    """Permanently delete a predicate."""
+    """Delete a predicate (moves to trash if supported)."""
     svc = _svc()
-    svc["triple"].remove(predicate_id=predicate_id)
-    deleted = svc["predicate"].delete(predicate_id)
+    deleted = svc["predicate"].delete(predicate_id, soft=True)
     if not deleted:
         raise HTTPException(404, f"Predicate not found: {predicate_id}")
     return {"deleted": True}

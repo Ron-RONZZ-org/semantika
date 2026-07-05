@@ -22,13 +22,69 @@ class PredicateService(CRUDService):
     """Service for managing predicates (semantic properties)."""
 
     def __init__(self, db: SemantikaDB) -> None:
-        super().__init__(db=db, table="predicates", pk_column="predicate_id")
+        super().__init__(db=db, table="predicates", pk_column="predicate_id",
+                         trash_table="predicates_trash")
 
-    # ── Delete ─────────────────────────────────────────────────────────
+    # ── Delete / Trash ──────────────────────────────────────────────────
 
-    def delete(self, pk: str) -> bool:
-        """Permanently delete a predicate (no trash table for predicates)."""
+    def delete(self, pk: str, soft: bool = True) -> bool:
+        """Delete a predicate: soft (trash) or permanent."""
+        if soft and self._trash_table:
+            return self._move_to_trash(pk)
         return super().delete(pk, soft=False)
+
+    def _move_to_trash(self, predicate_id: str) -> bool:
+        """Move predicate to trash, cascading triple deletion."""
+        entry = self.db.execute_one(
+            "SELECT predicate_id, source, labels, descriptions, aliases, "
+            "created_at, updated_at FROM predicates WHERE predicate_id = ?",
+            (predicate_id,),
+        )
+        if not entry:
+            return False
+        entry["deleted_at"] = now()
+        entry.setdefault("updated_at", entry["deleted_at"])
+        columns = list(entry.keys())
+        values = [entry[k] for k in columns]
+        ph = ", ".join(["?"] * len(columns))
+        with self.db.transaction() as conn:
+            self._remove_from_fts(predicate_id, conn=conn)
+            conn.execute("DELETE FROM triples WHERE predicate_id = ?", (predicate_id,))
+            conn.execute(f"INSERT OR REPLACE INTO predicates_trash ({', '.join(columns)}) VALUES ({ph})", values)
+            conn.execute("DELETE FROM predicates WHERE predicate_id = ?", (predicate_id,))
+        return True
+
+    # ── Trash management ────────────────────────────────────────────────
+
+    def list_trash(self) -> list[dict]:
+        """List all trashed predicates."""
+        return self.db.execute("SELECT * FROM predicates_trash ORDER BY deleted_at DESC")
+
+    def restore_from_trash(self, predicate_id: str) -> dict | None:
+        """Restore a trashed predicate; returns None if not found."""
+        entry = self.db.execute_one("SELECT * FROM predicates_trash WHERE predicate_id = ?", (predicate_id,))
+        if not entry:
+            return None
+        restored = dict(entry)
+        restored.pop("deleted_at", None)
+        with self.db.transaction() as conn:
+            self._remove_from_fts(predicate_id, conn=conn)
+            conn.execute("DELETE FROM predicates_trash WHERE predicate_id = ?", (predicate_id,))
+            restored["updated_at"] = now()
+            cols = [c for c in restored.keys() if c != "deleted_at"]
+            vals = [restored[c] for c in cols]
+            ph = ", ".join(["?"] * len(cols))
+            conn.execute(f"INSERT OR REPLACE INTO predicates ({', '.join(cols)}) VALUES ({ph})", vals)
+            self._index_fts(predicate_id, conn=conn)
+        return self.get(predicate_id)
+
+    def empty_trash(self) -> int:
+        """Permanently delete all trashed predicates."""
+        items = self.db.execute("SELECT COUNT(*) AS cnt FROM predicates_trash")
+        count = items[0]["cnt"] if items else 0
+        if count > 0:
+            self.db.execute("DELETE FROM predicates_trash")
+        return count
 
     # ── FTS5 Management ──────────────────────────────────────────────
 

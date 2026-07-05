@@ -152,7 +152,7 @@ class TestPredicateCommand:
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert "Deleted" in str(data)
+        assert "trash" in str(data)
 
 
 # ── Predicate advanced commands ────────────────────────────────────────
@@ -213,7 +213,7 @@ class TestPredicateDeletePrefix:
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert "Deleted" in str(data)
+        assert "trash" in str(data)
         # Verify kept predicate still exists
         keep = client.post(
             "/api/v1/command",

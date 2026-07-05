@@ -195,12 +195,11 @@ def cmd_predicate_delete(remaining: list[str], flags: dict[str, str]) -> dict:
     errors = []
     for pid in ids:
         try:
-            svc["triple"].remove(predicate_id=pid)
-            svc["predicate"].delete(pid)
+            svc["predicate"].delete(pid, soft=True)
             deleted += 1
         except Exception as e:
             errors.append(f"{pid}: {e}")
-    msg = f"Deleted {deleted} predicate(s)"
+    msg = f"Moved {deleted} predicate(s) to trash"
     if errors:
         msg += f" ({len(errors)} error(s))"
     return {"type": "status", "data": {"message": msg, "errors": errors}}
