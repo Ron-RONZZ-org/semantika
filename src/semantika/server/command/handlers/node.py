@@ -116,7 +116,7 @@ def cmd_node_delete(remaining: list[str], flags: dict[str, str]) -> dict:
     if pos_id:
         ids.append(pos_id)
     for k, v in flags.items():
-        if k.startswith("_") and v:
+        if k.startswith("_") and k[1:].isdigit() and v:
             ids.append(v)
     prefix = flags.get("prefix") or ""
     if prefix:

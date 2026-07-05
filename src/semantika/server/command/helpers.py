@@ -20,7 +20,13 @@ def resolve_group(svc: dict, name: str) -> dict:
 
 
 def parse_lang_tag_pairs(text: str | list[str]) -> dict[str, str]:
-    """Parse ``LANG::TEXT`` or ``LANG:TEXT`` pairs into a dict."""
+    """Parse ``LANG::TEXT`` or ``LANG:TEXT`` pairs into a dict.
+
+    When *text* is a string, tokens are split on whitespace **and**
+    commas (``,`` is treated as a separator).  Each token must contain
+    a ``::`` or ``:`` delimiter to separate the language tag from the
+    value.
+    """
     result: dict[str, str] = {}
     if isinstance(text, str):
         items = [t.strip() for t in text.replace(",", " ").split() if t.strip()]

@@ -8,6 +8,7 @@ FTS5 management is in ``node_fts.py`` (NodeFtsMixin).
 
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import logging
 import sqlite3
@@ -221,7 +222,8 @@ class NodeService(NodeFtsMixin, CRUDService):
     def _move_to_trash(self, node_id: str) -> None:
         """Move a node to the trash table, removing related triples first."""
         entry = self.db.execute_one(
-            f"SELECT * FROM nodes WHERE node_id = ?", (node_id,)
+            "SELECT node_id, labels, label_text, definitions, definition_text, "
+            "created_at, updated_at FROM nodes WHERE node_id = ?", (node_id,)
         )
         if not entry:
             return
@@ -473,7 +475,6 @@ class NodeService(NodeFtsMixin, CRUDService):
 
     def get_trash_older_than(self, days: int, limit: int = 1000) -> list[dict]:
         """Get trash entries older than *days*."""
-        import datetime as _dt
         cutoff = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=days)
         return self.db.execute(
             "SELECT * FROM nodes_trash WHERE deleted_at < ? LIMIT ?",

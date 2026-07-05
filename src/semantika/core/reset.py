@@ -76,7 +76,7 @@ def reset_to_fresh_state(
                 result["credentials_cleared"] += 1
             except _kr.errors.PasswordDeleteError:
                 pass
-            except Exception as exc:
-                logger.debug("Could not clear keyring %s: %s", service, exc)
+            except Exception:
+                logger.exception("Could not clear keyring %s", service)
 
     return result

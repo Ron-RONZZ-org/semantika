@@ -228,6 +228,23 @@ class LLMProvider:
 
     # ── Chat ─────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _validate_base_url(url: str) -> None:
+        """Ensure the base URL is secure (HTTPS or localhost)."""
+        if not url:
+            return
+        import urllib.parse as _up
+        parsed = _up.urlparse(url)
+        if parsed.scheme not in ("https", "http"):
+            return  # will fail on connect, not our problem
+        if parsed.scheme == "http":
+            host = parsed.hostname or ""
+            if host not in ("127.0.0.1", "localhost"):
+                raise ValueError(
+                    f"Insecure LLM base URL: {url}. "
+                    "Use HTTPS for remote endpoints or http://localhost for local models."
+                )
+
     async def chat(
         self,
         messages: list[dict],
@@ -236,6 +253,8 @@ class LLMProvider:
         """Send a chat completion request and return the response text."""
         if not self._available:
             return "LLM is not configured. Please configure a provider first."
+
+        self._validate_base_url(self.config.base_url)
 
         headers = {
             "Content-Type": "application/json",

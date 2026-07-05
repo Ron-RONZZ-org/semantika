@@ -34,8 +34,7 @@ def get_db() -> SemantikaDB:
     if _db_instance is None:
         ensure_dirs()
         _db_instance = SemantikaDB(get_db_path())
-        _db_instance._get_conn().execute("PRAGMA journal_mode=WAL")
-        _db_instance._get_conn().execute("PRAGMA foreign_keys=ON")
+        # WAL and foreign_keys pragmas are set by SemantikaDB._get_conn()
     return _db_instance
 
 
@@ -85,7 +84,7 @@ def get_services() -> dict[str, Any]:
 
 SCHEMA = {
     "nodes": """
-        CREATE TABLE nodes (
+        CREATE TABLE IF NOT EXISTS nodes (
             node_id       TEXT PRIMARY KEY,
             labels        TEXT NOT NULL DEFAULT '{}',   -- JSON: {"en": "Label"}
             label_text    TEXT NOT NULL DEFAULT '',
@@ -96,7 +95,7 @@ SCHEMA = {
         )
     """,
     "nodes_trash": """
-        CREATE TABLE nodes_trash (
+        CREATE TABLE IF NOT EXISTS nodes_trash (
             node_id       TEXT PRIMARY KEY,
             labels        TEXT NOT NULL DEFAULT '{}',
             label_text    TEXT NOT NULL DEFAULT '',
@@ -108,7 +107,7 @@ SCHEMA = {
         )
     """,
     "predicates": """
-        CREATE TABLE predicates (
+        CREATE TABLE IF NOT EXISTS predicates (
             predicate_id  TEXT PRIMARY KEY,
             source        TEXT NOT NULL DEFAULT 'manual',
             labels        TEXT NOT NULL DEFAULT '{}',   -- JSON: {"en": "type"}
@@ -119,7 +118,7 @@ SCHEMA = {
         )
     """,
     "predicate_groups": """
-        CREATE TABLE predicate_groups (
+        CREATE TABLE IF NOT EXISTS predicate_groups (
             uuid         TEXT PRIMARY KEY,
             group_name   TEXT NOT NULL UNIQUE,
             created_at   TEXT NOT NULL,
@@ -127,7 +126,7 @@ SCHEMA = {
         )
     """,
     "predicate_group_members": """
-        CREATE TABLE predicate_group_members (
+        CREATE TABLE IF NOT EXISTS predicate_group_members (
             uuid           TEXT PRIMARY KEY,
             group_uuid     TEXT NOT NULL REFERENCES predicate_groups(uuid),
             predicate_id   TEXT NOT NULL REFERENCES predicates(predicate_id),
@@ -136,7 +135,7 @@ SCHEMA = {
         )
     """,
     "triples": """
-        CREATE TABLE triples (
+        CREATE TABLE IF NOT EXISTS triples (
             subject_id      TEXT NOT NULL REFERENCES nodes(node_id),
             predicate_id    TEXT NOT NULL REFERENCES predicates(predicate_id),
             object_type     TEXT NOT NULL DEFAULT 'uri',   -- 'uri' or 'literal'
@@ -159,6 +158,11 @@ TRIPLES_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_triples_osp ON triples(object_value, object_type, predicate_id, subject_id)",
     "CREATE INDEX IF NOT EXISTS idx_triples_pred_subj ON triples(predicate_id, subject_id)",
 ]
+
+# Case-insensitive lookup index for node_id (used by COLLATE NOCASE queries)
+NODES_NOCASE_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_nodes_node_id_nocase ON nodes(node_id COLLATE NOCASE)"
+)
 
 # Review (recenzi) schema
 REVIEW_SCHEMA = {
@@ -214,27 +218,18 @@ def init_db() -> None:
     db = get_db()
     conn = db._get_conn()
 
-    # Create all tables
-    for table, sql in SCHEMA.items():
-        cursor = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            (table,),
-        )
-        if cursor.fetchone() is None:
-            conn.executescript(sql)
+    # Create all tables (IF NOT EXISTS handles idempotency)
+    for sql in SCHEMA.values():
+        conn.execute(sql)
 
     # Create indexes
     for idx_sql in TRIPLES_INDEXES:
         conn.execute(idx_sql)
+    conn.execute(NODES_NOCASE_INDEX)
 
     # Create review/proof tables
-    for table, sql in {**REVIEW_SCHEMA, **PROOF_SCHEMA}.items():
-        cursor = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            (table,),
-        )
-        if cursor.fetchone() is None:
-            conn.executescript(sql)
+    for sql in {**REVIEW_SCHEMA, **PROOF_SCHEMA}.values():
+        conn.execute(sql)
 
     # Create FTS tables
     _ensure_nodes_fts(conn)

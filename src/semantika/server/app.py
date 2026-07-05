@@ -73,12 +73,15 @@ def create_app() -> FastAPI:
     app.include_router(unit.router, prefix="/api/v1")
     app.include_router(files.router, prefix="/api/v1/files")
 
-    # Static files (Svelte SPA)
-    dist = Path(__file__).resolve().parent.parent.parent.parent / "web" / "dist"
-    if dist.is_dir():
+    # Static files (Svelte SPA) — overridable via SEMANTIKA_STATIC_DIR
+    static_dir = os.environ.get("SEMANTIKA_STATIC_DIR") or (
+        Path(__file__).resolve().parent.parent.parent.parent / "web" / "dist"
+    )
+    static_path = Path(static_dir)
+    if static_path.is_dir():
         app.mount(
             "/",
-            StaticFiles(directory=str(dist), html=True),
+            StaticFiles(directory=str(static_path), html=True),
             name="static",
         )
 

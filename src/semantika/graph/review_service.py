@@ -281,16 +281,23 @@ class ReviewService:
 
         return session
 
+    _LABEL_TABLES: dict[str, tuple[str, str]] = {
+        "nodes": ("node_id", "labels"),
+        "predicates": ("predicate_id", "labels"),
+    }
+
     def _resolve_label(self, table: str, pk: str) -> str:
         """Resolve a display label from nodes or predicates table."""
-        column = "labels" if table == "nodes" else "labels"
+        lookup = self._LABEL_TABLES.get(table)
+        if lookup is None:
+            return pk
+        pk_col, label_col = lookup
         row = self.db.execute_one(
-            f"SELECT {column} FROM {table} WHERE "
-            f"{'node_id' if table == 'nodes' else 'predicate_id'} = ?",
+            f"SELECT {label_col} FROM {table} WHERE {pk_col} = ?",
             (pk,),
         )
         if row:
-            return self._extract_first_label(row[column]) or pk
+            return self._extract_first_label(row[label_col]) or pk
         return pk
 
     def _resolve_object_label(self, result: dict) -> str:

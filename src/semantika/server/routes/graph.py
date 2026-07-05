@@ -132,12 +132,16 @@ async def rename_node(node_id: str, data: NodeRename):
         raise HTTPException(400, str(e))
 
 
+class PredicateRename(BaseModel):
+    new_id: str
+
+
 @router.patch("/predicates/{predicate_id}/rename")
-async def rename_predicate(predicate_id: str, new_id: str):
+async def rename_predicate(predicate_id: str, data: PredicateRename):
     """Rename a predicate's predicate_id, cascading to all references."""
     svc = _svc()["predicate"]
     try:
-        pred = svc.update_predicate_id(predicate_id, new_id)
+        pred = svc.update_predicate_id(predicate_id, data.new_id)
         return {"predicate": pred}
     except ValueError as e:
         raise HTTPException(400, str(e))
@@ -251,11 +255,11 @@ def update_predicate(predicate_id: str, data: PredicateUpdate):
 
 
 @router.delete("/predicates/{predicate_id}")
-def delete_predicate(predicate_id: str, soft: bool = True):
-    """Delete a predicate."""
+def delete_predicate(predicate_id: str):
+    """Permanently delete a predicate."""
     svc = _svc()
     svc["triple"].remove(predicate_id=predicate_id)
-    deleted = svc["predicate"].delete(predicate_id, soft=soft)
+    deleted = svc["predicate"].delete(predicate_id)
     if not deleted:
         raise HTTPException(404, f"Predicate not found: {predicate_id}")
     return {"deleted": True}

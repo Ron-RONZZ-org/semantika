@@ -26,19 +26,8 @@ class PredicateService(CRUDService):
 
     # ── Delete ─────────────────────────────────────────────────────────
 
-    def delete(self, pk: str, soft: bool = True) -> bool:
-        """Delete a predicate.
-
-        Predicates do not have a trash table — the *soft* parameter is
-        accepted for interface compatibility but always performs a
-        permanent delete. Use ``soft=False`` explicitly to avoid confusion.
-        """
-        if soft:
-            logger.warning(
-                "Predicate delete called with soft=True — no trash table exists, "
-                "performing permanent delete of %s",
-                pk,
-            )
+    def delete(self, pk: str) -> bool:
+        """Permanently delete a predicate (no trash table for predicates)."""
         return super().delete(pk, soft=False)
 
     # ── FTS5 Management ──────────────────────────────────────────────

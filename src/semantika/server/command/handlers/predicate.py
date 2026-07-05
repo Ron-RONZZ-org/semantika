@@ -189,7 +189,7 @@ def cmd_predicate_delete(remaining: list[str], flags: dict[str, str]) -> dict:
     for pid in ids:
         try:
             svc["triple"].remove(predicate_id=pid)
-            svc["predicate"].delete(pid, soft=True)
+            svc["predicate"].delete(pid)
             deleted += 1
         except Exception as e:
             errors.append(f"{pid}: {e}")
