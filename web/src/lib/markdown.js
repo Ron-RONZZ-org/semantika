@@ -21,7 +21,10 @@ export function renderMarkdown(text) {
 
   h = h.replace(
     /\[([^\]]+)\]\(([^)]+)\)/g,
-    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
+    (_, text, url) => {
+      const sanitized = url.match(/^(https?:\/\/|mailto:)/i) ? url : "#";
+      return `<a href="${sanitized}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+    },
   );
 
   h = h.replace(/^### (.+)$/gm, "<h3>$1</h3>");

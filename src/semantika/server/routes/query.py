@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import re
 import sqlite3
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from semantika.graph.db import get_db_path, get_services
+
+MAX_RAW_RESULTS = 1000
 
 router = APIRouter()
 
@@ -73,6 +76,13 @@ async def import_turtle(req: ImportRequest):
     return stats
 
 
+def _strip_sql_comments(sql: str) -> str:
+    """Remove SQL comments to prevent comment-based bypass of statement checks."""
+    sql = re.sub(r"/\*.*?\*/", "", sql, flags=re.DOTALL)
+    sql = re.sub(r"--.*$", "", sql, flags=re.MULTILINE)
+    return sql.strip()
+
+
 class RawQuery(BaseModel):
     query: str
 
@@ -102,14 +112,16 @@ async def raw_query(req: RawQuery):
     modifications are possible regardless of query content.  Only
     ``SELECT`` statements are accepted.
     """
-    query = req.query.strip()
-    if not query.upper().startswith("SELECT"):
+    stripped = _strip_sql_comments(req.query)
+    if not stripped.upper().startswith("SELECT"):
         raise HTTPException(400, "Only SELECT queries are allowed")
     try:
         conn = _readonly_conn()
-        cursor = conn.execute(query)
-        rows = [dict(r) for r in cursor.fetchall()]
+        cursor = conn.execute(stripped)
+        rows = [dict(r) for r in cursor.fetchmany(MAX_RAW_RESULTS + 1)]
+        truncated = len(rows) > MAX_RAW_RESULTS
+        rows = rows[:MAX_RAW_RESULTS]
         conn.close()
-        return {"results": rows, "count": len(rows)}
+        return {"results": rows, "count": len(rows), "truncated": truncated}
     except Exception as e:
         raise HTTPException(400, f"Query failed: {e}")

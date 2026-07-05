@@ -109,18 +109,16 @@ async def get_attachments(node_id: str):
 
     nid = node["node_id"]
     file_paths = svc["triple"].get_by_sp(nid, ":hasFilePath")
-    # Batch-fetch mime and size predicates to avoid N+1
     mime_triples = svc["triple"].get_by_sp(nid, ":hasFileMime")
     size_triples = svc["triple"].get_by_sp(nid, ":hasFileSize")
-    mime_map = {t["object_value"]: t for t in mime_triples}
-    size_map = {t["object_value"]: t for t in size_triples}
+    # Zip by insertion order — attach_file always inserts path, mime,
+    # then size per file, and get_by_sp returns in rowid order.
     result = []
-    for fp in file_paths:
-        path_str = fp["object_value"]
+    for i, fp in enumerate(file_paths):
         result.append({
-            "path": path_str,
-            "mime": path_str in mime_map,
-            "size": path_str in size_map,
+            "path": fp["object_value"],
+            "mime": mime_triples[i]["object_value"] if i < len(mime_triples) else None,
+            "size": size_triples[i]["object_value"] if i < len(size_triples) else None,
         })
     return {"attachments": result}
 

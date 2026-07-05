@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 @command("stats", description="Graph statistics")
 def cmd_stats(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Show graph statistics."""
     svc = get_services()
     return {"type": "status", "data": svc["triple"].get_stats()}
 
@@ -28,6 +29,7 @@ def cmd_stats(remaining: list[str], flags: dict[str, str]) -> dict:
          flags=[{"name": "output", "type": "string", "help": "Output file path"},
                 {"name": "base_uri", "type": "string", "help": "Base URI"}])
 def cmd_export(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Export the graph in Turtle (.ttl) format."""
     svc = get_services()
     base_uri = flags.get("base_uri", "https://example.org/")
     ttl = svc["triple"].export_turtle(base_uri=base_uri)
@@ -47,6 +49,7 @@ def cmd_export(remaining: list[str], flags: dict[str, str]) -> dict:
 @command("import", description="Import Turtle data",
          params=[{"name": "data", "type": "string", "required": True}])
 def cmd_import(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Import Turtle (.ttl) data into the graph."""
     svc = get_services()
     ttl_content = flags.get("data") or (remaining[0] if remaining else "")
     if not ttl_content:
@@ -66,6 +69,7 @@ def cmd_import(remaining: list[str], flags: dict[str, str]) -> dict:
                 {"name": "date_to", "type": "string", "help": "End date"},
                 {"name": "limit", "type": "number", "help": "Max results"}])
 def cmd_search(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Full-text search across nodes and predicates."""
     svc = get_services()
     q = flags.get("q") or (remaining[0] if remaining else "")
     if not q:
@@ -92,6 +96,7 @@ def cmd_search(remaining: list[str], flags: dict[str, str]) -> dict:
 @command("view", description="View all triples for a node",
          params=[{"name": "id", "type": "string", "required": True}])
 def cmd_view(remaining: list[str], flags: dict[str, str]) -> dict:
+    """View a node, predicate, or triple by ID."""
     svc = get_services()
     node_id = flags.get("id") or (remaining[0] if remaining else "")
     if not node_id:

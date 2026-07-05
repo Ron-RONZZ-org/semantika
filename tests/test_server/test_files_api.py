@@ -19,14 +19,14 @@ os.environ["SEMANTIKA_DATA_DIR"] = str(TEST_DATA_DIR)
 from semantika.server.app import create_app
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="class")
 def client() -> TestClient:
     app = create_app()
     with TestClient(app) as c:
         yield c
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="class")
 def seeded_client(client: TestClient) -> TestClient:
     """Ensure a test node exists."""
     client.post(
@@ -93,6 +93,43 @@ class TestFileAttachAPI:
             json={"node_id": "FILENODE", "source": "ftp://bad-scheme.com/file.txt"},
         )
         assert resp.status_code == 400
+
+    def test_en_loko_attach(self, seeded_client: TestClient):
+        """Attach via en_loko (reference-only, no file operation)."""
+        resp = seeded_client.post(
+            "/api/v1/files/attach",
+            json={"node_id": "FILENODE", "source": "/path/to/reference.txt", "en_loko": True},
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert len(data["triples"]) == 1  # only :hasFilePath, no MIME/size
+        assert data["triples"][0]["predicate_id"] == ":hasFilePath"
+
+    def test_get_after_copy_attach(self, seeded_client: TestClient, tmp_path: Path):
+        """GET /by-node returns correct path and mime after a copy attach."""
+        # Create a dedicated node for this test to avoid collision with test_copy_file
+        seeded_client.post(
+            "/api/v1/graph/nodes",
+            json={"node_id": "AFTERCOPY", "labels": {"en": "After Copy Test"}},
+        )
+        src = tmp_path / "hello_world.txt"
+        src.write_text("hello world")
+        attach_resp = seeded_client.post(
+            "/api/v1/files/attach",
+            json={"node_id": "AFTERCOPY", "source": str(src)},
+        )
+        assert attach_resp.status_code == 200, attach_resp.text
+        get_resp = seeded_client.get("/api/v1/files/by-node/AFTERCOPY")
+        assert get_resp.status_code == 200
+        atts = get_resp.json()["attachments"]
+        assert len(atts) >= 1
+        # The stored path exists and ends with a plausible filename
+        stored_path = atts[0]["path"]
+        assert stored_path.endswith(".txt")
+        # MIME should be detected (text/plain) and size should be a string of digits
+        assert atts[0]["mime"] is not None
+        assert atts[0]["size"] is not None
+        assert atts[0]["size"].isdigit()
 
 
 class TestFileGetAPI:

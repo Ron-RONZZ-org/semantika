@@ -32,7 +32,7 @@ from semantika.server.command.helpers import (
 )
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="class")
 def client() -> TestClient:
     app = create_app()
     with TestClient(app) as c:

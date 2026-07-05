@@ -16,6 +16,7 @@ from semantika.server.command.registry import command
                 {"name": "date_to", "type": "string", "help": "End date"},
                 {"name": "limit", "type": "number", "help": "Max questions"}])
 def cmd_review_start(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Start a new review session."""
     svc = get_services()
     mode = flags.get("mode") or (remaining[0] if remaining else "") or "view"
     if mode not in ("view", "quiz"):
@@ -33,6 +34,7 @@ def cmd_review_start(remaining: list[str], flags: dict[str, str]) -> dict:
 
 @command("review.sessions", description="List review sessions")
 def cmd_review_sessions(remaining: list[str], flags: dict[str, str]) -> dict:
+    """List all review sessions."""
     svc = get_services()
     sessions = svc["review"].list_sessions()
     return {"type": "table", "data": sessions, "label": "Review Sessions"}
@@ -41,6 +43,7 @@ def cmd_review_sessions(remaining: list[str], flags: dict[str, str]) -> dict:
 @command("review.view", description="View a review session",
          params=[{"name": "uuid", "type": "string", "required": True}])
 def cmd_review_view(remaining: list[str], flags: dict[str, str]) -> dict:
+    """View a review session by ID."""
     svc = get_services()
     session_uuid = flags.get("uuid") or (remaining[0] if remaining else "") or ""
     if not session_uuid:
@@ -54,6 +57,7 @@ def cmd_review_view(remaining: list[str], flags: dict[str, str]) -> dict:
 @command("review.delete", description="Delete a review session",
          params=[{"name": "uuid", "type": "string", "required": True}])
 def cmd_review_delete(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Delete a review session."""
     svc = get_services()
     session_uuid = flags.get("uuid") or (remaining[0] if remaining else "") or ""
     if not session_uuid:
@@ -73,6 +77,7 @@ def cmd_review_delete(remaining: list[str], flags: dict[str, str]) -> dict:
                 {"name": "source", "type": "string", "help": "Source citation"},
                 {"name": "notes", "type": "string", "help": "Additional notes"}])
 def cmd_proof_add(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Add a proof (justification) for a triple."""
     svc = get_services()
     subject_id = flags.get("subject_id") or (remaining[0] if remaining else "") or ""
     predicate_id = flags.get("predicate_id") or (remaining[1] if len(remaining) > 1 else "") or ""
@@ -97,6 +102,7 @@ def cmd_proof_add(remaining: list[str], flags: dict[str, str]) -> dict:
                  {"name": "predicate_id", "type": "string", "required": True},
                  {"name": "object_value", "type": "string", "required": True}])
 def cmd_proof_view(remaining: list[str], flags: dict[str, str]) -> dict:
+    """View proofs for a triple."""
     svc = get_services()
     subject_id = flags.get("subject_id") or (remaining[0] if remaining else "") or ""
     predicate_id = flags.get("predicate_id") or (remaining[1] if len(remaining) > 1 else "") or ""
@@ -116,6 +122,7 @@ def cmd_proof_view(remaining: list[str], flags: dict[str, str]) -> dict:
 @command("proof.delete", description="Delete a proof",
          params=[{"name": "uuid", "type": "string", "required": True}])
 def cmd_proof_delete(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Delete a proof."""
     svc = get_services()
     proof_uuid = flags.get("uuid") or (remaining[0] if remaining else "") or ""
     if not proof_uuid:

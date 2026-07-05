@@ -21,7 +21,7 @@ os.environ["SEMANTIKA_DATA_DIR"] = str(TEST_DATA_DIR)
 from semantika.server.app import create_app
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="class")
 def client() -> TestClient:
     """Return a TestClient with an isolated test DB."""
     app = create_app()

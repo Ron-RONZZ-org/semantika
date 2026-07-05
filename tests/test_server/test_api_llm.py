@@ -28,7 +28,7 @@ except (_kr_err.KeyringError, Exception):
     pass
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="class")
 def client() -> TestClient:
     """Return a TestClient with an isolated test DB."""
     app = create_app()

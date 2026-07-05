@@ -20,7 +20,7 @@ from semantika.server.app import create_app
 from semantika.server.routes.llm import reset_provider
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="class")
 def client() -> TestClient:
     """Return a TestClient with isolated DB."""
     app = create_app()

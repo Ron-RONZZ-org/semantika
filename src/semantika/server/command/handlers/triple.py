@@ -121,6 +121,7 @@ def _find_triple(
 
 @command("triple.list", description="List all triples")
 def cmd_triple_list(remaining: list[str], flags: dict[str, str]) -> dict:
+    """List triples, optionally filtered by subject."""
     svc = get_services()
     triples = svc["triple"].db.execute("SELECT * FROM triples ORDER BY subject_id, predicate_id LIMIT ?", (100,))
     return {"type": "table", "data": triples, "label": "Triples"}
@@ -129,6 +130,7 @@ def cmd_triple_list(remaining: list[str], flags: dict[str, str]) -> dict:
 @command("triple.view", description="View triples for a node",
          params=[{"name": "id", "type": "string", "required": True}])
 def cmd_triple_view(remaining: list[str], flags: dict[str, str]) -> dict:
+    """View a single triple by ID."""
     svc = get_services()
     node_id = flags.get("id") or (remaining[0] if remaining else "") or ""
     if not node_id:
@@ -152,6 +154,7 @@ def cmd_triple_view(remaining: list[str], flags: dict[str, str]) -> dict:
                 {"name": "katex", "type": "string", "help": "KaTeX math expression"},
                 {"name": "str-dosiero", "type": "string", "help": "Read content from file"}])
 def cmd_triple_add(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Add a new triple (subject predicate object)."""
     svc = get_services()
     subject_id = flags.get("subject_id") or (remaining[0] if remaining else "") or ""
     predicate_id = flags.get("predicate_id") or (remaining[1] if len(remaining) > 1 else "") or ""
@@ -193,6 +196,7 @@ def cmd_triple_add(remaining: list[str], flags: dict[str, str]) -> dict:
                  {"name": "predicate", "type": "string"},
                  {"name": "object", "type": "string"}])
 def cmd_triple_delete(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Delete a triple by ID."""
     svc = get_services()
     subject = flags.get("subject") or (remaining[0] if remaining else "") or ""
     predicate = flags.get("predicate") or (remaining[1] if len(remaining) > 1 else "") or ""
@@ -237,6 +241,7 @@ def cmd_triple_delete(remaining: list[str], flags: dict[str, str]) -> dict:
                 {"name": "bool", "type": "flag"}, {"name": "lang", "type": "string"},
                 {"name": "katex", "type": "string"}, {"name": "str-dosiero", "type": "string"}])
 def cmd_triple_modify(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Modify a triple's predicate or object."""
     svc = get_services()
     subject = flags.get("subject") or (remaining[0] if remaining else "") or ""
     predicate = flags.get("predicate") or (remaining[1] if len(remaining) > 1 else "") or ""

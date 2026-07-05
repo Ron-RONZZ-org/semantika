@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 @command("node.list", description="List all nodes",
          params=[{"name": "limit", "type": "number", "default": 100}])
 def cmd_node_list(remaining: list[str], flags: dict[str, str]) -> dict:
+    """List all non-trashed nodes."""
     svc = get_services()
     nodes = svc["node"].list(limit=int(flags.get("limit", 100)))
     return {"type": "table", "data": nodes, "label": "Nodes"}
@@ -24,6 +25,7 @@ def cmd_node_list(remaining: list[str], flags: dict[str, str]) -> dict:
 @command("node.search", description="Search nodes by label",
          params=[{"name": "q", "type": "string", "required": True}])
 def cmd_node_search(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Search nodes by label or definition text."""
     svc = get_services()
     q = flags.get("q", "")
     if not q:
@@ -35,6 +37,7 @@ def cmd_node_search(remaining: list[str], flags: dict[str, str]) -> dict:
 @command("node.view", description="View a node and its triples",
          params=[{"name": "id", "type": "string", "required": True}])
 def cmd_node_view(remaining: list[str], flags: dict[str, str]) -> dict:
+    """View a single node by ID or prefix."""
     svc = get_services()
     node_id = flags.get("id") or (remaining[0] if remaining else "")
     if not node_id:
@@ -50,6 +53,7 @@ def cmd_node_view(remaining: list[str], flags: dict[str, str]) -> dict:
 @command("node.add", description="Create a new node", interactive=True,
          params=[{"name": "labels", "type": "string"}])
 def cmd_node_add(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Add a new node."""
     svc = get_services()
     labels_raw = flags.get("labels") or (remaining[0] if remaining else "")
     payload = {"labels": {"en": labels_raw}} if labels_raw else {"labels": {}}
@@ -69,6 +73,7 @@ def cmd_node_add(remaining: list[str], flags: dict[str, str]) -> dict:
                 {"name": "definitions", "type": "string", "help": "New definitions"},
                 {"name": "new-id", "type": "string", "help": "Rename to new ID"}])
 def cmd_node_update(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Update a node's labels, definitions, or ID."""
     svc = get_services()
     node_id = flags.get("id") or ""
     if not node_id:
@@ -80,16 +85,16 @@ def cmd_node_update(remaining: list[str], flags: dict[str, str]) -> dict:
     labels_raw = flags.get("labels") or ""
     if labels_raw:
         try:
-            labels_dict = json.loads(labels_raw) if labels_raw.startswith("{") else parse_lang_tag_pairs(labels_raw)
+            labels_dict = json.loads(labels_raw)
         except json.JSONDecodeError:
-            labels_dict = {"en": labels_raw}
+            labels_dict = parse_lang_tag_pairs(labels_raw)
         payload["labels"] = labels_dict
     defs_raw = flags.get("definitions") or flags.get("defs") or ""
     if defs_raw:
         try:
-            defs_dict = json.loads(defs_raw) if defs_raw.startswith("{") else parse_lang_tag_pairs(defs_raw)
+            defs_dict = json.loads(defs_raw)
         except json.JSONDecodeError:
-            defs_dict = {"en": defs_raw}
+            defs_dict = parse_lang_tag_pairs(defs_raw)
         payload["definitions"] = defs_dict
     new_id = flags.get("new_id") or flags.get("new-id") or ""
     try:
@@ -110,6 +115,7 @@ def cmd_node_update(remaining: list[str], flags: dict[str, str]) -> dict:
          flags=[{"name": "prefix", "type": "string", "help": "Delete all nodes with this ID prefix"},
                 {"name": "force", "type": "string", "help": "Skip dependency warning and proceed"}])
 def cmd_node_delete(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Delete (soft) a node, moving it to trash."""
     svc = get_services()
     ids: list[str] = []
     pos_id = flags.get("id") or ""
@@ -152,6 +158,7 @@ def cmd_node_delete(remaining: list[str], flags: dict[str, str]) -> dict:
          params=[{"name": "id", "type": "string", "required": True},
                  {"name": "new_id", "type": "string", "required": True}])
 def cmd_node_rename(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Rename a node (change its ID)."""
     svc = get_services()
     node_id = flags.get("id") or (remaining[0] if len(remaining) > 0 else "")
     new_id = flags.get("new_id") or (remaining[1] if len(remaining) > 1 else "") or ""
@@ -168,6 +175,7 @@ def cmd_node_rename(remaining: list[str], flags: dict[str, str]) -> dict:
          params=[{"name": "source", "type": "string", "required": True},
                  {"name": "target", "type": "string", "required": True}])
 def cmd_node_merge(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Merge a source node into a target node."""
     svc = get_services()
     source = flags.get("source") or (remaining[0] if len(remaining) > 0 else "") or ""
     target = flags.get("target") or (remaining[1] if len(remaining) > 1 else "") or ""

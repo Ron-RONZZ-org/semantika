@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 @command("predicate.list", description="List all predicates")
 def cmd_predicate_list(remaining: list[str], flags: dict[str, str]) -> dict:
+    """List all predicates."""
     svc = get_services()
     preds = svc["predicate"].list()
     return {"type": "table", "data": preds, "label": "Predicates"}
@@ -27,6 +28,7 @@ def cmd_predicate_list(remaining: list[str], flags: dict[str, str]) -> dict:
          params=[{"name": "q", "type": "string", "required": True}],
          flags=[{"name": "wikidata", "type": "flag", "help": "Also search Wikidata"}])
 def cmd_predicate_search(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Search predicates by label."""
     svc = get_services()
     q = flags.get("q", "")
     results = svc["predicate"].search(q)
@@ -47,6 +49,7 @@ def cmd_predicate_search(remaining: list[str], flags: dict[str, str]) -> dict:
 @command("predicate.view", description="View predicate details",
          params=[{"name": "predicate_id", "type": "string", "required": True}])
 def cmd_predicate_view(remaining: list[str], flags: dict[str, str]) -> dict:
+    """View a single predicate by ID."""
     svc = get_services()
     pred_id = flags.get("predicate_id") or (remaining[0] if remaining else "") or ""
     if not pred_id:
@@ -63,6 +66,7 @@ def cmd_predicate_view(remaining: list[str], flags: dict[str, str]) -> dict:
                 {"name": "descriptions", "type": "string", "help": "Descriptions"},
                 {"name": "wikidata", "type": "flag", "help": "Auto-fetch labels from Wikidata"}])
 def cmd_predicate_add(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Add a new predicate."""
     svc = get_services()
     pred_id = flags.get("predicate_id") or (remaining[0] if remaining else "") or ""
     if not pred_id:
@@ -105,6 +109,7 @@ def cmd_predicate_add(remaining: list[str], flags: dict[str, str]) -> dict:
                 {"name": "replace", "type": "flag", "help": "Replace instead of merging"},
                 {"name": "new-id", "type": "string", "help": "Rename to new ID"}])
 def cmd_predicate_update(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Update a predicate's labels or description."""
     svc = get_services()
     pred_id = flags.get("predicate_id") or ""
     if not pred_id:
@@ -150,6 +155,7 @@ def cmd_predicate_update(remaining: list[str], flags: dict[str, str]) -> dict:
          params=[{"name": "predicate_id", "type": "string", "required": True},
                  {"name": "new_id", "type": "string", "required": True}])
 def cmd_predicate_rename(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Rename a predicate."""
     svc = get_services()
     pred_id = flags.get("predicate_id") or (remaining[0] if remaining else "") or ""
     new_id = flags.get("new_id") or (remaining[1] if len(remaining) > 1 else "") or ""
@@ -166,6 +172,7 @@ def cmd_predicate_rename(remaining: list[str], flags: dict[str, str]) -> dict:
          params=[{"name": "predicate_id", "type": "string"}],
          flags=[{"name": "prefix", "type": "string", "help": "Delete all predicates with this ID prefix"}])
 def cmd_predicate_delete(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Delete a predicate."""
     svc = get_services()
     ids: list[str] = []
     pos_id = flags.get("predicate_id") or ""
@@ -204,6 +211,7 @@ def cmd_predicate_delete(remaining: list[str], flags: dict[str, str]) -> dict:
 
 @command("predicate-group.list", description="List all predicate groups")
 def cmd_predicate_group_list(remaining: list[str], flags: dict[str, str]) -> dict:
+    """List all predicate groups."""
     svc = get_services()
     groups = svc["predicate_group"].list()
     return {"type": "table", "data": groups, "label": "Predicate Groups"}
@@ -212,6 +220,7 @@ def cmd_predicate_group_list(remaining: list[str], flags: dict[str, str]) -> dic
 @command("predicate-group.view", description="View a predicate group and its members",
          params=[{"name": "name", "type": "string", "required": True}])
 def cmd_predicate_group_view(remaining: list[str], flags: dict[str, str]) -> dict:
+    """View a predicate group and its members."""
     svc = get_services()
     name = flags.get("name") or (remaining[0] if remaining else "") or ""
     if not name:
@@ -225,6 +234,7 @@ def cmd_predicate_group_view(remaining: list[str], flags: dict[str, str]) -> dic
 @command("predicate-group.add", description="Create a predicate group", interactive=True,
          params=[{"name": "name", "type": "string", "required": True}])
 def cmd_predicate_group_add(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Create a new predicate group."""
     svc = get_services()
     name = flags.get("name") or (remaining[0] if remaining else "") or ""
     if not name:
@@ -240,6 +250,7 @@ def cmd_predicate_group_add(remaining: list[str], flags: dict[str, str]) -> dict
          params=[{"name": "name", "type": "string", "required": True},
                  {"name": "new_name", "type": "string", "required": True}])
 def cmd_predicate_group_rename(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Rename a predicate group."""
     svc = get_services()
     name = flags.get("name") or (remaining[0] if remaining else "") or ""
     new_name = flags.get("new_name") or (remaining[1] if len(remaining) > 1 else "") or ""
@@ -256,6 +267,7 @@ def cmd_predicate_group_rename(remaining: list[str], flags: dict[str, str]) -> d
 @command("predicate-group.delete", description="Delete a predicate group",
          params=[{"name": "name", "type": "string", "required": True}])
 def cmd_predicate_group_delete(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Delete a predicate group."""
     svc = get_services()
     name = flags.get("name") or (remaining[0] if remaining else "") or ""
     if not name:
@@ -272,6 +284,7 @@ def cmd_predicate_group_delete(remaining: list[str], flags: dict[str, str]) -> d
 @command("predicate-group.search", description="Search predicate groups",
          params=[{"name": "q", "type": "string", "required": True}])
 def cmd_predicate_group_search(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Search predicate groups by name."""
     svc = get_services()
     q = flags.get("q") or (remaining[0] if remaining else "") or ""
     if not q:
@@ -286,6 +299,7 @@ def cmd_predicate_group_search(remaining: list[str], flags: dict[str, str]) -> d
          params=[{"name": "group", "type": "string", "required": True},
                  {"name": "predicate_id", "type": "string", "required": True}])
 def cmd_predicate_group_add_member(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Add a predicate to a group."""
     svc = get_services()
     group_name = flags.get("group") or (remaining[0] if remaining else "") or ""
     pred_id = flags.get("predicate_id") or (remaining[1] if len(remaining) > 1 else "") or ""
@@ -303,6 +317,7 @@ def cmd_predicate_group_add_member(remaining: list[str], flags: dict[str, str]) 
          params=[{"name": "group", "type": "string", "required": True},
                  {"name": "predicate_id", "type": "string", "required": True}])
 def cmd_predicate_group_remove_member(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Remove a predicate from a group."""
     svc = get_services()
     group_name = flags.get("group") or (remaining[0] if remaining else "") or ""
     pred_id = flags.get("predicate_id") or (remaining[1] if len(remaining) > 1 else "") or ""
