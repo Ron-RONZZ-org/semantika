@@ -69,7 +69,7 @@ class ProviderConfig:
         if not self.model:
             defaults = {
                 "openai": "gpt-4o",
-                "deepseek": "deepseek-v4-flash",
+                "deepseek": "deepseek-chat",
                 "ollama": "llama3.2",
             }
             self.model = defaults.get(self.provider_type, "gpt-4o")
@@ -366,43 +366,3 @@ class LLMProvider:
 
         return None
 
-
-# ── Command definitions helper ───────────────────────────────────────────
-
-
-def get_command_definitions(tree: list[dict]) -> list[dict]:
-    """Flatten the command tree into machine-readable definitions for the LLM."""
-    definitions: list[dict] = []
-
-    def _walk(nodes: list[dict], prefix: list[str] | None = None) -> None:
-        for node in nodes:
-            path = (prefix or []) + [node["name"]]
-            entry: dict[str, Any] = {
-                "path": path,
-                "canonical": f"!{' '.join(path)}",
-                "description": node.get("description", ""),
-            }
-            if node.get("params"):
-                entry["params"] = [
-                    {
-                        "name": p["name"],
-                        "required": p.get("required", False),
-                        "type": p.get("type", "string"),
-                    }
-                    for p in node["params"]
-                ]
-            if node.get("flags"):
-                entry["flags"] = [
-                    {
-                        "name": f["name"],
-                        "type": f.get("type", "string"),
-                        "required": f.get("required", False),
-                    }
-                    for f in node["flags"]
-                ]
-            definitions.append(entry)
-            if node.get("children"):
-                _walk(node["children"], path)
-
-    _walk(tree)
-    return definitions

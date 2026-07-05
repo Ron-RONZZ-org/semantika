@@ -103,7 +103,7 @@ async def get_node(node_id: str):
     node = _svc()["node"].resolve_node_id_prefix(node_id)
     if not node:
         raise HTTPException(404, f"Node not found: {node_id}")
-    triples = _svc()["triple"].get_by_subject(node_id)
+    triples = _svc()["triple"].get_by_subject(node["node_id"])
     return {"node": node, "triples": triples}
 
 

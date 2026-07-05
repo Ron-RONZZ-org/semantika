@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from semantika.graph.db import get_services
@@ -71,20 +71,37 @@ async def import_turtle(req: ImportRequest):
     return stats
 
 
-@router.get("/sparql")
-async def sparql_query(query: str):
+class SparqlQuery(BaseModel):
+    query: str
+
+
+_FORBIDDEN_SQL_KEYWORDS = [
+    "PRAGMA",
+    "SQLITE_MASTER",
+    "SQLITE_SCHEMA",
+    "SQLITE_TEMP_MASTER",
+    "SQLITE_TEMP_SCHEMA",
+]
+
+
+@router.post("/sparql")
+async def sparql_query(req: SparqlQuery):
     """Execute a raw SQL query (limited SPARQL-like access).
 
-    WARNING: Only SELECT queries allowed for safety.
+    Only SELECT queries are allowed.  System tables (sqlite_master,
+    pragma_*) are blocked for security.
     """
-    query = query.strip()
-    if not query.upper().startswith("SELECT"):
-        from fastapi import HTTPException
-        raise HTTPException(400, "Only SELECT queries are allowed")
     from semantika.graph.db import get_db
+
+    query = req.query.strip()
+    if not query.upper().startswith("SELECT"):
+        raise HTTPException(400, "Only SELECT queries are allowed")
+    upper = query.upper()
+    for kw in _FORBIDDEN_SQL_KEYWORDS:
+        if kw in upper:
+            raise HTTPException(403, f"Query references forbidden system object: {kw}")
     try:
         results = get_db().execute(query)
         return {"results": results, "count": len(results)}
     except Exception as e:
-        from fastapi import HTTPException
         raise HTTPException(400, f"Query failed: {e}")

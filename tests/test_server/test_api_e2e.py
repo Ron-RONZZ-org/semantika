@@ -1008,15 +1008,19 @@ class TestSparqlAPI:
     """Test the SPARQL-like endpoint."""
 
     def test_sparql_select(self, client: TestClient):
-        resp = client.get("/api/v1/query/sparql", params={"query": "SELECT * FROM nodes LIMIT 5"})
+        resp = client.post("/api/v1/query/sparql", json={"query": "SELECT * FROM nodes LIMIT 5"})
         assert resp.status_code == 200
         data = resp.json()
         assert "results" in data
         assert "count" in data
 
     def test_sparql_rejects_non_select(self, client: TestClient):
-        resp = client.get("/api/v1/query/sparql", params={"query": "DROP TABLE nodes"})
+        resp = client.post("/api/v1/query/sparql", json={"query": "DROP TABLE nodes"})
         assert resp.status_code == 400
+
+    def test_sparql_rejects_system_tables(self, client: TestClient):
+        resp = client.post("/api/v1/query/sparql", json={"query": "SELECT * FROM sqlite_master"})
+        assert resp.status_code == 403
 
 
 # ── Query Search ──────────────────────────────────────────────────────────
