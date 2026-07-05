@@ -6,10 +6,13 @@ Ported from A-semantika's ``_triple_turtle.py``.
 from __future__ import annotations
 
 import json
+import logging
 import urllib.parse
 from typing import Any
 
 from semantika.core import SemantikaDB
+
+logger = logging.getLogger(__name__)
 
 _KNOWN_PREFIXES = {
     "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
@@ -111,13 +114,13 @@ def import_turtle(turtle_content: str) -> dict[str, int]:
                 svc["node"].create({"node_id": node_id, "labels": {"en": node_id}})
                 stats["nodes_created"] += 1
             except ValueError:
-                pass
+                logger.debug("Node %s already exists (Turtle import)", node_id)
 
         try:
             svc["predicate"].create({"predicate_id": predicate_id, "labels": {"en": predicate_id}})
             stats["predicates_created"] += 1
         except ValueError:
-            pass
+            logger.debug("Predicate %s already exists (Turtle import)", predicate_id)
 
         try:
             svc["triple"].add(
@@ -129,8 +132,9 @@ def import_turtle(turtle_content: str) -> dict[str, int]:
                 object_datatype=object_datatype,
             )
             stats["triples_added"] += 1
-        except ValueError:
-            pass
+        except ValueError as exc:
+            logger.debug("Triple (%s, %s, %s) skipped (Turtle import): %s",
+                         subject_id, predicate_id, object_value, exc)
 
     return stats
 

@@ -11,12 +11,16 @@ Two modes:
 from __future__ import annotations
 
 import json
+import logging
 import random
+import sqlite3
 import uuid as _uuid
 from typing import Any
 
 from semantika.core import SemantikaDB
 from semantika.core.crud import now
+
+logger = logging.getLogger(__name__)
 
 
 class ReviewService:
@@ -213,18 +217,25 @@ class ReviewService:
             if node:
                 label_text = self._extract_first_label(node["labels"])
                 if label_text and len(label_text) >= 2:
-                    related = self.db.execute(
-                        "SELECT n.node_id FROM nodes n "
-                        "JOIN nodes_fts f ON n.node_id = f.node_id "
-                        "WHERE nodes_fts MATCH ? AND n.node_id != ? "
-                        "LIMIT ?",
-                        (f"{self._fts_escape(label_text)}*", correct_value, count + 5),
-                    )
-                    for r in related:
-                        if r["node_id"] not in distractors:
-                            distractors.append(r["node_id"])
-                        if len(distractors) >= count:
-                            break
+                    try:
+                        related = self.db.execute(
+                            "SELECT n.node_id FROM nodes n "
+                            "JOIN nodes_fts f ON n.node_id = f.node_id "
+                            "WHERE nodes_fts MATCH ? AND n.node_id != ? "
+                            "LIMIT ?",
+                            (f"{self._fts_escape(label_text)}*", correct_value, count + 5),
+                        )
+                        for r in related:
+                            if r["node_id"] not in distractors:
+                                distractors.append(r["node_id"])
+                            if len(distractors) >= count:
+                                break
+                    except sqlite3.DatabaseError:
+                        logger.debug(
+                            "FTS query failed for distractor generation (correct=%s), "
+                            "falling back to LIKE",
+                            correct_value,
+                        )
         else:
             if len(correct_value) >= 2:
                 escaped = correct_value[:10].replace(

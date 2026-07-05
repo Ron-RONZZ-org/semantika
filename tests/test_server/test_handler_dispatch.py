@@ -1,94 +1,19 @@
 """Unit tests for command handlers via dispatch().
 
 Tests edge cases and error branches not covered by API E2E tests.
-Uses isolated test databases and mocked get_services().
+Uses isolated test databases and mocked get_services()
+(defined in ``conftest.py``).
 """
 
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from unittest.mock import patch
 
 import pytest
-
-from semantika.core import SemantikaDB
-from semantika.graph.db import SCHEMA, REVIEW_SCHEMA, PROOF_SCHEMA
-from semantika.graph.node_service import NodeService
-from semantika.graph.predicate_service import PredicateService
-from semantika.graph.predicate_group_service import PredicateGroupService
-from semantika.graph.triple_service import TripleService
-from semantika.graph.review_service import ReviewService
-from semantika.graph.proof_service import ProofService
 
 # Trigger handler registration
 from semantika.server.command import handlers  # noqa: F401
 from semantika.server.command.registry import dispatch, get_command_tree
-
-
-# ── Fixtures ─────────────────────────────────────────────────────────────
-
-
-@pytest.fixture
-def db(tmp_path: Path) -> SemantikaDB:
-    """Create an isolated test database."""
-    db_path = tmp_path / "test.db"
-    db = SemantikaDB(db_path)
-    for table, sql in SCHEMA.items():
-        db.init_schema({table: sql})
-    for idx in [
-        "CREATE INDEX IF NOT EXISTS idx_triples_pos ON triples(predicate_id, object_value, subject_id)",
-        "CREATE INDEX IF NOT EXISTS idx_triples_osp ON triples(object_value, object_type, predicate_id, subject_id)",
-        "CREATE INDEX IF NOT EXISTS idx_triples_pred_subj ON triples(predicate_id, subject_id)",
-    ]:
-        db.execute(idx)
-    db.execute(
-        "CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5("
-        "  node_id UNINDEXED, label_text, definition_text,"
-        "  content=nodes, content_rowid=rowid, tokenize='unicode61'"
-        ")"
-    )
-    for table, sql in {**REVIEW_SCHEMA, **PROOF_SCHEMA}.items():
-        db.init_schema({table: sql})
-    db.execute("PRAGMA foreign_keys=ON")
-    return db
-
-
-@pytest.fixture
-def services(db: SemantikaDB) -> dict:
-    """Return all services initialized on the test DB."""
-    return {
-        "node": NodeService(db),
-        "predicate": PredicateService(db),
-        "predicate_group": PredicateGroupService(db),
-        "triple": TripleService(db),
-        "review": ReviewService(db),
-        "proof": ProofService(db),
-    }
-
-
-@pytest.fixture(autouse=True)
-def mock_services(monkeypatch: pytest.MonkeyPatch, services: dict) -> None:
-    """Mock get_services() to return the isolated services."""
-    import semantika.graph.db as graph_db
-    monkeypatch.setattr(graph_db, "get_services", lambda: services)
-    # Handler modules import get_services at module level, so patch each too
-    monkeypatch.setattr(
-        "semantika.server.command.handlers.graph.get_services",
-        lambda: services,
-    )
-    monkeypatch.setattr(
-        "semantika.server.command.handlers.review.get_services",
-        lambda: services,
-    )
-    monkeypatch.setattr(
-        "semantika.server.command.handlers.unit.get_services",
-        lambda: services,
-    )
-    monkeypatch.setattr(
-        "semantika.server.command.handlers.trash.get_services",
-        lambda: services,
-    )
 
 
 @pytest.fixture

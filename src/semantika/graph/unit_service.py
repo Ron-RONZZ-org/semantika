@@ -9,10 +9,13 @@ Ported from A-semantika's ``_unit_service.py`` with EO→EN migration.
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from typing import TYPE_CHECKING
 
 from semantika.graph.unit_builder import UnitBuilder
+
+logger = logging.getLogger(__name__)
 from semantika.graph.unit_decomposition import UnitDecomposer, format_unit_ref
 from semantika.graph.unit_errors import UnitNotFoundError
 from semantika.graph.unit_parser import parse
@@ -215,7 +218,7 @@ class UnitService:
             if node:
                 return node
         except AmbiguousIDError:
-            pass
+            logger.debug("Ambiguous node ID prefix resolution for '%s', falling through", word)
 
         node = self._find_unit_by_symbol(word)
         if node:

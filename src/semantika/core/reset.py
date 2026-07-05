@@ -68,7 +68,7 @@ def reset_to_fresh_state(
     try:
         import keyring as _kr  # noqa: N812
     except ImportError:
-        pass
+        logger.debug("keyring not available — skipping credential cleanup")
     else:
         for service in ("semantika-llm", "semantika-key"):
             try:

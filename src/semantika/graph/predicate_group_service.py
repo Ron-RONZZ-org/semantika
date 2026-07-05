@@ -5,6 +5,7 @@ Ported from A-semantika's ``_predicate_group_service.py``.
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 import uuid as _uuid
 from typing import Any
@@ -12,12 +13,29 @@ from typing import Any
 from semantika.core import SemantikaDB
 from semantika.core.crud import CRUDService, now
 
+logger = logging.getLogger(__name__)
+
 
 class PredicateGroupService(CRUDService):
     """Service for managing predicate groups (logical collections of predicates)."""
 
     def __init__(self, db: SemantikaDB) -> None:
         super().__init__(db=db, table="predicate_groups")
+
+    def delete(self, pk: str, soft: bool = True) -> bool:
+        """Delete a predicate group.
+
+        Predicate groups do not have a trash table — the *soft* parameter
+        is accepted for interface compatibility but always performs a
+        permanent delete.
+        """
+        if soft:
+            logger.warning(
+                "PredicateGroup delete called with soft=True — no trash table exists, "
+                "performing permanent delete of %s",
+                pk,
+            )
+        return super().delete(pk, soft=False)
 
     def create(self, data: dict[str, Any]) -> dict[str, Any]:
         """Create a new predicate group."""

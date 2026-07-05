@@ -5,11 +5,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import logging
+
 from semantika.core.exceptions import AmbiguousIDError
 from semantika.graph.db import get_services
 from semantika.server.command.errors import CommandValidationError
 from semantika.server.command.helpers import parse_lang_tag_pairs, resolve_group, safe_json_loads
 from semantika.server.command.registry import command
+
+logger = logging.getLogger(__name__)
 
 
 # ── Shared helpers ─────────────────────────────────────────────────────────
@@ -402,8 +406,8 @@ def cmd_predicate_search(remaining: list[str], flags: dict[str, str]) -> dict:
             for wd in wd_results:
                 if wd["predicate_id"] not in local_ids:
                     results.append(wd)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Wikidata predicate search failed: %s", exc)
     return {"type": "table", "data": results, "label": f"Predicates matching '{q}'"}
 
 
@@ -452,8 +456,8 @@ def cmd_predicate_add(remaining: list[str], flags: dict[str, str]) -> dict:
             if wd:
                 data.setdefault("labels", {}).update(wd.get("labels", {}))
                 data.setdefault("descriptions", {}).update(wd.get("descriptions", {}))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Wikidata detail fetch failed for %s: %s", pred_id, exc)
     try:
         pred = svc["predicate"].create(data)
         return {"type": "status", "data": {"message": f"Created predicate {pred['predicate_id']}", "predicate": pred}}
