@@ -71,6 +71,30 @@ class TestCmdImport:
         result = dispatch(["import"], {"data": ttl})
         assert result["type"] == "status"
 
+    def test_import_with_labels(self, seeded: dict) -> None:
+        """rdfs:label triples should populate node labels, not placeholders."""
+        ttl = (
+            "@prefix ex: <http://example.org/> .\n"
+            "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n"
+            "ex:Foo a ex:Thing ;\n"
+            "    rdfs:label \"My Label\"@en .\n"
+        )
+        svc = seeded
+        import json
+        from semantika.server.command.registry import dispatch
+        result = dispatch(["import"], {"data": ttl})
+        assert result["type"] == "status"
+        assert result["data"]["nodes_created"] >= 2
+
+        node = svc["node"].get("http://example.org/Foo")
+        assert node is not None
+        labels = node["labels"]
+        if isinstance(labels, str):
+            labels = json.loads(labels)
+        assert labels.get("en") == "My Label", (
+            f"Expected 'My Label', got {labels}"
+        )
+
     def test_import_no_data(self, services: dict) -> None:
         with pytest.raises(Exception, match="Provide TTL"):
             dispatch(["import"], {})

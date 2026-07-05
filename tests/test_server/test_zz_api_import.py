@@ -10,6 +10,7 @@ This file is named ``test_zz_*`` to ensure pytest collects it last.
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -65,3 +66,16 @@ class TestTTLImport:
         nodes = client.get("/api/v1/graph/nodes").json()
         node_ids = [n["node_id"] for n in nodes["nodes"]]
         assert any("Cat" in nid or "Animal" in nid for nid in node_ids)
+
+    def test_import_labels_extracted(self, client: TestClient):
+        """Node labels should be populated from rdfs:label triples, not URIs."""
+        nodes = client.get("/api/v1/graph/nodes").json()
+        for n in nodes["nodes"]:
+            if n["node_id"].endswith("Dog"):
+                labels = n.get("labels", {})
+                if isinstance(labels, str):
+                    import json
+                    labels = json.loads(labels)
+                assert labels.get("en") == "Dog", f"Expected label 'Dog', got {labels}"
+                return
+        pytest.fail("Node for Dog not found")

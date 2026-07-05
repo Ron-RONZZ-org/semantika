@@ -68,6 +68,10 @@ def _format_literal(value: str, datatype: str | None, lang: str | None) -> str:
 def import_turtle(turtle_content: str) -> dict[str, int]:
     """Import Turtle (.ttl) content into the triple store.
 
+    Uses a two-phase approach:
+    1. Parse the graph, collect all triples and extract labels from ``rdfs:label``
+    2. Create nodes/predicates/triples in bulk with proper labels
+
     Args:
         turtle_content: Raw Turtle format string.
 
@@ -87,15 +91,24 @@ def import_turtle(turtle_content: str) -> dict[str, int]:
         "triples_added": 0,
     }
 
+    # ── Phase 1: Collect triples and build label map ────────────────────
+
+    RDFS_LABEL = "http://www.w3.org/2000/01/rdf-schema#label"
+    triples_to_add: list[dict] = []
+    all_uris: set[str] = set()
+    label_map: dict[str, dict[str, str]] = {}  # node_uri -> {lang: label}
+
     for s, p, o in g:
         subject_id = str(s)
         predicate_id = str(p)
+        all_uris.add(subject_id)
 
         if isinstance(o, URIRef):
             object_value = str(o)
             object_type = "uri"
-            object_lang = None
-            object_datatype = None
+            object_lang: str | None = None
+            object_datatype: str | None = None
+            all_uris.add(object_value)
         elif isinstance(o, Literal):
             object_value = str(o)
             object_type = "literal"
@@ -106,35 +119,63 @@ def import_turtle(turtle_content: str) -> dict[str, int]:
             object_type = "uri"
             object_lang = None
             object_datatype = None
+            all_uris.add(object_value)
         else:
             continue
 
-        for node_id in {subject_id, object_value} if object_type == "uri" else {subject_id}:
-            try:
-                svc["node"].create({"node_id": node_id, "labels": {"en": node_id}})
-                stats["nodes_created"] += 1
-            except ValueError:
-                logger.debug("Node %s already exists (Turtle import)", node_id)
+        # Extract rdfs:label triples for node label map
+        if predicate_id == RDFS_LABEL and object_type == "literal":
+            lang = object_lang or "en"
+            label_map.setdefault(subject_id, {})[lang] = object_value
 
+        triples_to_add.append({
+            "subject_id": subject_id,
+            "predicate_id": predicate_id,
+            "object_value": object_value,
+            "object_type": object_type,
+            "object_lang": object_lang,
+            "object_datatype": object_datatype,
+        })
+
+    # ── Phase 2: Create nodes with proper labels ────────────────────────
+
+    for uri in sorted(all_uris):
+        labels = label_map.get(uri, {"en": uri})
         try:
-            svc["predicate"].create({"predicate_id": predicate_id, "labels": {"en": predicate_id}})
-            stats["predicates_created"] += 1
+            svc["node"].create({"node_id": uri, "labels": labels})
+            stats["nodes_created"] += 1
         except ValueError:
-            logger.debug("Predicate %s already exists (Turtle import)", predicate_id)
+            logger.debug("Node %s already exists (Turtle import)", uri)
 
+    # ── Phase 3: Create predicates ──────────────────────────────────────
+
+    seen_predicates: set[str] = set()
+    for t in triples_to_add:
+        pid = t["predicate_id"]
+        if pid not in seen_predicates:
+            seen_predicates.add(pid)
+            try:
+                svc["predicate"].create({"predicate_id": pid, "labels": {"en": pid}})
+                stats["predicates_created"] += 1
+            except ValueError:
+                logger.debug("Predicate %s already exists (Turtle import)", pid)
+
+    # ── Phase 4: Add triples ────────────────────────────────────────────
+
+    for t in triples_to_add:
         try:
             svc["triple"].add(
-                subject_id,
-                predicate_id,
-                object_value,
-                object_type=object_type,
-                object_lang=object_lang,
-                object_datatype=object_datatype,
+                t["subject_id"],
+                t["predicate_id"],
+                t["object_value"],
+                object_type=t["object_type"],
+                object_lang=t["object_lang"],
+                object_datatype=t["object_datatype"],
             )
             stats["triples_added"] += 1
         except ValueError as exc:
             logger.debug("Triple (%s, %s, %s) skipped (Turtle import): %s",
-                         subject_id, predicate_id, object_value, exc)
+                         t["subject_id"], t["predicate_id"], t["object_value"], exc)
 
     return stats
 

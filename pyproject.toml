@@ -46,6 +46,9 @@ markers = [
     "asyncio: async tests using pytest-asyncio",
 ]
 
+[tool.uv.sources]
+lightercore = { path = "../lightercore", editable = true }
+
 [tool.ruff.lint]
 select = ["S110", "S112", "E", "F", "I"]
 
