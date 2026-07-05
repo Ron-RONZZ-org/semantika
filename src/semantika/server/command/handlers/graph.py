@@ -63,13 +63,39 @@ def cmd_import(remaining: list[str], flags: dict[str, str]) -> dict:
 # ── Search ────────────────────────────────────────────────────────────────
 
 
+def _annotate_triples_with_proofs(
+    svc: dict,
+    triples: list[dict],
+) -> list[dict]:
+    """Annotate triples with proof count and proof UUIDs via batch query."""
+    if not triples:
+        return triples
+    arc_keys = [
+        (t["subject_id"], t["predicate_id"], t["object_value"])
+        for t in triples
+    ]
+    proof_map = svc["proof"].get_proofs_for_arcs_batch(arc_keys)
+    annotated = []
+    for t in triples:
+        key = (t["subject_id"], t["predicate_id"], t["object_value"])
+        proofs = proof_map.get(key, [])
+        t["_proof_count"] = len(proofs)
+        t["_proof_uuids"] = proofs
+        annotated.append(t)
+    return annotated
+
+
 @command("search", description="Full-text search",
          params=[{"name": "q", "type": "string", "required": True}],
          flags=[{"name": "date_from", "type": "string", "help": "Start date"},
                 {"name": "date_to", "type": "string", "help": "End date"},
                 {"name": "limit", "type": "number", "help": "Max results"}])
 def cmd_search(remaining: list[str], flags: dict[str, str]) -> dict:
-    """Full-text search across nodes and predicates."""
+    """Full-text search across nodes and predicates.
+
+    Results include proof annotations on triples (proof count and UUIDs)
+    when proofs exist.
+    """
     svc = get_services()
     q = flags.get("q") or (remaining[0] if remaining else "")
     if not q:
@@ -86,8 +112,9 @@ def cmd_search(remaining: list[str], flags: dict[str, str]) -> dict:
     triples = svc["triple"].search_by_labels(subject=q, limit=limit, created_after=date_from, created_before=date_to) or []
     pred_triples = svc["triple"].search_by_labels(predicate=q, limit=limit, created_after=date_from, created_before=date_to) or []
     all_triples = list({(t["subject_id"], t["predicate_id"], t["object_value"]): t for t in triples + pred_triples}.values())
-    return {"type": "status", "data": {"nodes": nodes, "predicates": predicates, "triples": all_triples[:limit],
-                                        "_summary": f"Nodes: {len(nodes)}, Predicates: {len(predicates)}, Triples: {len(all_triples)}"}}
+    annotated = _annotate_triples_with_proofs(svc, all_triples[:limit])
+    return {"type": "status", "data": {"nodes": nodes, "predicates": predicates, "triples": annotated,
+                                        "_summary": f"Nodes: {len(nodes)}, Predicates: {len(predicates)}, Triples: {len(annotated)}"}}
 
 
 # ── View ──────────────────────────────────────────────────────────────────
