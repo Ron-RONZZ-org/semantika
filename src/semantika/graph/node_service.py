@@ -313,8 +313,8 @@ class NodeService(CRUDService):
                 "VALUES (?, ?, ?, ?)",
                 (entry["rowid"], node_id, entry["label_text"] or "", entry["definition_text"] or ""),
             )
-        except sqlite3.DatabaseError:
-            pass
+        except sqlite3.DatabaseError as exc:
+            logger.warning("FTS index insert failed for node %s: %s", node_id, exc)
 
     def _remove_from_fts(self, node_id: str) -> None:
         """Remove a node from FTS index."""

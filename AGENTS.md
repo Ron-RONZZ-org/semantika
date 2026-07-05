@@ -146,11 +146,14 @@ semantika/
 │               ├── unit.py      # /api/v1/units/* — unit ontology
 │               ├── files.py     # /api/v1/files/* — file attachments
 │               └── llm.py       # /api/v1/llm/* — chat routing
-├── tests/                       # 134 pytest tests
+├── tests/                       # pytest tests
 │   ├── test_core/               # Backup, infrastructure tests
 │   ├── test_graph/              # Service integration tests
-│   └── test_server/             # API E2E tests
-├── core/ / graph/ / server/ / scripts/  # Module-level AGENTS files
+│   └── test_server/             # API E2E tests (includes conftest.py)
+├── core/                        # AGENTS-core.md (doc only — code is under src/semantika/core/)
+├── graph/                       # AGENTS-graph.md (doc only — code is under src/semantika/graph/)
+├── server/                      # AGENTS-server.md (doc only — code is under src/semantika/server/)
+├── scripts/                     # AGENTS-scripts.md (doc only — scripts live at src/semantika/__main__.py + pyproject.toml)
 └── web/                         # Svelte frontend
     ├── package.json / vite.config.js / svelte.config.js / index.html
     └── src/

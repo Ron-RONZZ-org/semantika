@@ -9,6 +9,7 @@ Ported from A-semantika's ``_file_helpers.py``.
 
 from __future__ import annotations
 
+import logging
 import mimetypes
 import shutil
 from pathlib import Path
@@ -17,6 +18,8 @@ from typing import Literal
 import httpx
 
 from semantika.core.paths import data_dir
+
+logger = logging.getLogger(__name__)
 
 _MIME_EXTENSIONS: dict[str, set[str]] = {
     "img": {".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".bmp"},
@@ -221,8 +224,8 @@ def delete_file(stored_path: Path) -> None:
     """
     try:
         stored_path.unlink(missing_ok=True)
-    except OSError:
-        pass
+    except OSError as exc:
+        logger.debug("Could not delete file %s: %s", stored_path, exc)
 
 
 def is_managed_file(path: Path) -> bool:

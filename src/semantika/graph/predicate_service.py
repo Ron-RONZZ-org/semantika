@@ -24,6 +24,23 @@ class PredicateService(CRUDService):
     def __init__(self, db: SemantikaDB) -> None:
         super().__init__(db=db, table="predicates", pk_column="predicate_id")
 
+    # ── Delete ─────────────────────────────────────────────────────────
+
+    def delete(self, pk: str, soft: bool = True) -> bool:
+        """Delete a predicate.
+
+        Predicates do not have a trash table — the *soft* parameter is
+        accepted for interface compatibility but always performs a
+        permanent delete. Use ``soft=False`` explicitly to avoid confusion.
+        """
+        if soft:
+            logger.warning(
+                "Predicate delete called with soft=True — no trash table exists, "
+                "performing permanent delete of %s",
+                pk,
+            )
+        return super().delete(pk, soft=False)
+
     # ── FTS5 Management ──────────────────────────────────────────────
 
     def _ensure_fts(self) -> bool:
