@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -10,13 +12,26 @@ from pathlib import Path
 from semantika.graph.db import init_db
 
 
+def _resolve_cors_origins() -> list[str]:
+    """Return CORS origins from env var, or ``["*"]`` as fallback.
+
+    Set ``SEMANTIKA_CORS_ORIGINS`` to a comma-separated list of origins,
+    e.g. ``https://app.semantika.local,http://localhost:5173``.
+    In production, restrict this to your actual frontend domain(s).
+    """
+    raw = os.environ.get("SEMANTIKA_CORS_ORIGINS", "").strip()
+    if not raw:
+        return ["*"]
+    return [o.strip() for o in raw.split(",") if o.strip()]
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="Semantika", version="0.1.0")
 
-    # CORS for dev
+    # CORS — restrict via SEMANTIKA_CORS_ORIGINS env var in production
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=_resolve_cors_origins(),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

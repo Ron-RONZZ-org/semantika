@@ -84,47 +84,101 @@ class PredicateService(CRUDService):
             self.db.execute("DROP TABLE IF EXISTS predicates_fts")
             self._ensure_fts()
 
-    def _index_fts(self, predicate_id: str) -> None:
-        """Index a single predicate in FTS5."""
-        entry = self.db.execute_one(
-            "SELECT rowid, predicate_id, labels, descriptions, aliases"
-            " FROM predicates WHERE predicate_id = ?",
-            (predicate_id,),
-        )
-        if not entry:
-            return
-        try:
-            self.db.execute(
-                "INSERT INTO predicates_fts(rowid, predicate_id, labels, descriptions, aliases)"
-                " VALUES(?, ?, ?, ?, ?)",
-                (entry["rowid"], predicate_id,
-                 entry.get("labels", ""), entry.get("descriptions", ""),
-                 entry.get("aliases", "")),
+    def _index_fts(self, predicate_id: str,
+                   conn: sqlite3.Connection | None = None) -> None:
+        """Index a single predicate in FTS5.
+
+        Args:
+            predicate_id: The predicate ID to index.
+            conn: Optional connection for use inside a transaction.
+                  If None, uses ``self.db.execute()`` (auto-commit).
+        """
+        if conn is None:
+            entry = self.db.execute_one(
+                "SELECT rowid, predicate_id, labels, descriptions, aliases"
+                " FROM predicates WHERE predicate_id = ?",
+                (predicate_id,),
             )
-        except sqlite3.DatabaseError:
-            pass
+            if not entry:
+                return
+            try:
+                self.db.execute(
+                    "INSERT INTO predicates_fts(rowid, predicate_id, labels, descriptions, aliases)"
+                    " VALUES(?, ?, ?, ?, ?)",
+                    (entry["rowid"], predicate_id,
+                     entry.get("labels", ""), entry.get("descriptions", ""),
+                     entry.get("aliases", "")),
+                )
+            except sqlite3.DatabaseError:
+                pass
+        else:
+            row = conn.execute(
+                "SELECT rowid, predicate_id, labels, descriptions, aliases"
+                " FROM predicates WHERE predicate_id = ?",
+                (predicate_id,),
+            ).fetchone()
+            if not row:
+                return
+            try:
+                conn.execute(
+                    "INSERT INTO predicates_fts(rowid, predicate_id, labels, descriptions, aliases)"
+                    " VALUES(?, ?, ?, ?, ?)",
+                    (row[0], predicate_id,
+                     row[2] or "", row[3] or "", row[4] or ""),
+                )
+            except sqlite3.DatabaseError:
+                pass
 
-    def _remove_from_fts(self, predicate_id: str) -> bool:
-        """Remove a predicate from FTS index using FTS5 'delete' command."""
-        row = self.db.execute_one(
-            "SELECT rowid FROM predicates WHERE predicate_id = ?",
-            (predicate_id,),
-        )
-        if not row or row.get("rowid") is None:
-            return False
-        return self._remove_fts_by_rowid(predicate_id, row["rowid"])
+    def _remove_from_fts(self, predicate_id: str,
+                         conn: sqlite3.Connection | None = None,
+                         rowid: int | None = None) -> bool:
+        """Remove a predicate from FTS index.
 
-    def _remove_fts_by_rowid(self, predicate_id: str, rowid: int) -> bool:
+        Args:
+            predicate_id: Predicate to remove from index.
+            conn: Optional connection for use inside a transaction.
+            rowid: Pre-fetched rowid (avoids a SELECT if known).
+        """
+        if conn is None:
+            row = self.db.execute_one(
+                "SELECT rowid FROM predicates WHERE predicate_id = ?",
+                (predicate_id,),
+            )
+            if not row or row.get("rowid") is None:
+                return False
+            rowid_val = row["rowid"]
+        else:
+            if rowid is None:
+                row = conn.execute(
+                    "SELECT rowid FROM predicates WHERE predicate_id = ?",
+                    (predicate_id,),
+                ).fetchone()
+                if not row:
+                    return False
+                rowid_val = row[0]
+            else:
+                rowid_val = rowid
+        return self._remove_fts_by_rowid(predicate_id, rowid_val, conn)
+
+    def _remove_fts_by_rowid(self, predicate_id: str, rowid: int,
+                             conn: sqlite3.Connection | None = None) -> bool:
         """Remove a rowid from the predicates FTS index."""
         try:
-            self.db.execute(
-                "INSERT INTO predicates_fts(predicates_fts, rowid) VALUES('delete', ?)",
-                (rowid,),
-            )
+            if conn is None:
+                self.db.execute(
+                    "INSERT INTO predicates_fts(predicates_fts, rowid) VALUES('delete', ?)",
+                    (rowid,),
+                )
+            else:
+                conn.execute(
+                    "INSERT INTO predicates_fts(predicates_fts, rowid) VALUES('delete', ?)",
+                    (rowid,),
+                )
             return True
         except sqlite3.DatabaseError as exc:
             logger.warning("FTS 'delete' failed for %s (rowid=%s): %s", predicate_id, rowid, exc)
-            self._rebuild_fts()
+            if conn is None:
+                self._rebuild_fts()
             return False
 
     def _sanitize_fts_query(self, query: str) -> str:
@@ -205,10 +259,10 @@ class PredicateService(CRUDService):
         sql = f"UPDATE predicates SET {', '.join(set_parts)} WHERE predicate_id = ?"
 
         with self.db.transaction() as conn:
-            removed = self._remove_from_fts(predicate_id)
+            removed = self._remove_from_fts(predicate_id, conn=conn)
             conn.execute(sql, params)
             if removed:
-                self._index_fts(predicate_id)
+                self._index_fts(predicate_id, conn=conn)
 
         return self.get(predicate_id)
 
@@ -235,6 +289,16 @@ class PredicateService(CRUDService):
         if len(matches) == 1:
             return matches[0]
         return None
+
+    def get_by_ids(self, predicate_ids: list[str]) -> list[dict]:
+        """Fetch multiple predicates in one query (O(1) vs O(N) loop)."""
+        if not predicate_ids:
+            return []
+        placeholders = ", ".join(["?"] * len(predicate_ids))
+        return self.db.execute(
+            f"SELECT * FROM predicates WHERE predicate_id IN ({placeholders})",
+            tuple(predicate_ids),
+        )
 
     def update_predicate_id(self, old_id: str, new_id: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
         """Rename a predicate's predicate_id, cascading to all references.
@@ -305,12 +369,12 @@ class PredicateService(CRUDService):
         updates["predicate_id"] = new_id
         updates["updated_at"] = ts
 
-        # Remove old FTS entry BEFORE transaction (uses own DB connection)
-        self._remove_from_fts(old_id)
-
-        # Set defer_foreign_keys before the transaction starts
-        self.db.execute("PRAGMA defer_foreign_keys=ON")
         with self.db.transaction() as conn:
+            # Temporarily disable FK enforcement for the PK rename.
+            # Cascade updates below restore consistency before commit.
+            conn.execute("PRAGMA foreign_keys=OFF")
+            # FTS operations inside the transaction so rollback keeps them in sync
+            self._remove_from_fts(old_id, conn=conn)
             set_parts = [f"{k} = ?" for k in updates]
             params = list(updates.values()) + [old_id]
             conn.execute(
@@ -330,8 +394,8 @@ class PredicateService(CRUDService):
                 (new_id, old_id),
             )
 
-        # Re-index FTS after the transaction completes
-        self._index_fts(new_id)
+            self._index_fts(new_id, conn=conn)
+            conn.execute("PRAGMA foreign_keys=ON")
 
         return self.get(new_id)
 

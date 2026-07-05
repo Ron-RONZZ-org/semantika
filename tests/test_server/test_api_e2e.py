@@ -623,6 +623,13 @@ class TestNodeDeleteCascade:
         )
         assert resp.status_code == 200
 
+        # Ensure the predicate exists (may already exist from shared module-scoped DB)
+        pred_resp = client.post(
+            "/api/v1/graph/predicates",
+            json={"predicate_id": "ex:rel", "labels": {"en": "rel"}},
+        )
+        assert pred_resp.status_code in (200, 400)  # 400 if already exists
+
         resp = client.post(
             "/api/v1/graph/triples",
             json={
@@ -634,8 +641,13 @@ class TestNodeDeleteCascade:
         )
         assert resp.status_code == 200
 
-        # Delete the target node (FK constraint would fail without cascade fix)
+        # Delete WITHOUT force should return 409 because there are dependent triples
         resp = client.delete("/api/v1/graph/nodes/FKTARGET?soft=true")
+        assert resp.status_code == 409
+        assert "triple" in resp.json()["detail"]
+
+        # Delete WITH force should succeed and cascade
+        resp = client.delete("/api/v1/graph/nodes/FKTARGET?soft=true&force=true")
         assert resp.status_code == 200
         assert resp.json()["deleted"] is True
 
@@ -1001,26 +1013,30 @@ class TestAdditionalCommands:
         assert data["data"]["form"] == "unit-add"
 
 
-# ── SPARQL Query Endpoint ─────────────────────────────────────────────────
+# ── Raw SQL Query Endpoint ─────────────────────────────────────────────────
 
 
-class TestSparqlAPI:
-    """Test the SPARQL-like endpoint."""
+class TestRawQueryAPI:
+    """Test the read-only SQL query endpoint."""
 
-    def test_sparql_select(self, client: TestClient):
-        resp = client.post("/api/v1/query/sparql", json={"query": "SELECT * FROM nodes LIMIT 5"})
+    def test_raw_select(self, client: TestClient):
+        resp = client.post("/api/v1/query/raw", json={"query": "SELECT * FROM nodes LIMIT 5"})
         assert resp.status_code == 200
         data = resp.json()
         assert "results" in data
         assert "count" in data
 
-    def test_sparql_rejects_non_select(self, client: TestClient):
-        resp = client.post("/api/v1/query/sparql", json={"query": "DROP TABLE nodes"})
+    def test_raw_rejects_non_select(self, client: TestClient):
+        resp = client.post("/api/v1/query/raw", json={"query": "DROP TABLE nodes"})
         assert resp.status_code == 400
 
-    def test_sparql_rejects_system_tables(self, client: TestClient):
-        resp = client.post("/api/v1/query/sparql", json={"query": "SELECT * FROM sqlite_master"})
-        assert resp.status_code == 403
+    def test_raw_readonly_system_tables(self, client: TestClient):
+        # System table queries are allowed — the read-only connection
+        # prevents any modification regardless of query content.
+        resp = client.post("/api/v1/query/raw", json={"query": "SELECT * FROM sqlite_master"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "results" in data
 
 
 # ── Query Search ──────────────────────────────────────────────────────────

@@ -155,6 +155,35 @@ class NodeService(NodeFtsMixin, CRUDService):
 
         return self.get(node_id)
 
+    # ── Delete warning ─────────────────────────────────────────────────
+
+    def get_delete_warning(self, node_id: str) -> str | None:
+        """Check if deleting this node would cascade-delete triples.
+
+        Returns a warning message with triple counts, or None if safe.
+        """
+        subject_count = self.db.execute_one(
+            "SELECT COUNT(*) AS cnt FROM triples WHERE subject_id = ?",
+            (node_id,),
+        )["cnt"]
+        object_count = self.db.execute_one(
+            "SELECT COUNT(*) AS cnt FROM triples "
+            "WHERE object_type = 'uri' AND object_value = ?",
+            (node_id,),
+        )["cnt"]
+        total = subject_count + object_count
+        if total == 0:
+            return None
+        parts = []
+        if subject_count:
+            parts.append(f"{subject_count} as subject")
+        if object_count:
+            parts.append(f"{object_count} as URI object")
+        return (
+            f"Deleting '{node_id}' will also remove {total} triple(s) "
+            f"({', '.join(parts)}). Use --force to confirm."
+        )
+
     # ── Override delete ────────────────────────────────────────────────
 
     def delete(self, node_id: str, soft: bool = True) -> bool:
@@ -386,9 +415,12 @@ class NodeService(NodeFtsMixin, CRUDService):
             conn.execute(
                 """UPDATE triples SET subject_id = ?
                    WHERE subject_id = ?
-                     AND (predicate_id, object_value, object_type) NOT IN (
-                       SELECT predicate_id, object_value, object_type
-                       FROM triples WHERE subject_id = ?
+                     AND NOT EXISTS (
+                       SELECT 1 FROM triples AS t2
+                       WHERE t2.subject_id = ?
+                         AND t2.predicate_id = triples.predicate_id
+                         AND t2.object_value = triples.object_value
+                         AND t2.object_type = triples.object_type
                      )""",
                 (target_id, source_id, target_id),
             )
@@ -396,9 +428,13 @@ class NodeService(NodeFtsMixin, CRUDService):
             conn.execute(
                 """UPDATE triples SET object_value = ?
                    WHERE object_type = 'uri' AND object_value = ?
-                     AND (subject_id, predicate_id, object_type) NOT IN (
-                       SELECT subject_id, predicate_id, object_type
-                       FROM triples WHERE object_type = 'uri' AND object_value = ?
+                     AND NOT EXISTS (
+                       SELECT 1 FROM triples AS t2
+                       WHERE t2.object_type = 'uri'
+                         AND t2.object_value = ?
+                         AND t2.subject_id = triples.subject_id
+                         AND t2.predicate_id = triples.predicate_id
+                         AND t2.object_type = triples.object_type
                      )""",
                 (target_id, source_id, target_id),
             )
