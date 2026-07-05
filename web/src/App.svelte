@@ -1,6 +1,7 @@
 <script>
   import PopupOverlay from "./lib/PopupOverlay.svelte";
   import BannerContainer from "./lib/BannerContainer.svelte";
+  import ConfirmDialog from "./lib/ConfirmDialog.svelte";
   import { popup } from "./lib/popupStore.svelte.js";
   import { tabStore } from "./lib/tabStore.svelte.js";
   import { dirtyFormStore } from "./lib/dirtyFormStore.svelte.js";
@@ -8,6 +9,9 @@
   import { shouldIntercept } from "./lib/commandRouter.js";
   import { findNode } from "./lib/commandTree.js";
   import { parseCommand } from "./lib/parser.js";
+
+  /** @type {{ tokens: string[], flags: Record<string,string>, message: string } | null} */
+  let confirmRequest = $state(null);
 
   let isLoading = $state(false);
 
@@ -60,6 +64,16 @@
 
       const result = await execute(input);
 
+      if (result.type === "confirm") {
+        // Show confirmation dialog for LLM-generated destructive commands
+        confirmRequest = {
+          tokens: result.tokens,
+          flags: result.flags || {},
+          message: result.message || "Confirm destructive command?",
+        };
+        return;
+      }
+
       if (result.type === "form-required") {
         const { form, initialData } = result.data || {};
         if (form) {
@@ -96,6 +110,28 @@
     }
   }
 
+  async function handleConfirmCommand() {
+    if (!confirmRequest) return;
+    const { tokens, flags } = confirmRequest;
+    confirmRequest = null;
+    try {
+      const resp = await fetch("/api/v1/llm/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tokens, flags }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        const errMsg = data.detail?.error || data.detail || `HTTP ${resp.status}`;
+        popup.show("error", "Command Failed", { message: errMsg });
+        return;
+      }
+      popup.show(data.type || "status", data.title || "Done", data.data || {});
+    } catch (err) {
+      popup.show("error", "Connection Error", { message: `Confirm failed: ${err.message}` });
+    }
+  }
+
 
 </script>
 
@@ -112,6 +148,13 @@
     <div class="loading-bar" aria-label="Loading"></div>
   {/if}
   <PopupOverlay />
+  {#if confirmRequest}
+    <ConfirmDialog
+      message={confirmRequest.message}
+      onConfirm={handleConfirmCommand}
+      onDismiss={() => { confirmRequest = null; }}
+    />
+  {/if}
 </main>
 
 <style>

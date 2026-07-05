@@ -5,6 +5,7 @@
   import { renderMarkdown } from "./markdown.js";
   import ChatInput from "./ChatInput.svelte";
   import LlmSetupModal from "./LlmSetupModal.svelte";
+  import ConfirmDialog from "./ConfirmDialog.svelte";
   import { parseCommand } from "./parser.js";
   import { commandTree, findNode } from "./commandTree.js";
   import { shouldIntercept } from "./commandRouter.js";
@@ -15,6 +16,9 @@
   let messages = $state([]);
   let convoEl = $state(null);
   let isLoadingLlm = $state(false);
+
+  /** @type {{ tokens: string[], flags: Record<string,string>, message: string } | null} */
+  let confirmRequest = $state(null);
   let saveDialogIndex = $state(-1);
   let saveAlias = $state("");
   let saveCommand = $state("");
@@ -168,6 +172,22 @@
       }
 
       const data = await resp.json();
+
+      // Handle permission-gated destructive commands
+      if (data.type === "confirm") {
+        confirmRequest = {
+          tokens: data.tokens,
+          flags: data.flags || {},
+          message: data.message || "Confirm destructive command?",
+        };
+        messages = messages.map((m, i) =>
+          i === msgIdx ? { ...m, html: `<p><em>Waiting for confirmation…</em></p>`, _streaming: false } : m,
+        );
+        isLoadingLlm = false;
+        scrollToBottom();
+        return;
+      }
+
       const reply = data.reply || data.data?.reply || JSON.stringify(data);
       const html = renderMarkdown(reply);
       messages = messages.map((m, i) =>
@@ -272,6 +292,28 @@
       }
     } catch {
       llmAvailable = false;
+    }
+  }
+
+  async function handleConfirmCommand() {
+    if (!confirmRequest) return;
+    const { tokens, flags } = confirmRequest;
+    confirmRequest = null;
+    try {
+      const resp = await fetch("/api/v1/llm/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tokens, flags }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        const errMsg = data.detail?.error || data.detail || `HTTP ${resp.status}`;
+        popup.show("error", "Command Failed", { message: errMsg });
+        return;
+      }
+      popup.show(data.type || "status", data.title || "Done", data.data || {});
+    } catch (err) {
+      popup.show("error", "Connection Error", { message: `Confirm failed: ${err.message}` });
     }
   }
 
@@ -382,6 +424,14 @@
   <LlmSetupModal
     onConfigured={handleLlmConfigured}
     onDismiss={() => { showLlmSetup = false; }}
+  />
+{/if}
+
+{#if confirmRequest}
+  <ConfirmDialog
+    message={confirmRequest.message}
+    onConfirm={handleConfirmCommand}
+    onDismiss={() => { confirmRequest = null; }}
   />
 {/if}
 
