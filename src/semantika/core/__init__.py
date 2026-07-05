@@ -4,6 +4,7 @@
 and backup.  FTS5 config remains local.
 """
 
+from lightercore import set_app_name
 from lightercore.db import LighterbirdDB as SemantikaDB
 from lightercore.paths import config_dir, data_dir, ensure_dirs
 from lightercore.exceptions import (
@@ -11,6 +12,9 @@ from lightercore.exceptions import (
     ProtectedPathError,
     LighterbirdError as SemantikaError,
 )
+
+# Ensure semantika uses its own path namespace, not lighterbird's default
+set_app_name("semantika")
 
 __all__ = [
     "SemantikaDB",

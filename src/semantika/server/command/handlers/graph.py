@@ -47,13 +47,24 @@ def cmd_export(remaining: list[str], flags: dict[str, str]) -> dict:
 
 
 @command("import", description="Import Turtle data",
-         params=[{"name": "data", "type": "string", "required": True}])
+         params=[{"name": "data", "type": "string", "required": False}],
+         flags=[{"name": "file", "type": "string", "help": "Path to .ttl file to import (alternative to data=)"}])
 def cmd_import(remaining: list[str], flags: dict[str, str]) -> dict:
-    """Import Turtle (.ttl) data into the graph."""
+    """Import Turtle (.ttl) data into the graph.
+
+    Provide inline content via ``data=`` or a file path via ``--file``.
+    """
     svc = get_services()
-    ttl_content = flags.get("data") or (remaining[0] if remaining else "")
+    file_path = flags.get("file", "")
+    if file_path:
+        try:
+            ttl_content = Path(file_path).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as e:
+            raise CommandValidationError(f"Cannot read file '{file_path}': {e}")
+    else:
+        ttl_content = flags.get("data") or (remaining[0] if remaining else "")
     if not ttl_content:
-        raise CommandValidationError("Provide TTL content via data= flag")
+        raise CommandValidationError("Provide TTL content via data= or --file= flag")
     from semantika.graph.triple_turtle import import_turtle as _import
 
     stats = _import(ttl_content)

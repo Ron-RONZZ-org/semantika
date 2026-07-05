@@ -40,7 +40,7 @@ Traditional knowledge management apps drown you in sidebars, nested menus, and f
 - `!search <q> [--date-from] [--date-to]` — full-text search with optional date filtering
 - `!view <id>` — alias for triples-by-subject view
 - `!export [--output FILE] [--base-uri URI]` — export graph in Turtle format to file or stdout
-- `!import <data>` — import Turtle (.ttl) data
+- `!import <data>` or `!import --file <path>` — import Turtle (.ttl) data (inline or from file)
 - `!trash list/restore/delete/purge` — manage soft-deleted nodes (restore, permanent delete, or bulk purge)
 - `!proof add/view/delete` — attach evidence (proofs) to triples
 - `!review start [view|quiz]` — interactive triple review with two modes:
@@ -177,9 +177,28 @@ uv pip install -e "../lightercore" -e ".[dev]"
 
 ### Running the server
 
+The database lives at `~/.local/share/semantika/semantika.db` by default.
+The first run creates tables and seeds default predicates automatically.
+
 ```bash
-# Start with clean database
+# Start with persistent data from ~/.local/share/semantika/
+uv run uvicorn semantika.server.app:create_app --factory --port 8001
+
+# Start with an isolated temporary database (for testing)
 SEMANTIKA_DATA_DIR=/tmp/semantika-dev uv run uvicorn semantika.server.app:create_app --factory --port 8001
+```
+
+To import your existing A-semantika data:
+
+```bash
+# 1. Export from A-semantika
+cd ../A-semantika && /path/to/A semantika eksporti --output /tmp/a-semantika.ttl
+
+# 2. Import into semantika's live DB
+curl -X POST http://localhost:8001/api/v1/command \
+  -H "Content-Type: application/json" \
+  -d '{"tokens":["import"],"flags":{"file":"/tmp/a-semantika.ttl"}}'
+```
 
 ### Testing API
 
@@ -244,4 +263,4 @@ CREATE TABLE triples (
 
 ## Status
 
-**Pre-alpha — core complete.** All core triple store operations (nodes, predicates, triples, review, proof, units, TTL import/export) are implemented and tested. The LLM provider (OpenAI-compatible + Ollama) supports configurable profiles with keyring-based key storage and two-phase command generation (natural language → structured command → execution → summarization). 76 pytest tests pass (24 unit + 52 E2E API).
+**Pre-alpha — core complete.** All core triple store operations (nodes, predicates, triples, review, proof, units, TTL import/export) are implemented and tested. The LLM provider (OpenAI-compatible + Ollama) supports configurable profiles with keyring-based key storage and two-phase command generation (natural language → structured command → execution → summarization). 762 pytest tests pass.
