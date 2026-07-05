@@ -5,8 +5,12 @@ Ported from A-semantika's ``_triple_service.py`` with EO→EN migration.
 
 from __future__ import annotations
 
+import json
+import logging
 import sqlite3
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from semantika.core import SemantikaDB, AmbiguousIDError
 from semantika.core.crud import now
@@ -340,7 +344,6 @@ class TripleService:
 
     def _label_from_node(self, node: dict) -> str:
         """Extract the first non-empty label from a node dict."""
-        import json
         labels_raw = node.get("labels", "{}")
         try:
             labels = json.loads(labels_raw) if isinstance(labels_raw, str) else labels_raw
@@ -403,10 +406,21 @@ class TripleService:
 
     # ── Turtle Export ──────────────────────────────────────────────────
 
-    def export_turtle(self, base_uri: str = "https://example.org/") -> str:
+    def export_turtle(self, base_uri: str | None = None) -> str:
         """Export the entire triple store to standard Turtle (.ttl) format.
 
         Delegates to :func:`semantika.graph.triple_turtle.export_turtle`.
+
+        Args:
+            base_uri: Base URI for un-prefixed node IDs. Falls back to
+                      ``https://example.org/`` if not provided — callers
+                      should supply a real URI for production use.
         """
         from semantika.graph.triple_turtle import export_turtle as _export
+        if base_uri is None:
+            logger.warning(
+                "export_turtle called without base_uri — using "
+                "https://example.org/ placeholder. Pass base_uri explicitly."
+            )
+            base_uri = "https://example.org/"
         return _export(self.db, base_uri)

@@ -53,7 +53,7 @@ def cmd_trash_purge(remaining: list[str], flags: dict[str, str]) -> dict:
         items = svc["node"].get_trash_older_than(days)
         count = len(items)
         for item in items:
-            nid = item.get("node_id") or item.get(svc["node"]._pk_column)
+            nid = item.get("node_id")
             if nid:
                 svc["node"].delete(nid, soft=False)
     return {"type": "status", "data": {"message": f"Purged {count} item(s) from trash"}}

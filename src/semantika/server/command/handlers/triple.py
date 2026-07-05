@@ -270,7 +270,11 @@ def cmd_triple_modify(remaining: list[str], flags: dict[str, str]) -> dict:
     if noop:
         return {"type": "status", "data": {"message": "No change — triple remains unchanged"}}
     old_type = triple.get("object_type", "uri")
-    svc["proof"].cascade_delete_proofs(triple["subject_id"], triple["predicate_id"], triple["object_value"])
+    # Migrate proofs to the new triple key instead of deleting them
+    svc["proof"].migrate_proofs(
+        old=(triple["subject_id"], triple["predicate_id"], triple["object_value"]),
+        new=(new_subject, new_predicate, new_object),
+    )
     svc["triple"].remove(subject_id=triple["subject_id"], predicate_id=triple["predicate_id"],
                          object_value=triple["object_value"], object_type=old_type)
     svc["triple"].add(subject_id=new_subject, predicate_id=new_predicate, object_value=new_object,

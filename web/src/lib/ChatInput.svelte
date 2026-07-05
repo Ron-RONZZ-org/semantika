@@ -1,8 +1,6 @@
 <script>
   import { commandTree } from "./commandTree.js";
-  import { getCompletions, getDataCompletionsFromCache } from "./commandEngine.js";
-  import { parseCommand, hasTrailingSpace } from "./parser.js";
-  import { popup } from "./popupStore.svelte.js";
+  import { getCompletions } from "./commandEngine.js";
   import { history } from "./commandHistory.svelte.js";
 
   let {
@@ -64,76 +62,6 @@
     selectedDataIndex = -1;
 
     dataCompletions = [];
-    if (result.node && result.level === "params") {
-      const { tokens, flags, partial } = parseCommand(value);
-      const trailing = hasTrailingSpace(value);
-      const effectiveTokens = trailing && partial ? [...tokens, partial] : tokens;
-      const cmdTokens = countCommandTokens(effectiveTokens);
-
-      if (result.node.params) {
-        const consumed = effectiveTokens.length - cmdTokens;
-        for (let i = consumed; i < result.node.params.length; i++) {
-          const p = result.node.params[i];
-          if (p.uuidSource) {
-            dataCompletions = getDataCompletionsFromCache(popup.cache, p.uuidSource);
-            break;
-          }
-        }
-
-        if (dataCompletions.length === 0 && result.node.params.length > 0) {
-          const lastParam = result.node.params[result.node.params.length - 1];
-          if (lastParam.repeatable && lastParam.uuidSource && consumed >= result.node.params.length) {
-            dataCompletions = getDataCompletionsFromCache(popup.cache, lastParam.uuidSource);
-          }
-        }
-      }
-
-      if (dataCompletions.length === 0 && result.node.flags) {
-        if (partial.startsWith("--")) {
-          const partialFlagName = partial.slice(2);
-          for (const f of result.node.flags) {
-            if (f.uuidSource && f.name.startsWith(partialFlagName)) {
-              dataCompletions = getDataCompletionsFromCache(popup.cache, f.uuidSource);
-              break;
-            }
-          }
-        }
-        if (dataCompletions.length === 0) {
-          for (const f of result.node.flags) {
-            if (f.uuidSource && f.name in flags && flags[f.name] === "") {
-              dataCompletions = getDataCompletionsFromCache(popup.cache, f.uuidSource);
-              break;
-            }
-          }
-        }
-        if (dataCompletions.length === 0) {
-          for (const f of result.node.flags) {
-            if (f.uuidSource && f.name in flags && flags[f.name].endsWith(",")) {
-              const allItems = getDataCompletionsFromCache(popup.cache, f.uuidSource);
-              if (allItems.length > 0) {
-                const enteredValues = flags[f.name]
-                  .split(",")
-                  .map((v) => v.trim().toLowerCase())
-                  .filter((v) => v.length > 0);
-                dataCompletions = allItems.filter(
-                  (dc) => !enteredValues.includes((dc.value || "").toLowerCase()),
-                );
-              }
-              break;
-            }
-          }
-        }
-      }
-
-      if (dataCompletions.length > 0) {
-        const paramTokens = effectiveTokens.slice(cmdTokens);
-        const usedValues = new Set(paramTokens.map(t => t.toLowerCase()));
-        dataCompletions = dataCompletions.filter((dc) => {
-          const insertVal = (dc.value || dc.uuid?.slice(0, 8) || "").toLowerCase();
-          return !usedValues.has(insertVal);
-        });
-      }
-    }
   }
 
   function countCommandTokens(tokens) {

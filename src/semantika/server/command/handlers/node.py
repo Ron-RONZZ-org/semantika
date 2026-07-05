@@ -128,7 +128,7 @@ def cmd_node_delete(remaining: list[str], flags: dict[str, str]) -> dict:
                 ids.append(n["node_id"])
     if not ids:
         raise CommandValidationError("Specify node ID(s) or use --prefix")
-    force = flags.get("force")
+    force = flags.get("force", "").lower() in ("true", "1", "yes")
     for nid in ids:
         warning = svc["node"].get_delete_warning(nid)
         if warning and not force:

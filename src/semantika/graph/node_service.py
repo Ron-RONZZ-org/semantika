@@ -467,10 +467,11 @@ class NodeService(NodeFtsMixin, CRUDService):
 
     def empty_all_trash(self) -> int:
         """Permanently delete all trashed nodes. Returns count deleted."""
-        items = self.db.execute("SELECT * FROM nodes_trash")
-        count = len(items)
-        if count > 0:
-            self.db.execute("DELETE FROM nodes_trash")
+        with self.db.transaction():
+            items = self.db.execute("SELECT * FROM nodes_trash")
+            count = len(items)
+            if count > 0:
+                self.db.execute("DELETE FROM nodes_trash")
         return count
 
     def get_trash_older_than(self, days: int, limit: int = 1000) -> list[dict]:
