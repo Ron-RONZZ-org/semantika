@@ -20,6 +20,11 @@
 
   function loadingLabel(input) {
     const t = input.trim();
+    if (t.startsWith("/*")) {
+      const parts = t.slice(2).trimStart().split(/\s+/);
+      const cmd = parts[0] || "";
+      return cmd ? `/*${cmd}\u2026` : "Prompt command\u2026";
+    }
     if (!t.startsWith("!")) return "Thinking\u2026";
     const parts = t.slice(1).split(/\s+/);
     const cmd = parts.slice(0, 2).join(" ");

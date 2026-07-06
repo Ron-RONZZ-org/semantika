@@ -29,7 +29,7 @@ Semantika is the **third generation** in a toolchain. When implementing new feat
 |---------|------|-------------------|
 | **[A-semantika](../A-semantika)** | EO-first CLI ancestor | **Business logic**: NodeService, PredicateService, TripleService, Turtle export/import, review/proof mechanics, unit ontology. Forked with Esperanto→English migration. |
 | **[lighterbird](../lighterbird)** | Mature sister PIM app | **UX/LLM/DB**: Command-bar interaction, command tree + dispatch architecture, autocomplete engine, tab/result-panel UI, LLM provider integration (OpenAI/Ollama), text-based command generation, keyring-based config management. |
-| **[lightercore](../lightercore)** | Shared core library | **DB/paths/exceptions/CRUD/backup/permissions**: Canonical implementations consumed by both lighterbird and semantika. Replaces the earlier vendored A-core. |
+| **[lightercore](../lightercore)** | Shared core library | **DB/paths/exceptions/CRUD/backup/permissions/prompt_commands**: Canonical implementations consumed by both lighterbird and semantika. Replaces the earlier vendored A-core. The `prompt_commands` module provides file-based LLM prompt templates (`/*` prefix) from `~/.config/semantika/commands/*.md`. |
 | **[A-core](../A-core)** | First-gen core library | Historical reference only. Superseded by lightercore. |
 
 **Key rule**: When the task is about graph business logic (nodes, predicates, triples, TTL, review, proof, units), look at **A-semantika** first. When the task is about UX patterns (command routing, LLM, autocomplete, tabs, forms) or DB management, look at **lighterbird** first. For shared infrastructure (DB, paths, exceptions, CRUD, backup, permissions), look at **lightercore** first — that is the canonical source.

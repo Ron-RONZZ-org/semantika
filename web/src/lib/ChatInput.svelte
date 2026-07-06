@@ -1,6 +1,6 @@
 <script>
   import { commandTree } from "./commandTree.js";
-  import { getCompletions } from "./commandEngine.js";
+  import { getCompletions, getPromptCompletions } from "./commandEngine.js";
   import { history } from "./commandHistory.svelte.js";
 
   let {
@@ -17,6 +17,7 @@
   let selectedSuggestion = $state(-1);
   let selectedDataIndex = $state(-1);
   let isCommandMode = $state(false);
+  let isPromptCommand = $state(false);
   let textareaEl = $state(null);
 
   let hasInteractiveItems = $derived(
@@ -24,7 +25,7 @@
   );
 
   let showSuggestions = $derived(
-    (isCommandMode && hasInteractiveItems) || positionals.length > 0,
+    ((isCommandMode || isPromptCommand) && hasInteractiveItems) || positionals.length > 0,
   );
 
   let displaySuggestions = $derived(
@@ -36,7 +37,8 @@
 
   function checkCommandMode() {
     isCommandMode = value.startsWith("!");
-    if (!isCommandMode) {
+    isPromptCommand = value.startsWith("/*");
+    if (!isCommandMode && !isPromptCommand) {
       suggestions = [];
       hints = [];
       dataCompletions = [];
@@ -45,6 +47,16 @@
   }
 
   function updateSuggestions() {
+    if (isPromptCommand) {
+      const result = getPromptCompletions(value);
+      suggestions = result.completions;
+      hints = result.hints;
+      dataCompletions = [];
+      positionals = [];
+      selectedSuggestion = -1;
+      selectedDataIndex = -1;
+      return;
+    }
     if (!isCommandMode) {
       suggestions = [];
       hints = [];
