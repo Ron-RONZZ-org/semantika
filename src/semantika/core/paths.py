@@ -1,5 +1,9 @@
 """Re-exported from lightercore -- see ``lightercore.paths``."""
-from lightercore.paths import *  # noqa: F401, F403
+from __future__ import annotations
 
-# Keep backward-compatible aliases
-from lightercore.paths import _base  # noqa: F401
+from lightercore.paths import (    # noqa: F401
+    _base,
+    config_dir,
+    data_dir,
+    ensure_dirs,
+)

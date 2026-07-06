@@ -200,6 +200,20 @@ curl -X POST http://localhost:8001/api/v1/command \
   -d '{"tokens":["import"],"flags":{"file":"/tmp/a-semantika.ttl"}}'
 ```
 
+### CORS Configuration (Production)
+
+By default, Semantika allows all origins (`*`) in development. In production, you **must** restrict CORS to your actual frontend domain:
+
+```bash
+# Single frontend origin
+SEMANTIKA_CORS_ORIGINS=https://semantika.example.com uv run uvicorn ...
+
+# Multiple origins (comma-separated)
+SEMANTIKA_CORS_ORIGINS="https://app.example.com,https://admin.example.com" uv run uvicorn ...
+```
+
+The `SEMANTIKA_CORS_ORIGINS` env var accepts a comma-separated list of origins. If unset, a warning is logged and all origins are allowed (suitable only for local development).
+
 ### Testing API
 
 ```bash

@@ -1,16 +1,28 @@
 """Re-exported from lightercore -- see ``lightercore.backup``."""
 from __future__ import annotations
 
-from lightercore.backup import *  # noqa: F401, F403
 from lightercore.backup import (  # noqa: F401
     BackupStrategy,
+    add_strategy,
+    backup_all_strategies,
+    export_data,
+    get_strategy,
+    import_data,
+    list_backups,
+    list_strategies,
+    load_config,
+    prune_backups,
+    remove_strategy,
+    resolve_target_path,
+    restore_by_timestamp,
+    restore_latest,
+    save_config,
+    update_strategy,
+    verify_strategy_target,
     _backup_dir,
     _backup_filename,
     _config_path,
     _timestamp,
-    get_strategy,
-    prune_backups,
-    resolve_target_path,
 )
 
 # Private helpers used by tests — not in __all__

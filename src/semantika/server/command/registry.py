@@ -46,6 +46,7 @@ def command(path: str, **metadata: Any) -> Callable:
         if metadata.get("interactive"):
             form_type = metadata.get("form_type", path.replace(".", "-"))
             _interactive_forms[path] = form_type
+        _invalidate_cache()
         return fn
     return wrapper
 
@@ -121,6 +122,31 @@ def get_command_level(path: str) -> PermissionLevel:
     return meta.get("permission_level", PermissionLevel.WRITE)
 
 
+# ── Command tree cache ─────────────────────────────────────────────────────
+
+_command_tree_cache: list[dict[str, Any]] | None = None
+"""Cached command tree — invalidated when a new handler is registered."""
+
+
+def _invalidate_cache() -> None:
+    """Clear cached tree/definitions so they are rebuilt on next access.
+
+    Called automatically by ``@command()`` / ``@group_command()``.
+    """
+    global _command_tree_cache
+    _command_tree_cache = None
+
+
+def clear_command_cache() -> None:
+    """Public helper: clear cached tree and definitions.
+
+    Useful in tests where handlers are registered dynamically.
+    """
+    _invalidate_cache()
+    global _command_defs_cache
+    _command_defs_cache = None
+
+
 # ── Auto-generated command tree ──────────────────────────────────────────
 
 
@@ -128,8 +154,13 @@ def get_command_tree() -> list[dict[str, Any]]:
     """Build the command tree from registered handlers.
 
     The tree is built dynamically from ``@command()`` decorator registrations,
-    so it never goes out of sync with available commands.
+    so it never goes out of sync with available commands.  The result is
+    cached and only rebuilt when a new handler is registered.
     """
+    global _command_tree_cache
+    if _command_tree_cache is not None:
+        return list(_command_tree_cache)
+
     root: dict[str, Any] = {}
 
     for path_str, (_, meta) in _commands.items():
@@ -189,15 +220,23 @@ def get_command_tree() -> list[dict[str, Any]]:
             result["interactive"] = True
         return result
 
-    return sorted(
+    _command_tree_cache = sorted(
         [_to_list(v) for v in root.values()],
         key=lambda x: x["name"],
     )
+    return list(_command_tree_cache)
+
+
+# Cache for flattened definitions (derived from tree cache)
+_command_defs_cache: list[dict] | None = None
 
 
 def get_command_definitions(tree: list[dict] | None = None) -> list[dict]:
     """Flatten the command tree into machine-readable definitions for the LLM."""
+    global _command_defs_cache
     if tree is None:
+        if _command_defs_cache is not None:
+            return list(_command_defs_cache)
         tree = get_command_tree()
     definitions: list[dict] = []
 
@@ -224,6 +263,8 @@ def get_command_definitions(tree: list[dict] | None = None) -> list[dict]:
                 _walk(node["children"], path)
 
     _walk(tree)
+    if tree is None:
+        _command_defs_cache = list(definitions)
     return definitions
 
 

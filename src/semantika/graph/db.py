@@ -230,38 +230,33 @@ PROOF_SCHEMA = {
 def init_db() -> None:
     """Initialize the database: create tables, indexes, seed defaults."""
     db = get_db()
-    conn = db._get_conn()
 
     # Create all tables (IF NOT EXISTS handles idempotency)
     for sql in SCHEMA.values():
-        conn.execute(sql)
+        db.execute(sql)
 
     # Create indexes
     for idx_sql in TRIPLES_INDEXES:
-        conn.execute(idx_sql)
-    conn.execute(NODES_NOCASE_INDEX)
+        db.execute(idx_sql)
+    db.execute(NODES_NOCASE_INDEX)
 
     # Create review/proof tables
     for sql in {**REVIEW_SCHEMA, **PROOF_SCHEMA}.values():
-        conn.execute(sql)
+        db.execute(sql)
 
-    # Create FTS tables
-    _ensure_nodes_fts(conn)
-    _ensure_predicates_fts(conn)
+    # Create FTS tables + populate
+    _ensure_nodes_fts(db)
+    _ensure_predicates_fts(db)
 
-    # Migrate existing review tables (add missing columns)
-    _migrate_review_schema(conn)
-
-    # Migrate triples table (add object_unit)
-    _migrate_triples_schema(conn)
-
-    conn.commit()
+    # Migrate existing tables
+    _migrate_review_schema(db)
+    _migrate_triples_schema(db)
 
     # Seed default predicates if empty
     _seed_default_predicates(db)
 
 
-def _migrate_review_schema(conn: sqlite3.Connection) -> None:
+def _migrate_review_schema(db: SemantikaDB) -> None:
     """Add missing columns to existing review tables (migration)."""
     migs = {
         "review_sessions": [
@@ -278,12 +273,12 @@ def _migrate_review_schema(conn: sqlite3.Connection) -> None:
     for table, cols in migs.items():
         for col_name, col_def in cols:
             try:
-                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}")
+                db.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}")
             except sqlite3.OperationalError:
                 pass  # Column already exists
 
 
-def _migrate_triples_schema(conn: sqlite3.Connection) -> None:
+def _migrate_triples_schema(db: SemantikaDB) -> None:
     """Add missing columns to existing triples table (migration)."""
     migs = {
         "triples": [
@@ -293,14 +288,14 @@ def _migrate_triples_schema(conn: sqlite3.Connection) -> None:
     for table, cols in migs.items():
         for col_name, col_def in cols:
             try:
-                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}")
+                db.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}")
             except sqlite3.OperationalError:
                 pass  # Column already exists
 
 
-def _ensure_nodes_fts(conn: sqlite3.Connection) -> None:
+def _ensure_nodes_fts(db: SemantikaDB) -> None:
     """Create the nodes FTS5 virtual table if it doesn't exist."""
-    conn.execute("""
+    db.execute("""
         CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
             node_id UNINDEXED,
             label_text,
@@ -311,21 +306,20 @@ def _ensure_nodes_fts(conn: sqlite3.Connection) -> None:
         )
     """)
     # Populate if empty
-    count = conn.execute("SELECT COUNT(*) AS cnt FROM nodes_fts").fetchone()
-    if count and count["cnt"] == 0:
+    row = db.execute_one("SELECT COUNT(*) AS cnt FROM nodes_fts")
+    if row and row["cnt"] == 0:
         try:
-            conn.execute(
+            db.execute(
                 "INSERT INTO nodes_fts (rowid, node_id, label_text, definition_text)"
                 " SELECT rowid, node_id, label_text, definition_text FROM nodes"
             )
         except sqlite3.DatabaseError:
             logger.warning("Failed to populate nodes FTS — LIKE fallback will be used")
-            pass
 
 
-def _ensure_predicates_fts(conn: sqlite3.Connection) -> None:
+def _ensure_predicates_fts(db: SemantikaDB) -> None:
     """Create the predicates FTS5 virtual table if it doesn't exist."""
-    conn.execute("""
+    db.execute("""
         CREATE VIRTUAL TABLE IF NOT EXISTS predicates_fts USING fts5(
             predicate_id UNINDEXED,
             labels,
@@ -336,16 +330,15 @@ def _ensure_predicates_fts(conn: sqlite3.Connection) -> None:
             tokenize='unicode61'
         )
     """)
-    count = conn.execute("SELECT COUNT(*) AS cnt FROM predicates_fts").fetchone()
-    if count and count["cnt"] == 0:
+    row = db.execute_one("SELECT COUNT(*) AS cnt FROM predicates_fts")
+    if row and row["cnt"] == 0:
         try:
-            conn.execute(
+            db.execute(
                 "INSERT INTO predicates_fts (rowid, predicate_id, labels, descriptions, aliases)"
                 " SELECT rowid, predicate_id, labels, descriptions, aliases FROM predicates"
             )
         except sqlite3.DatabaseError:
             logger.warning("Failed to populate predicates FTS — LIKE fallback will be used")
-            pass
 
 
 def _seed_default_predicates(db: SemantikaDB) -> None:

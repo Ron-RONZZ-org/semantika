@@ -1,5 +1,9 @@
 """Re-exported from lightercore -- see ``lightercore.exceptions``."""
-from lightercore.exceptions import *  # noqa: F401, F403
+from __future__ import annotations
 
-# Backward-compatible aliases
+from lightercore.exceptions import (
+    AmbiguousIDError,          # noqa: F401
+    LighterbirdError,          # noqa: F401
+    ProtectedPathError,        # noqa: F401
+)
 from lightercore.exceptions import LighterbirdError as SemantikaError  # noqa: F401

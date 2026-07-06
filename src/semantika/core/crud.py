@@ -1,2 +1,4 @@
 """Re-exported from lightercore -- see ``lightercore.crud``."""
-from lightercore.crud import *  # noqa: F401, F403
+from __future__ import annotations
+
+from lightercore.crud import CRUDService, now  # noqa: F401
