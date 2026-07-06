@@ -92,12 +92,18 @@ class LLMProvider(BaseLLMProvider):
             "You are a command parser for the Semantika knowledge graph. "
             "Translate the user's natural-language request into a structured "
             "command from the list below.\n\n"
+            "CRITICAL RULE: You MUST ALWAYS pick a command. Never return {} "
+            "for questions about graph content (nodes, predicates, triples, "
+            "stats, content, domains, what exists, etc.). Even if the match "
+            "is imperfect, choose the closest available command.\n\n"
             "RULES:\n"
             "1. The command path MUST be an exact match from the available "
             "commands. Do NOT invent new paths.\n"
-            "2. If the user asks about data (e.g. \"show me X\", \"what is X\", "
-            "\"list X\", \"search for X\", \"how many X\"), map it to the "
-            "closest data-retrieval command.\n"
+            "2. If the user asks about data (e.g. \"show/display/list X\", "
+            "\"what is/are X\", \"search/find X\", \"how many/count X\", "
+            "\"tell me about X\", \"what kind/type/domain of X\"), map to "
+            "the closest data-retrieval command. NEVER return {} for data "
+            "questions.\n"
             "3. Respond with ONLY a valid JSON object — no markdown, no "
             "explanation, no extra text. Schema:\n"
             '{"tokens": ["exact", "path"], "flags": {"param": "value"}}\n\n'
@@ -112,13 +118,16 @@ class LLMProvider(BaseLLMProvider):
             '- "add a triple: X Y Z" → {"tokens": ["triple", "add"], "flags": {"subject_id": "X", "predicate_id": "Y", "object_value": "Z"}}\n'
             '- "search/find triples about X" → {"tokens": ["triple", "search"], "flags": {"q": "X"}}\n'
             '- "search/find X in the graph" → {"tokens": ["graph", "search"], "flags": {"q": "X"}}\n'
-            '- "stats/statistics/count/how many" → {"tokens": ["graph", "stats"], "flags": {}}\n'
-            '- "view/examine node X" → {"tokens": ["node", "view"], "flags": {"id": "X"}}\n'
-            '- "view/examine triple for X" → {"tokens": ["triple", "view"], "flags": {"id": "X"}}\n'
+            '- "stats/statistics/count/how many/what is the count of" → {"tokens": ["graph", "stats"], "flags": {}}\n'
+            '- "view/examine/show node X" → {"tokens": ["node", "view"], "flags": {"id": "X"}}\n'
+            '- "view/examine/show triple for X" → {"tokens": ["triple", "view"], "flags": {"id": "X"}}\n'
             '- "export/download graph" → {"tokens": ["graph", "export"], "flags": {}}\n'
-            '- "import/load data" → {"tokens": ["graph", "import"], "flags": {}}\n\n'
-            "If the user's request does NOT map to any available command, "
-            "respond with an empty JSON object: {}\n\n"
+            '- "import/load data" → {"tokens": ["graph", "import"], "flags": {}}\n'
+            '- "what domains/categories/types/topics/kinds of nodes" → {"tokens": ["node", "list"], "flags": {}}\n'
+            '- "what predicates/relationships/properties exist" → {"tokens": ["predicate", "list"], "flags": {}}\n'
+            '- "what triples/connections/links exist" → {"tokens": ["triple", "list"], "flags": {}}\n\n'
+            "NEVER return {} for questions about graph data. Always pick "
+            "the closest command.\n\n"
             "Available commands (machine-readable):\n" + defs_text
         )
 
