@@ -156,6 +156,20 @@ async def chat(req: ChatRequest):
         get_handler_metadata,
     )
 
+    # ── Helper: detect write/modify commands ─────────────────────────────
+    _WRITE_VERBS = {
+        "add", "new", "delete", "remove", "update", "set", "modify",
+        "edit", "rename", "merge", "clear", "purge", "restore",
+        "import", "prune", "load", "save", "create",
+    }
+
+    def _is_write_command(tokens: list[str]) -> bool:
+        """Return ``True`` if *tokens* describe a data-modifying action."""
+        if not tokens:
+            return False
+        leaf = tokens[-1].lower()
+        return leaf in _WRITE_VERBS
+
     # ── Helper: try to execute a command and return the result dict ──────
     async def _try_execute(
         tokens: list[str],
@@ -196,7 +210,12 @@ async def chat(req: ChatRequest):
         return await _safe_chat(summary_messages)
 
     # ── Helper: extract !command from a plain text reply ─────────────────
-    _CMD_INLINE_RE = re.compile(r'`?!([\w.]+(?:\s+\S+?)*?)`?')
+    # Match backtick-delimited `` `!cmd args` `` — the closing backtick is
+    # required so the lazy capture doesn't stop prematurely at the first word.
+    _CMD_FENCED_RE = re.compile(r'`!([\w.]+(?:\s+\S+?)*?)`')
+    # Fallback: bare !command (no backticks) — single word only to avoid
+    # matching punctuation or trailing noise.
+    _CMD_BARE_RE = re.compile(r'(?<!\w)!([\w.]+)')
 
     def _find_inline_commands(text: str) -> list[list[str]]:
         """Find candidate ``!command`` invocations in *text*.
@@ -204,6 +223,8 @@ async def chat(req: ChatRequest):
         Returns a list of token lists (e.g. ``[["node", "list"]]``).
         Only returns commands whose first token matches a known top-level
         command group (``node``, ``predicate``, ``triple``, ``graph``, etc.).
+        Dot-separated paths like ``node.search`` are split into separate
+        tokens for the dispatcher.
         """
         known_groups = {
             "node", "predicate", "triple", "graph", "search",
@@ -211,11 +232,35 @@ async def chat(req: ChatRequest):
             "unit", "backup", "llm", "reset", "user", "help",
         }
         found: list[list[str]] = []
-        for match in _CMD_INLINE_RE.finditer(text):
+
+        def _first_token_group(parts: list[str]) -> str | None:
+            """Return the top-level group name of a command token list,
+            handling dot-separated paths like ``node.search``."""
+            if not parts:
+                return None
+            first = parts[0].lower()
+            # If first token contains a dot, check the part before the dot
+            dot_idx = first.find(".")
+            return first[:dot_idx] if dot_idx > 0 else first
+
+        # First pass: fenced `` `!cmd args` `` (preferred — captures full path)
+        for match in _CMD_FENCED_RE.finditer(text):
             raw = match.group(1).strip()
             parts = raw.split()
-            if parts and parts[0].lower() in known_groups:
-                found.append(parts)
+            group = _first_token_group(parts)
+            if group and group in known_groups:
+                # Split dot-separated first token into multiple tokens
+                if "." in parts[0]:
+                    expanded: list[str] = parts[0].split(".")
+                    expanded.extend(parts[1:])
+                    found.append(expanded)
+                else:
+                    found.append(parts)
+        # Second pass: bare !cmd (single token only, no subcommand)
+        for match in _CMD_BARE_RE.finditer(text):
+            raw = match.group(1).strip()
+            if raw.lower() in known_groups:
+                found.append([raw])
         return found
 
     # ── Phase 1: Try structured command generation ───────────────────────
@@ -229,25 +274,64 @@ async def chat(req: ChatRequest):
     executed_cmd = None  # (tokens, flags, result)
     retried = False
 
+    # Phase 1b: If generate_command returned nothing, try a softer approach
+    # — ask the LLM directly what command to run.
+    if not cmd or not cmd.get("tokens"):
+        probe_msgs = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a command parser for Semantika. The user's "
+                    "request did not clearly match any command. Translate it "
+                    "into one of the available commands below. "
+                    "Respond with ONLY a JSON object — no extra text.\n"
+                    '{"tokens": ["exact", "path"], "flags": {}}\n\n'
+                    + json.dumps(defs, indent=2)
+                ),
+            },
+            {"role": "user", "content": req.message},
+        ]
+        probe_raw = await _safe_chat(probe_msgs)
+        if probe_raw:
+            from lightercore.llm.utils import parse_command_result
+            probe_cmd = parse_command_result(probe_raw.strip())
+            if probe_cmd and probe_cmd.get("tokens"):
+                cmd = probe_cmd
+
     if cmd and cmd.get("tokens"):
         tokens = cmd["tokens"]
         flags = cmd.get("flags", {})
 
-        # Phase 2a: Permission check
+        # Phase 2a: Permission check — gate destructive AND write commands
         cmd_path = ".".join(tokens)
         level = get_command_level(cmd_path)
-        if level >= PermissionLevel.DESTRUCTIVE:
+        is_destructive = level >= PermissionLevel.DESTRUCTIVE
+        is_write = _is_write_command(tokens) and not is_destructive
+        if is_destructive or is_write:
             meta = get_handler_metadata(cmd_path)
             desc = meta.get("description", "") if meta else ""
+            if is_destructive:
+                tag = "destructive"
+                advice = (
+                    "If you do not want this, tell the LLM what to do "
+                    "instead (e.g. \"list first\" or \"try a different approach\")."
+                )
+            else:
+                tag = "write"
+                advice = (
+                    "This command will modify your data. If you prefer a "
+                    "different action, tell the LLM (e.g. \"search first\" "
+                    "or \"show me what exists\")."
+                )
             return {
                 "type": "confirm",
                 "tokens": tokens,
                 "flags": flags,
                 "message": (
-                    f"The LLM wants to run a destructive command "
+                    f"The LLM wants to run a **{tag}** command "
                     f"(`!{' '.join(tokens)}`).\n\n"
                     f"{desc}\n\n"
-                    "Confirm to proceed."
+                    f"{advice}"
                 ),
             }
 
@@ -286,29 +370,46 @@ async def chat(req: ChatRequest):
                             retry_result,
                         )
 
+    # ── Helper: try to enrich a reply by executing inline commands ──────
+    async def _enrich_with_inline(reply: str) -> str:
+        """If *reply* mentions ``!command`` invocations, execute the first
+        read-only one and re-synthesize with real data.  Write commands
+        (``add``, ``delete``, …) are never auto-executed — they are gated
+        behind user confirmation instead.
+
+        Returns the enriched reply or the original if nothing could be
+        executed."""
+        if not reply:
+            return reply
+        inline_cmds = _find_inline_commands(reply)
+        if not inline_cmds:
+            return reply
+        for cmd_tokens in inline_cmds[:1]:
+            # Skip write commands — they need user approval
+            if _is_write_command(cmd_tokens):
+                continue
+            cmd_result = await _try_execute(cmd_tokens, {})
+            if cmd_result is not None:
+                enriched = await _summarise(
+                    cmd_tokens, cmd_result, req.message,
+                )
+                if enriched:
+                    return enriched
+        return reply
+
     # ── Phase 3: Summarise if we have a successful execution ─────────────
     if executed_cmd is not None:
         tokens, flags, result = executed_cmd
         reply = await _summarise(tokens, result, req.message)
         if reply:
-            return {"reply": reply}
+            enriched = await _enrich_with_inline(reply)
+            return {"reply": enriched}
 
     # ── Phase 4: Plain chat with system context ──────────────────────────
     plain = await _safe_chat(_build_chat_messages(messages, req.message))
     if plain:
-        # Phase 4a: If the LLM dropped a !command in its reply, try to
-        # execute it and re-synthesize.
-        inline_cmds = _find_inline_commands(plain)
-        if inline_cmds and not retried:
-            for cmd_tokens in inline_cmds[:1]:  # try only the first
-                cmd_result = await _try_execute(cmd_tokens, {})
-                if cmd_result is not None:
-                    enriched = await _summarise(
-                        cmd_tokens, cmd_result, req.message,
-                    )
-                    if enriched:
-                        return {"reply": enriched}
-        return {"reply": plain}
+        enriched = await _enrich_with_inline(plain)
+        return {"reply": enriched}
 
     return {"reply": _stub_response(req.message)["reply"]}
 

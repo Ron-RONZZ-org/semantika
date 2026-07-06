@@ -104,8 +104,12 @@ class LLMProvider(BaseLLMProvider):
             "COMMON MAPPINGS (use these exact paths):\n"
             '- "show/display/list all nodes" → {"tokens": ["node", "list"], "flags": {}}\n'
             '- "search/find nodes about X" → {"tokens": ["node", "search"], "flags": {"q": "X"}}\n'
+            '- "add/create a node called/labeled X" → {"tokens": ["node", "add"], "flags": {"labels": "X"}}\n'
+            '- "delete/remove node X" → {"tokens": ["node", "delete"], "flags": {"id": "X"}}\n'
             '- "show/display/list all predicates" → {"tokens": ["predicate", "list"], "flags": {}}\n'
+            '- "add/create a predicate called X" → {"tokens": ["predicate", "add"], "flags": {"predicate_id": "X"}}\n'
             '- "show/display/list all triples" → {"tokens": ["triple", "list"], "flags": {}}\n'
+            '- "add a triple: X Y Z" → {"tokens": ["triple", "add"], "flags": {"subject_id": "X", "predicate_id": "Y", "object_value": "Z"}}\n'
             '- "search/find triples about X" → {"tokens": ["triple", "search"], "flags": {"q": "X"}}\n'
             '- "search/find X in the graph" → {"tokens": ["graph", "search"], "flags": {"q": "X"}}\n'
             '- "stats/statistics/count/how many" → {"tokens": ["graph", "stats"], "flags": {}}\n'

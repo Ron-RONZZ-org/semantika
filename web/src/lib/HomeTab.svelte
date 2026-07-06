@@ -20,6 +20,7 @@
 
   /** @type {{ tokens: string[], flags: Record<string,string>, message: string } | null} */
   let confirmRequest = $state(null);
+  let rejectFeedback = $state("");
   let saveDialogIndex = $state(-1);
   let saveAlias = $state("");
   let saveCommand = $state("");
@@ -177,13 +178,14 @@
 
       const data = await resp.json();
 
-      // Handle permission-gated destructive commands
+      // Handle permission-gated commands (destructive or write)
       if (data.type === "confirm") {
         confirmRequest = {
           tokens: data.tokens,
           flags: data.flags || {},
-          message: data.message || "Confirm destructive command?",
+          message: data.message || "Confirm command?",
         };
+        rejectFeedback = "";
         messages = messages.map((m, i) =>
           i === msgIdx ? { ...m, html: `<p><em>Waiting for confirmation…</em></p>`, _streaming: false } : m,
         );
@@ -319,6 +321,50 @@
     } catch (err) {
       popup.show("error", "Connection Error", { message: `Confirm failed: ${err.message}` });
     }
+  }
+
+  async function handleRejectFeedback(feedback) {
+    if (!confirmRequest) return;
+    const { tokens } = confirmRequest;
+    confirmRequest = null;
+    rejectFeedback = "";
+
+    // Remove the "Waiting for confirmation" message
+    messages = messages.filter((m) => {
+      const html = m.html || "";
+      return !html.includes("Waiting for confirmation");
+    });
+
+    // Send feedback as a new follow-up to the LLM
+    const contextMsg = `The LLM suggested running \`!${tokens.join(" ")}\` but the user rejected it with this feedback: "${feedback}". Please suggest an alternative approach.`;
+    messages = [...messages, { role: "user", text: contextMsg }];
+    hasSentLlmMessage = true;
+
+    const cleanContext = buildContext();
+    isLoadingLlm = true;
+    const msgIdx = messages.length;
+    messages = [...messages, { role: "assistant", html: "", text: "", actions: [], _streaming: true }];
+    scrollToBottom();
+
+    try {
+      const resp = await fetch("/api/v1/llm/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: contextMsg, context: cleanContext }),
+      });
+      const data = await resp.ok ? await resp.json() : { reply: "Sorry, something went wrong." };
+      const reply = data.reply || data.data?.reply || JSON.stringify(data);
+      const html = renderMarkdown(reply);
+      messages = messages.map((m, i) =>
+        i === msgIdx ? { ...m, html, text: reply, _streaming: false, actions: [] } : m,
+      );
+    } catch (err) {
+      messages = messages.map((m, i) =>
+        i === msgIdx ? { ...m, html: `<p>Network error: ${err.message}</p>`, _streaming: false } : m,
+      );
+    }
+    isLoadingLlm = false;
+    scrollToBottom();
   }
 
   let _configuring = false;
@@ -469,6 +515,7 @@
     message={confirmRequest.message}
     onConfirm={handleConfirmCommand}
     onDismiss={() => { confirmRequest = null; }}
+    onFeedback={handleRejectFeedback}
   />
 {/if}
 
