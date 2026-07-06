@@ -54,11 +54,9 @@ class TestResolveFormType:
     def test_empty(self):
         assert _resolve_form_type([]) is None
 
-    def test_single_token_not_in_forms(self):
-        """Single token 'reset' maps to 'reset-no-backup' in _INTERACTIVE_FORMS."""
-        # 'reset' alone does not match because the loop iterates from end to start
-        # and needs a 2+ element path
-        assert _resolve_form_type(["reset"]) is None
+    def test_single_token_in_forms(self):
+        """Single token 'reset' IS registered as interactive, so its form is found."""
+        assert _resolve_form_type(["reset"]) == "reset-no-backup"
 
 
 class TestParseLangTagPairs:

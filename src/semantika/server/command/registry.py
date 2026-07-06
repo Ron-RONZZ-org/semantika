@@ -229,7 +229,7 @@ def get_command_definitions(tree: list[dict] | None = None) -> list[dict]:
 
 def resolve_form_type(tokens: list[str]) -> str | None:
     """Return the interactive form type for a command path, or None."""
-    for i in range(len(tokens), 1, -1):
+    for i in range(len(tokens), 0, -1):
         key = ".".join(tokens[:i])
         if key in _interactive_forms:
             return _interactive_forms[key]

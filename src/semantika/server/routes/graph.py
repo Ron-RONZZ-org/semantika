@@ -212,7 +212,7 @@ async def purge_trash(days: int = 30):
         for item in items:
             node_id = item.get("node_id")
             if node_id:
-                svc.permanent_delete(node_id)
+                svc.db.execute("DELETE FROM nodes_trash WHERE node_id = ?", (node_id,))
     return {"deleted": count}
 
 
@@ -244,7 +244,7 @@ async def create_predicate(data: PredicateCreate):
 
 
 @router.patch("/predicates/{predicate_id}")
-def update_predicate(predicate_id: str, data: PredicateUpdate):
+async def update_predicate(predicate_id: str, data: PredicateUpdate):
     """Update a predicate's labels/descriptions."""
     svc = _svc()["predicate"]
     try:
@@ -255,7 +255,7 @@ def update_predicate(predicate_id: str, data: PredicateUpdate):
 
 
 @router.delete("/predicates/{predicate_id}")
-def delete_predicate(predicate_id: str):
+async def delete_predicate(predicate_id: str):
     """Delete a predicate (moves to trash if supported)."""
     svc = _svc()
     deleted = svc["predicate"].delete(predicate_id, soft=True)

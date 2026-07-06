@@ -113,7 +113,7 @@ def cmd_node_add(remaining: list[str], flags: dict[str, str]) -> dict:
             file_source = val
             break
 
-    in_place = "in-place" in flags or "in_place" in flags or flags.get("in-place", "").lower() in ("true", "1", "yes")
+    in_place = "in-place" in flags or flags.get("in-place", "").lower() in ("true", "1", "yes")
     do_move = "move" in flags or flags.get("move", "").lower() in ("true", "1", "yes")
 
     try:
