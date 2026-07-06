@@ -6,7 +6,6 @@
   import {
     createSelectionManager,
     createCopyState,
-    formatListItemDate,
   } from "./listTabShared.svelte.js";
 
   let { data = {} } = $props();
@@ -172,7 +171,6 @@
         <span class="arrow">→</span>
         <span class="object">{triple.object_value}</span>
         <span class="badge {objectTypeClass(triple)}">{objectTypeBadge(triple)}</span>
-        <span class="date">{formatListItemDate(triple.created_at)}</span>
         <span class="actions">
           <button class="btn-icon" title="Copy key" onclick={(e) => { e.stopPropagation(); uuidCopy.copyToClipboard(key); }}>
             {uuidCopy.copiedKey === key ? "\u2713" : "\u2349"}
@@ -224,7 +222,6 @@
   .badge-bool { background: #2a2a3a; color: #aaf; }
   .badge-katex { background: #3a1a1a; color: #f77; }
   .badge-fr, .badge-en, .badge-de, .badge-es, .badge-eo { background: #2a3a3a; color: #7ff; }
-  .date { color: var(--clr-dim); font-size: 0.7rem; flex-shrink: 0; min-width: 45px; }
   .actions { flex-shrink: 0; }
   .empty { color: var(--clr-muted); text-align: center; padding: 2rem; }
 </style>

@@ -1,11 +1,30 @@
 <script>
   let { data = {} } = $props();
   let d = $derived(data || {});
+  let showTech = $state(false);
 
   function renderValue(val) {
     if (val === null || val === undefined) return "";
     if (typeof val === "object") return JSON.stringify(val);
     return String(val);
+  }
+
+  /** Fields to treat as "technical detail" — hidden behind toggle. */
+  const TECH_FIELDS = new Set([
+    "created_at", "updated_at", "label_text", "definition_text",
+    "_proof_count", "_proof_uuids", "_rank",
+  ]);
+
+  function isTechField(key) {
+    return TECH_FIELDS.has(key) || key.endsWith("_text");
+  }
+
+  function isMainField(key, val) {
+    if (isTechField(key)) return false;
+    // Raw JSON strings that are already rendered in summary
+    if (key === "labels" && typeof val === "string" && val.startsWith("{")) return false;
+    if (key === "definitions" && typeof val === "string" && val.startsWith("{")) return false;
+    return true;
   }
 </script>
 
@@ -80,30 +99,46 @@
     <p class="message">{d.title}</p>
   {:else}
     {#each Object.entries(d) as [key, val]}
-      {#if typeof val === "string" && val}
-        <div class="row">
-          <span class="key">{key}</span>
-          <span class="val">{val}</span>
-        </div>
-      {:else if typeof val === "number"}
-        <div class="row">
-          <span class="key">{key}</span>
-          <span class="val">{val}</span>
-        </div>
-      {:else if typeof val === "boolean"}
-        <div class="row">
-          <span class="key">{key}</span>
-          <span class="val">{val ? "✓" : "—"}</span>
-        </div>
-      {:else if Array.isArray(val) && val.length > 0}
-        <div class="row">
-          <span class="key">{key}</span>
-          <span class="val">{val.length} item{val.length !== 1 ? "s" : ""}</span>
-        </div>
+      {#if isMainField(key, val)}
+        {#if typeof val === "string" && val}
+          <div class="row">
+            <span class="key">{key}</span>
+            <span class="val">{val}</span>
+          </div>
+        {:else if typeof val === "number"}
+          <div class="row">
+            <span class="key">{key}</span>
+            <span class="val">{val}</span>
+          </div>
+        {:else if typeof val === "boolean"}
+          <div class="row">
+            <span class="key">{key}</span>
+            <span class="val">{val ? "✓" : "—"}</span>
+          </div>
+        {:else if Array.isArray(val) && val.length > 0}
+          <div class="row">
+            <span class="key">{key}</span>
+            <span class="val">{val.length} item{val.length !== 1 ? "s" : ""}</span>
+          </div>
+        {/if}
       {/if}
     {/each}
     {#if Object.keys(d).length === 0}
       <p class="message">No data.</p>
+    {:else}
+      <button class="tech-toggle" onclick={() => { showTech = !showTech; }}>
+        {showTech ? "Hide technical details" : "Show technical details"}
+      </button>
+      {#if showTech}
+        {#each Object.entries(d) as [key, val]}
+          {#if !isMainField(key, val)}
+            <div class="row tech">
+              <span class="key">{key}</span>
+              <span class="val">{renderValue(val)}</span>
+            </div>
+          {/if}
+        {/each}
+      {/if}
     {/if}
   {/if}
 </div>
@@ -161,5 +196,26 @@
     color: #e0e0e0;
     white-space: pre-wrap;
     padding: 0.75rem;
+  }
+  .tech-toggle {
+    display: block;
+    width: 100%;
+    padding: 0.4rem;
+    background: #22223a;
+    border: 1px solid #333;
+    border-radius: 4px;
+    color: var(--clr-sub);
+    font-family: monospace;
+    font-size: 0.75rem;
+    cursor: pointer;
+    margin-top: 0.5rem;
+  }
+  .tech-toggle:hover {
+    background: #2a2a4a;
+    color: #e0e0e0;
+  }
+  .row.tech {
+    opacity: 0.65;
+    font-size: 0.78rem;
   }
 </style>

@@ -7,7 +7,6 @@
     createSelectionManager,
     createCopyState,
     getLabel,
-    formatListItemDate,
   } from "./listTabShared.svelte.js";
   import { getLocale } from "./userConfig.svelte.js";
 
@@ -142,7 +141,6 @@
         onclick={(e) => sel.handleRowClick(e, pred.predicate_id)}>
         <span class="label">{getLabel(pred.labels, getLocale()) || pred.predicate_id}</span>
         <span class="id">{pred.predicate_id}</span>
-        <span class="date">{formatListItemDate(pred.created_at)}</span>
         <span class="actions">
           <button class="btn-icon" title="Copy ID" onclick={(e) => { e.stopPropagation(); uuidCopy.copyToClipboard(pred.predicate_id); }}>
             {uuidCopy.copiedKey === pred.predicate_id ? "\u2713" : "\u2349"}
@@ -184,7 +182,6 @@
   .row.focused { outline: 1px solid #7c7c9a; outline-offset: -1px; }
   .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #e0e0e0; font-weight: 600; }
   .id { color: var(--clr-sub); font-size: 0.78rem; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .date { color: var(--clr-dim); font-size: 0.75rem; flex-shrink: 0; min-width: 55px; }
   .actions { flex-shrink: 0; }
   .empty { color: var(--clr-muted); text-align: center; padding: 2rem; }
 </style>
