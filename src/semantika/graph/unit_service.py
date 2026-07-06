@@ -10,19 +10,18 @@ from __future__ import annotations
 
 import json
 import logging
-import sqlite3
 from typing import TYPE_CHECKING
 
-from semantika.graph.unit_builder import UnitBuilder
-
-logger = logging.getLogger(__name__)
 from semantika.core.crud import now
 from semantika.core.exceptions import AmbiguousIDError
 from semantika.graph.node_helpers import extract_label_text
+from semantika.graph.unit_builder import UnitBuilder
 from semantika.graph.unit_decomposition import UnitDecomposer
 from semantika.graph.unit_errors import UnitNotFoundError
 from semantika.graph.unit_parser import parse
 from semantika.graph.unit_seed_data import ALL_UNITS, BASE_AND_DERIVED
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from semantika.core import SemantikaDB
@@ -99,15 +98,12 @@ class UnitService:
 
             # 2. Now insert all rdf:type triples for type nodes
             for type_node in UNIT_TYPE_NODES:
-                try:
-                    conn.execute(
-                        "INSERT INTO triples "
-                        "(subject_id, predicate_id, object_value, object_type, created_at) "
-                        "VALUES (?, 'rdf:type', ':UnitType', 'uri', ?)",
-                        (type_node["node_id"], now_iso),
-                    )
-                except sqlite3.IntegrityError:
-                    pass  # Already exists
+                conn.execute(
+                    "INSERT OR IGNORE INTO triples "
+                    "(subject_id, predicate_id, object_value, object_type, created_at) "
+                    "VALUES (?, 'rdf:type', ':UnitType', 'uri', ?)",
+                    (type_node["node_id"], now_iso),
+                )
 
             # 3. Create unit nodes (base + derived + prefixes)
             for unit in BASE_AND_DERIVED:
@@ -119,73 +115,54 @@ class UnitService:
 
     def _insert_unit_node_in_txn(self, conn, unit: dict, now_iso: str) -> None:
         """Insert a unit node and its triples within an existing transaction."""
-        import sqlite3
         labels = json.dumps(unit["labels"])
         label_text = extract_label_text(unit["labels"])
-        try:
-            conn.execute(
-                "INSERT INTO nodes "
-                "(node_id, labels, label_text, definitions, definition_text, created_at, updated_at) "
-                "VALUES (?, ?, ?, '{}', '', ?, ?)",
-                (unit["node_id"], labels, label_text, now_iso, now_iso),
-            )
-        except sqlite3.IntegrityError:
-            pass  # Already exists
+        conn.execute(
+            "INSERT OR IGNORE INTO nodes "
+            "(node_id, labels, label_text, definitions, definition_text, created_at, updated_at) "
+            "VALUES (?, ?, ?, '{}', '', ?, ?)",
+            (unit["node_id"], labels, label_text, now_iso, now_iso),
+        )
 
-        try:
-            conn.execute(
-                "INSERT INTO triples "
-                "(subject_id, predicate_id, object_value, object_type, created_at) "
-                "VALUES (?, 'rdf:type', ':SingularUnit', 'uri', ?)",
-                (unit["node_id"], now_iso),
-            )
-        except sqlite3.IntegrityError:
-            pass
+        conn.execute(
+            "INSERT OR IGNORE INTO triples "
+            "(subject_id, predicate_id, object_value, object_type, created_at) "
+            "VALUES (?, 'rdf:type', ':SingularUnit', 'uri', ?)",
+            (unit["node_id"], now_iso),
+        )
 
         symbol = unit.get("symbol")
         if symbol:
-            try:
-                conn.execute(
-                    "INSERT INTO triples "
-                    "(subject_id, predicate_id, object_value, object_type, created_at) "
-                    "VALUES (?, ':symbol', ?, 'literal', ?)",
-                    (unit["node_id"], symbol, now_iso),
-                )
-            except sqlite3.IntegrityError:
-                pass
+            conn.execute(
+                "INSERT OR IGNORE INTO triples "
+                "(subject_id, predicate_id, object_value, object_type, created_at) "
+                "VALUES (?, ':symbol', ?, 'literal', ?)",
+                (unit["node_id"], symbol, now_iso),
+            )
         ucum = unit.get("ucum")
         if ucum:
-            try:
-                conn.execute(
-                    "INSERT INTO triples "
-                    "(subject_id, predicate_id, object_value, object_type, created_at) "
-                    "VALUES (?, ':ucumCode', ?, 'literal', ?)",
-                    (unit["node_id"], ucum, now_iso),
-                )
-            except sqlite3.IntegrityError:
-                pass
+            conn.execute(
+                "INSERT OR IGNORE INTO triples "
+                "(subject_id, predicate_id, object_value, object_type, created_at) "
+                "VALUES (?, ':ucumCode', ?, 'literal', ?)",
+                (unit["node_id"], ucum, now_iso),
+            )
         mult = unit.get("multiplier")
         if mult is not None:
-            try:
-                conn.execute(
-                    "INSERT INTO triples "
-                    "(subject_id, predicate_id, object_value, object_type, created_at) "
-                    "VALUES (?, ':multiplier', ?, 'literal', ?)",
-                    (unit["node_id"], str(mult), now_iso),
-                )
-            except sqlite3.IntegrityError:
-                pass
+            conn.execute(
+                "INSERT OR IGNORE INTO triples "
+                "(subject_id, predicate_id, object_value, object_type, created_at) "
+                "VALUES (?, ':multiplier', ?, 'literal', ?)",
+                (unit["node_id"], str(mult), now_iso),
+            )
         offset = unit.get("offset")
         if offset is not None:
-            try:
-                conn.execute(
-                    "INSERT INTO triples "
-                    "(subject_id, predicate_id, object_value, object_type, created_at) "
-                    "VALUES (?, ':offset', ?, 'literal', ?)",
-                    (unit["node_id"], str(offset), now_iso),
-                )
-            except sqlite3.IntegrityError:
-                pass
+            conn.execute(
+                "INSERT OR IGNORE INTO triples "
+                "(subject_id, predicate_id, object_value, object_type, created_at) "
+                "VALUES (?, ':offset', ?, 'literal', ?)",
+                (unit["node_id"], str(offset), now_iso),
+            )
 
     # ── Symbol / name resolution ─────────────────────────────────────
 

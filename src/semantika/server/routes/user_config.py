@@ -19,14 +19,14 @@ class ConfigUpdate(BaseModel):
 
 
 @router.get("/config")
-async def get_user_config():
+def get_user_config():
     """Return current user configuration."""
     cfg = load_config()
     return {"locale": cfg.get("locale", "en")}
 
 
 @router.patch("/config")
-async def update_user_config(data: ConfigUpdate):
+def update_user_config(data: ConfigUpdate):
     """Update user configuration."""
     if data.locale is not None:
         if len(data.locale) < 2 or len(data.locale) > 5:

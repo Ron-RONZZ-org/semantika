@@ -22,17 +22,36 @@ from semantika.server.app import create_app
 
 @pytest.fixture(scope="class")
 def client() -> TestClient:
-    """Return a TestClient with an isolated test DB."""
+    """Return a TestClient with an isolated test DB per class."""
     app = create_app()
     with TestClient(app) as c:
         yield c
+
+
+# ── Helpers ─────────────────────────────────────────────────────────────
+
+
+def _create_test_node(client: TestClient, node_id: str = "TESTNODE") -> None:
+    """Helper to create a basic test node."""
+    client.post(
+        "/api/v1/graph/nodes",
+        json={"node_id": node_id, "labels": {"en": f"Node {node_id}"}},
+    )
+
+
+def _ensure_predicate(client: TestClient, predicate_id: str = "ex:rel") -> None:
+    """Helper to create a predicate if it doesn't exist."""
+    client.post(
+        "/api/v1/graph/predicates",
+        json={"predicate_id": predicate_id, "labels": {"en": predicate_id}},
+    )
 
 
 # ── Node CRUD ──────────────────────────────────────────────────────────
 
 
 class TestNodeAPI:
-    """Test the /api/v1/graph/nodes endpoints."""
+    """Test the /api/v1/graph/nodes endpoints — each test is self-contained."""
 
     def test_create_node(self, client: TestClient):
         resp = client.post(
@@ -54,6 +73,7 @@ class TestNodeAPI:
         assert len(data["node"]["node_id"]) > 8  # UUID
 
     def test_create_duplicate_node(self, client: TestClient):
+        _create_test_node(client)
         resp = client.post(
             "/api/v1/graph/nodes",
             json={"node_id": "TESTNODE", "labels": {"en": "Duplicate"}},
@@ -61,6 +81,7 @@ class TestNodeAPI:
         assert resp.status_code == 400
 
     def test_list_nodes(self, client: TestClient):
+        _create_test_node(client)
         resp = client.get("/api/v1/graph/nodes")
         assert resp.status_code == 200
         data = resp.json()
@@ -68,12 +89,14 @@ class TestNodeAPI:
         assert any(n["node_id"] == "TESTNODE" for n in data["nodes"])
 
     def test_search_nodes(self, client: TestClient):
+        _create_test_node(client)
         resp = client.get("/api/v1/graph/nodes/search?q=Test")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["results"]) >= 1
 
     def test_get_node(self, client: TestClient):
+        _create_test_node(client)
         resp = client.get("/api/v1/graph/nodes/TESTNODE")
         assert resp.status_code == 200
         data = resp.json()
@@ -85,6 +108,7 @@ class TestNodeAPI:
         assert resp.status_code == 404
 
     def test_update_node(self, client: TestClient):
+        _create_test_node(client)
         resp = client.patch(
             "/api/v1/graph/nodes/TESTNODE",
             json={"labels": {"en": "Updated Node", "fr": "Noeud de test"}},
@@ -95,16 +119,13 @@ class TestNodeAPI:
         assert "Noeud" in data["node"]["label_text"]
 
     def test_delete_node(self, client: TestClient):
-        # First create a node that has no triples referencing it
-        client.post(
-            "/api/v1/graph/nodes",
-            json={"node_id": "TODELETE", "labels": {"en": "To Delete"}},
-        )
+        _create_test_node(client, "TODELETE")
         resp = client.delete("/api/v1/graph/nodes/TODELETE?soft=true")
         assert resp.status_code == 200
         assert resp.json()["deleted"] is True
 
     def test_node_prefix_resolution(self, client: TestClient):
+        _create_test_node(client)
         resp = client.get("/api/v1/graph/nodes/TEST")
         assert resp.status_code == 200
         assert resp.json()["node"]["node_id"] == "TESTNODE"
@@ -218,12 +239,7 @@ class TestNodeDeleteCascade:
         )
         assert resp.status_code == 200
 
-        # Ensure the predicate exists (may already exist from shared module-scoped DB)
-        pred_resp = client.post(
-            "/api/v1/graph/predicates",
-            json={"predicate_id": "ex:rel", "labels": {"en": "rel"}},
-        )
-        assert pred_resp.status_code in (200, 400)  # 400 if already exists
+        _ensure_predicate(client)
 
         resp = client.post(
             "/api/v1/graph/triples",

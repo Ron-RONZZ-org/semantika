@@ -12,6 +12,7 @@ from typing import Any
 
 from semantika.core import SemantikaDB
 from semantika.core.crud import CRUDService, now
+from semantika.graph.helpers import escape_like
 
 logger = logging.getLogger(__name__)
 
@@ -80,11 +81,12 @@ class PredicateGroupService(CRUDService):
 
     def remove_member(self, group_uuid: str, predicate_id: str) -> bool:
         """Remove a predicate from a group."""
-        cursor = self.db.execute(
+        self.db.execute(
             "DELETE FROM predicate_group_members WHERE group_uuid = ? AND predicate_id = ?",
             (group_uuid, predicate_id),
         )
-        return len(cursor) > 0
+        result = self.db.execute_one("SELECT changes() AS cnt")
+        return (result["cnt"] if result else 0) > 0
 
     def list_members(self, group_uuid: str) -> list[dict]:
         """List all predicates in a group."""
@@ -103,7 +105,7 @@ class PredicateGroupService(CRUDService):
         )
         if group:
             return group
-        escaped = name.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        escaped = escape_like(name)
         return self.db.execute_one(
             "SELECT * FROM predicate_groups WHERE group_name LIKE ? COLLATE NOCASE ESCAPE '\\'",
             (f"{escaped}%",),

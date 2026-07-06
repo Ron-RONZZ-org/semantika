@@ -18,11 +18,11 @@ FTS5_KEYWORDS: frozenset[str] = frozenset({
     "COLUMN",
 })
 
-_UUID_PREFIX_RE = re.compile(r"^[0-9a-fA-F\-]+$")
+_UUID_PREFIX_RE = re.compile(r"^[0-9a-f]{8}([0-9a-f]{1,8}|-[0-9a-f]{1,7})?$", re.IGNORECASE)
 
 
 def looks_like_uuid_prefix(text: str) -> bool:
-    """Check if text looks like a UUID prefix (8-16 hex chars)."""
+    """Check if text looks like a UUID prefix (8-16 hex chars, optional canonical hyphen)."""
     return 8 <= len(text) <= 16 and bool(_UUID_PREFIX_RE.match(text))
 
 
