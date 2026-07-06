@@ -237,13 +237,14 @@ class TestPermissionGate:
         data = resp.json()
         assert data["type"] == "confirm"
 
-    def test_allows_single_node_delete(self, client: TestClient):
-        """node.delete is WRITE (reversible via trash), so no confirm."""
+    def test_blocks_single_node_delete(self, client: TestClient):
+        """node.delete modifies data, so it asks for user confirmation now."""
         TestPermissionGate._mock_cmd = {"tokens": ["node", "delete"], "flags": {"id": "testnode"}}
         resp = client.post("/api/v1/llm/chat", json={"message": "delete test node"})
         assert resp.status_code == 200
         data = resp.json()
-        assert data.get("type") != "confirm"
+        assert data.get("type") == "confirm"
+        assert "write" in data.get("message", "").lower()
 
 
 class TestConfirmEndpoint:
