@@ -4,8 +4,8 @@
  * Ported from lighterbird's ``commandEngine.js``.
  */
 
-import { commandTree, findNode, matchChildren } from "./commandTree.js";
-import { parseCommand, hasTrailingSpace } from "./parser.js";
+import { commandTree, promptCommands, findNode, matchChildren } from "./commandTree.js";
+import { parseCommand, parsePromptCommand, hasTrailingSpace } from "./parser.js";
 
 export function getCompletions(input) {
   const { tokens, flags, partial } = parseCommand(input);
@@ -91,6 +91,37 @@ function findNodeIndex(tokens) {
     current = found.children || [];
   }
   return tokens.length - 1;
+}
+
+/**
+ * Get autocomplete completions for prompt commands (/* prefix).
+ */
+export function getPromptCompletions(input) {
+  const parsed = parsePromptCommand(input);
+  if (!parsed) {
+    const trimmed = input.trim();
+    if (trimmed.startsWith("/") && !trimmed.startsWith("/*")) {
+      return {
+        completions: promptCommands.map((c) => `/*${c.name}`),
+        hints: promptCommands.map((c) => c.description || ""),
+      };
+    }
+    return { completions: [], hints: [] };
+  }
+  const prefix = parsed.name.toLowerCase();
+  if (!prefix) {
+    return {
+      completions: promptCommands.map((c) => `/*${c.name}`),
+      hints: promptCommands.map((c) => c.description || ""),
+    };
+  }
+  const matches = promptCommands.filter((c) =>
+    c.name.toLowerCase().startsWith(prefix),
+  );
+  return {
+    completions: matches.map((c) => `/*${c.name}`),
+    hints: matches.map((c) => c.description || ""),
+  };
 }
 
 

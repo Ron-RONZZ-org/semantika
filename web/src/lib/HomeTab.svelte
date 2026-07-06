@@ -65,6 +65,20 @@
     messages = [...messages, { role: "user", text: trimmed }];
     hasSentLlmMessage = true;
 
+    // ── Prompt commands (/* prefix) → execute via prompt-commands API ──
+    if (trimmed.startsWith("/*")) {
+      try {
+        const result = await execute(trimmed);
+        popup.show(result.type, result.title, result.data);
+      } catch (err) {
+        popup.show("error", "Error", {
+          message: err.message || String(err),
+        });
+      }
+      scrollToBottom();
+      return;
+    }
+
     if (trimmed.startsWith("!")) {
       const routing = shouldIntercept(trimmed);
       if (routing.intercept) {

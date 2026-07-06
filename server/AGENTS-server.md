@@ -24,6 +24,11 @@ FastAPI web server: application factory, API routes, middleware, command engine,
 - All route handlers return Pydantic models or dicts (auto-JSON serialization)
 - Errors return structured `{"error": "...", "detail": "..."}` responses
 - The `!command` engine returns typed responses: `status`, `form-required`, `node-list`, `predicate-list`, `triple-list`, `graph`, `error`
+- Prompt commands (`/*` prefix) are served by `GET/POST /api/v1/prompt-commands/*`:
+  - `GET /list` — autocomplete source
+  - `POST /expand` — preview expanded prompt
+  - `POST /execute` — expand + send to LLM (sync JSON)
+  - `POST /execute/stream` — SSE streaming variant
 
 ## Documentation Reference
 - lighterbird's server module for proven patterns: `../lighterbird/src/lighterbird/server/`

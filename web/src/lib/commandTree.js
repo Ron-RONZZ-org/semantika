@@ -3,9 +3,19 @@
  * Ported from lighterbird's ``commandTree.js``.
  * The authoritative tree lives in the backend and is served via
  * ``GET /api/v1/command/tree``.
+ *
+ * ``/*`` prompt commands are also fetched from the backend and appended as
+ * a virtual root node. See :func:`initPromptCommands`.
  */
 
 export let commandTree = [];
+
+/**
+ * List of prompt commands (/* prefix) — flat array of {name, description}.
+ * Populated by :func:`initPromptCommands`.
+ * @type {{name:string, description:string}[]}
+ */
+export let promptCommands = [];
 
 export async function initCommandTree() {
   try {
@@ -14,7 +24,36 @@ export async function initCommandTree() {
   } catch { /* Tree stays empty — commands still work via backend dispatch */ }
 }
 
+/**
+ * Fetch prompt commands from the backend and populate the ``promptCommands``
+ * list. Also appends a virtual ``/*`` node to ``commandTree`` for autocomplete.
+ */
+export async function initPromptCommands() {
+  try {
+    const resp = await fetch("/api/v1/prompt-commands/list");
+    if (resp.ok) {
+      const cmds = await resp.json();
+      promptCommands = cmds;
+      // Append virtual /* root node
+      if (cmds.length > 0) {
+        const existing = commandTree.find((n) => n.name === "/*");
+        if (!existing) {
+          commandTree.push({
+            name: "/*",
+            description: "Prompt commands",
+            children: cmds.map((c) => ({
+              name: c.name,
+              description: c.description,
+            })),
+          });
+        }
+      }
+    }
+  } catch { /* degrade gracefully */ }
+}
+
 initCommandTree();
+initPromptCommands();
 
 export function getRootNames() {
   return commandTree.map((n) => n.name);

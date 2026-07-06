@@ -65,7 +65,7 @@ def create_app() -> FastAPI:
 
     # API routes
     from semantika.server.routes import command as cmd
-    from semantika.server.routes import files, graph, llm, proof, query, review, unit
+    from semantika.server.routes import files, graph, llm, proof, prompt_commands, query, review, unit
     from semantika.server.routes import user_config as ucfg
 
     app.include_router(graph.router, prefix="/api/v1/graph")
@@ -76,6 +76,7 @@ def create_app() -> FastAPI:
     app.include_router(llm.router, prefix="/api/v1/llm")
     app.include_router(unit.router, prefix="/api/v1")
     app.include_router(files.router, prefix="/api/v1/files")
+    app.include_router(prompt_commands.router)
     app.include_router(ucfg.router)
 
     # Static files (Svelte SPA) — overridable via SEMANTIKA_STATIC_DIR

@@ -4,7 +4,7 @@
 Svelte 5 SPA frontend — command-bar UI with rich result rendering for the Semantika knowledge graph.
 
 ## Purpose and Expected Behavior
-- **Command bar**: Always-visible input at the top; `!` prefix triggers command mode; natural text triggers LLM chat
+- **Command bar**: Always-visible input at the top; `!` prefix triggers command mode; `/*` prefix triggers prompt commands; natural text triggers LLM chat
 - **Result area**: Shows command results (tables, forms, graph visualizations, chat responses)
 - **Autocomplete**: As-you-type suggestions for commands, node IDs, predicate IDs
 - **Graph visualization**: Interactive graph view (force-directed layout) for exploring relationships

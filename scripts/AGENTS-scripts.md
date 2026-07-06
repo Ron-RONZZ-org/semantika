@@ -4,7 +4,7 @@
 Development tooling: dev CLI, seed data generator, test infrastructure.
 
 ## Purpose and Expected Behavior
-- `dev_cli.py` — `semantika-dev` entry point: starts an isolated dev server with optional seed data, temp data directory, dynamic port
+- `dev_cli.py` — `semantika-dev` entry point: starts an isolated dev server with optional seed data (`--seed` creates a demo prompt command), temp data directory, dynamic port
 - `seed.py` — Generates test data: sample nodes, predicates, triples for development and E2E testing
 
 ## Constraints and Invariants

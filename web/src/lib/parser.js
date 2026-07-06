@@ -64,3 +64,16 @@ export function parseCommand(input) {
 export function hasTrailingSpace(input) {
   return input.endsWith(" ");
 }
+
+/**
+ * Parse a prompt command (/* prefix) into name and args.
+ * Returns null if input does not start with "/*".
+ */
+export function parsePromptCommand(input) {
+  const trimmed = input.trim();
+  if (!trimmed.startsWith("/*")) return null;
+  const rest = trimmed.slice(2).trimStart();
+  if (!rest) return { name: "", args: [] };
+  const parts = rest.split(/\s+/);
+  return { name: parts[0], args: parts.slice(1) };
+}
