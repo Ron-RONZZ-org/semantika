@@ -60,15 +60,15 @@ def cmd_backup_list(remaining: list[str], flags: dict[str, str]) -> dict:
          flags=[{"name": "timestamp", "type": "string", "help": "Specific timestamp"}])
 def cmd_backup_restore(remaining: list[str], flags: dict[str, str]) -> dict:
     from semantika.core.backup import restore_by_timestamp, restore_latest
-    from semantika.graph.db import close_db, get_db_path
+    from semantika.graph.db import close_db, get_db_path, init_db
     timestamp = flags.get("timestamp")
     close_db()
     target = str(get_db_path().parent)
     try:
         restored = restore_by_timestamp(timestamp, target) if timestamp else restore_latest(target)
     except (FileNotFoundError, LookupError, OSError) as e:
+        init_db()
         raise CommandValidationError(str(e))
-    from semantika.graph.db import init_db
     init_db()
     return {"type": "status", "title": "Restore Complete", "data": {"message": f"Restored to: {restored}", "file": str(restored)}}
 
@@ -219,16 +219,17 @@ def cmd_backup_export(remaining: list[str], flags: dict[str, str]) -> dict:
          flags=[{"name": "force", "type": "flag", "help": "Force overwrite"}])
 def cmd_backup_import(remaining: list[str], flags: dict[str, str]) -> dict:
     from semantika.core.backup import import_data
-    from semantika.graph.db import close_db
+    from semantika.graph.db import close_db, init_db
     if not remaining:
         raise CommandValidationError("Missing export path.", "Usage: !backup import <path> [--force]")
     export_path = remaining[0]
     force = "force" in flags
     close_db()
     try: result = import_data(export_path, force=force)
-    except (FileNotFoundError, ValueError, OSError) as e: raise CommandValidationError(f"Import failed: {e}")
+    except (FileNotFoundError, ValueError, OSError) as e:
+        init_db()
+        raise CommandValidationError(f"Import failed: {e}")
     if result.get("imported"):
-        from semantika.graph.db import init_db
         init_db()
     imported = result.get("imported", [])
     skipped = result.get("skipped", [])

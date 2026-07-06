@@ -37,7 +37,7 @@ _ATTACHMENT_SUBDIRS: dict[str, str] = {
 
 def _files_root() -> Path:
     """Return the root directory for all attachment files."""
-    root = data_dir() / "semantika" / "files"
+    root = data_dir() / "files"
     root.mkdir(parents=True, exist_ok=True)
     return root
 

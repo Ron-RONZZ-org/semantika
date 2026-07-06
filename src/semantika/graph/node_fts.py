@@ -10,6 +10,7 @@ import logging
 import sqlite3
 
 from semantika.graph.constants import FTS5_KEYWORDS
+from semantika.graph.helpers import escape_like
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +67,7 @@ class NodeFtsMixin:
             return results
 
         # Fallback: LIKE on label_text
-        escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        escaped = escape_like(query)
         return self.db.execute(
             "SELECT *, 0 AS _rank FROM nodes WHERE label_text LIKE ? ESCAPE '\\' COLLATE NOCASE LIMIT ?",
             (f"%{escaped}%", limit),

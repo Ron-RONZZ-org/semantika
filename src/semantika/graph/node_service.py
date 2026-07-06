@@ -20,6 +20,7 @@ from semantika.core.crud import CRUDService, now
 from semantika.core.fts import FTSConfig
 from semantika.graph.node_fts import NodeFtsMixin
 from semantika.graph.node_merge_mixin import NodeMergeMixin
+from semantika.graph.helpers import escape_like
 from semantika.graph.node_helpers import (
     extract_definition_text,
     extract_label_text,
@@ -63,7 +64,7 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
         if node:
             return node
 
-        escaped = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        escaped = escape_like(prefix)
         matches = self.db.execute(
             "SELECT * FROM nodes WHERE node_id LIKE ? COLLATE NOCASE ESCAPE '\\'",
             (f"{escaped}%",),
