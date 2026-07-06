@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 
 from fastapi import APIRouter, HTTPException
 from lightercore.permissions import PermissionLevel
@@ -209,60 +208,6 @@ async def chat(req: ChatRequest):
         ]
         return await _safe_chat(summary_messages)
 
-    # ── Helper: extract !command from a plain text reply ─────────────────
-    # Match backtick-delimited `` `!cmd args` `` — the closing backtick is
-    # required so the lazy capture doesn't stop prematurely at the first word.
-    _CMD_FENCED_RE = re.compile(r'`!([\w.]+(?:\s+\S+?)*?)`')
-    # Fallback: bare !command (no backticks) — single word only to avoid
-    # matching punctuation or trailing noise.
-    _CMD_BARE_RE = re.compile(r'(?<!\w)!([\w.]+)')
-
-    def _find_inline_commands(text: str) -> list[list[str]]:
-        """Find candidate ``!command`` invocations in *text*.
-
-        Returns a list of token lists (e.g. ``[["node", "list"]]``).
-        Only returns commands whose first token matches a known top-level
-        command group (``node``, ``predicate``, ``triple``, ``graph``, etc.).
-        Dot-separated paths like ``node.search`` are split into separate
-        tokens for the dispatcher.
-        """
-        known_groups = {
-            "node", "predicate", "triple", "graph", "search",
-            "stats", "export", "import", "review", "proof",
-            "unit", "backup", "llm", "reset", "user", "help",
-        }
-        found: list[list[str]] = []
-
-        def _first_token_group(parts: list[str]) -> str | None:
-            """Return the top-level group name of a command token list,
-            handling dot-separated paths like ``node.search``."""
-            if not parts:
-                return None
-            first = parts[0].lower()
-            # If first token contains a dot, check the part before the dot
-            dot_idx = first.find(".")
-            return first[:dot_idx] if dot_idx > 0 else first
-
-        # First pass: fenced `` `!cmd args` `` (preferred — captures full path)
-        for match in _CMD_FENCED_RE.finditer(text):
-            raw = match.group(1).strip()
-            parts = raw.split()
-            group = _first_token_group(parts)
-            if group and group in known_groups:
-                # Split dot-separated first token into multiple tokens
-                if "." in parts[0]:
-                    expanded: list[str] = parts[0].split(".")
-                    expanded.extend(parts[1:])
-                    found.append(expanded)
-                else:
-                    found.append(parts)
-        # Second pass: bare !cmd (single token only, no subcommand)
-        for match in _CMD_BARE_RE.finditer(text):
-            raw = match.group(1).strip()
-            if raw.lower() in known_groups:
-                found.append([raw])
-        return found
-
     # ── Phase 1: Try structured command generation ───────────────────────
     defs = get_command_definitions(get_command_tree())
     cmd = None
@@ -272,7 +217,6 @@ async def chat(req: ChatRequest):
         cmd = None
 
     executed_cmd = None  # (tokens, flags, result)
-    retried = False
 
     # Phase 1b: If generate_command returned nothing, try a softer approach
     # — ask the LLM directly what command to run.
@@ -340,7 +284,6 @@ async def chat(req: ChatRequest):
         if result is not None:
             executed_cmd = (tokens, flags, result)
         else:
-            retried = True
             # Command path was invalid — give the LLM another chance with
             # an error hint so it can correct itself.
             correction_prompt = (
@@ -370,46 +313,17 @@ async def chat(req: ChatRequest):
                             retry_result,
                         )
 
-    # ── Helper: try to enrich a reply by executing inline commands ──────
-    async def _enrich_with_inline(reply: str) -> str:
-        """If *reply* mentions ``!command`` invocations, execute the first
-        read-only one and re-synthesize with real data.  Write commands
-        (``add``, ``delete``, …) are never auto-executed — they are gated
-        behind user confirmation instead.
-
-        Returns the enriched reply or the original if nothing could be
-        executed."""
-        if not reply:
-            return reply
-        inline_cmds = _find_inline_commands(reply)
-        if not inline_cmds:
-            return reply
-        for cmd_tokens in inline_cmds[:1]:
-            # Skip write commands — they need user approval
-            if _is_write_command(cmd_tokens):
-                continue
-            cmd_result = await _try_execute(cmd_tokens, {})
-            if cmd_result is not None:
-                enriched = await _summarise(
-                    cmd_tokens, cmd_result, req.message,
-                )
-                if enriched:
-                    return enriched
-        return reply
-
     # ── Phase 3: Summarise if we have a successful execution ─────────────
     if executed_cmd is not None:
         tokens, flags, result = executed_cmd
         reply = await _summarise(tokens, result, req.message)
         if reply:
-            enriched = await _enrich_with_inline(reply)
-            return {"reply": enriched}
+            return {"reply": reply}
 
     # ── Phase 4: Plain chat with system context ──────────────────────────
     plain = await _safe_chat(_build_chat_messages(messages, req.message))
     if plain:
-        enriched = await _enrich_with_inline(plain)
-        return {"reply": enriched}
+        return {"reply": plain}
 
     return {"reply": _stub_response(req.message)["reply"]}
 
