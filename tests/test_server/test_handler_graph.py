@@ -148,7 +148,7 @@ class TestCmdNodeSearch:
 
     def test_search(self, seeded: dict) -> None:
         result = dispatch(["node", "search", "Alice"], {})
-        assert result["type"] == "table"
+        assert result["type"] == "node-list"
 
 
 class TestCmdNodeView:
@@ -381,6 +381,27 @@ class TestCmdTripleList:
     def test_list_by_subject_and_predicate(self, seeded: dict) -> None:
         result = dispatch(["triple", "list", "ALICE", "ex:knows"], {})
         assert result["type"] == "triple-list"
+
+
+class TestCmdTripleSearch:
+    """!triple search"""
+
+    def test_search_by_subject(self, seeded: dict) -> None:
+        """Search by subject label finds triples."""
+        result = dispatch(["triple", "search", "Alice"], {})
+        assert result["type"] == "triple-list"
+        assert len(result["data"]) > 0
+
+    def test_search_by_literal(self, seeded: dict) -> None:
+        """Search by literal object value."""
+        result = dispatch(["triple", "search", "30"], {})
+        assert result["type"] == "triple-list"
+
+    def test_search_no_matches(self, seeded: dict) -> None:
+        """No matches returns empty list."""
+        result = dispatch(["triple", "search", "ZZZZNOMATCH"], {})
+        assert result["type"] == "triple-list"
+        assert len(result["data"]) == 0
 
 
 class TestCmdTripleView:

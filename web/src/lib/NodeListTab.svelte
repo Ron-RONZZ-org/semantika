@@ -6,9 +6,10 @@
   import {
     createSelectionManager,
     createCopyState,
-    getEnglishLabel,
+    getLabel,
     formatListItemDate,
   } from "./listTabShared.svelte.js";
+  import { getLocale } from "./userConfig.svelte.js";
 
   let { data = {} } = $props();
 
@@ -142,7 +143,7 @@
         class:focused={i === sel.focusedIndex}
         role="option" aria-selected={sel.isSelected(node.node_id)}
         onclick={(e) => sel.handleRowClick(e, node.node_id)}>
-        <span class="label">{getEnglishLabel(node.labels) || node.node_id}</span>
+        <span class="label">{getLabel(node.labels, getLocale()) || node.node_id}</span>
         <span class="id">{node.node_id}</span>
         <span class="date">{formatListItemDate(node.created_at)}</span>
         <span class="actions">

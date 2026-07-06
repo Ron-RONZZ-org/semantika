@@ -9,11 +9,14 @@
   import { shouldIntercept } from "./lib/commandRouter.js";
   import { findNode } from "./lib/commandTree.js";
   import { parseCommand } from "./lib/parser.js";
+  import { initLocale } from "./lib/userConfig.svelte.js";
 
   /** @type {{ tokens: string[], flags: Record<string,string>, message: string } | null} */
   let confirmRequest = $state(null);
 
   let isLoading = $state(false);
+
+  $effect(() => { initLocale(); });
 
   function loadingLabel(input) {
     const t = input.trim();

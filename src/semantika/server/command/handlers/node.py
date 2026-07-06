@@ -188,7 +188,7 @@ def cmd_node_search(remaining: list[str], flags: dict[str, str]) -> dict:
     if not q:
         raise CommandValidationError("Enter a search term")
     nodes = svc["node"].search(q)
-    return {"type": "table", "data": nodes, "label": f"Nodes matching '{q}'"}
+    return {"type": "node-list", "data": nodes}
 
 
 @command("node.view", description="View a node and its triples",

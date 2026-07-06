@@ -13,4 +13,5 @@ from . import review  # noqa: F401
 from . import llm  # noqa: F401
 from . import backup  # noqa: F401
 from . import reset  # noqa: F401
+from . import user_config  # noqa: F401 — user config (!user config)
 from . import predicate_trash  # noqa: F401 — predicate trash commands (predicate.trash.*)

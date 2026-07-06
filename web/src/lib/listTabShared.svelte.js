@@ -12,5 +12,6 @@ export {
   formatListItemDate,
   truncate,
   getEnglishLabel,
+  getLabel,
   shortId,
 } from "./listTabFormat.js";

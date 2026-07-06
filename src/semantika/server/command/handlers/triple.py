@@ -131,7 +131,11 @@ def cmd_triple_list(remaining: list[str], flags: dict[str, str]) -> dict:
          params=[{"name": "q", "type": "string", "required": True}],
          flags=[{"name": "limit", "type": "number", "help": "Max results"}])
 def cmd_triple_search(remaining: list[str], flags: dict[str, str]) -> dict:
-    """Search triples by subject, predicate, or object labels/IDs."""
+    """Search triples where subject, predicate, or object matches the query.
+
+    Uses a unified OR query across all three fields, resolving partial
+    node/predicate IDs and labels via FTS5.
+    """
     svc = get_services()
     q = flags.get("q") or (remaining[0] if remaining else "") or ""
     if not q:
@@ -141,12 +145,44 @@ def cmd_triple_search(remaining: list[str], flags: dict[str, str]) -> dict:
         limit = int(raw_limit)
     except ValueError:
         limit = 50
-    triples = svc["triple"].search_by_labels(subject=q, limit=limit)
-    if not triples:
-        triples = svc["triple"].search_by_labels(predicate=q, limit=limit)
-    if not triples:
-        triples = svc["triple"].search_by_labels(object=q, limit=limit)
-    return {"type": "triple-list", "data": triples, "label": f"Triples matching '{q}'"}
+
+    # Resolve matching node IDs (subject + object) and predicate IDs
+    matching_nodes = svc["node"].search(q, limit=5)
+    matching_preds = svc["predicate"].search(q, limit=5)
+    node_ids = [n["node_id"] for n in matching_nodes]
+    pred_ids = [p["predicate_id"] for p in matching_preds]
+
+    # Build unified OR query across subject, predicate, and object_value
+    clauses: list[str] = []
+    params: list = []
+
+    if node_ids:
+        placeholders = ", ".join(["?"] * len(node_ids))
+        clauses.append(f"subject_id IN ({placeholders})")
+        params.extend(node_ids)
+        # Also match URI objects (triples where object is a matching node)
+        clauses.append(f"(object_type = 'uri' AND object_value IN ({placeholders}))")
+        params.extend(node_ids)
+
+    if pred_ids:
+        placeholders = ", ".join(["?"] * len(pred_ids))
+        clauses.append(f"predicate_id IN ({placeholders})")
+        params.extend(pred_ids)
+
+    # Literal object value LIKE matching (for string literals, numbers, etc.)
+    escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    clauses.append("object_value LIKE ? ESCAPE '\\'")
+    params.append(f"%{escaped}%")
+
+    if not clauses:
+        return {"type": "triple-list", "data": [], "label": f"No matches for '{q}'"}
+
+    where = " OR ".join(clauses)
+    rows = svc["triple"].db.execute(
+        f"SELECT DISTINCT * FROM triples WHERE {where} ORDER BY subject_id, predicate_id LIMIT ?",
+        params + [limit],
+    )
+    return {"type": "triple-list", "data": rows, "label": f"Triples matching '{q}'"}
 
 
 @command("triple.view", description="View triples for a node",
