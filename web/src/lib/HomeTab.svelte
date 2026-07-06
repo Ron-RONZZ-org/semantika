@@ -13,6 +13,7 @@
   let hasSentLlmMessage = $state(false);
   let showLlmSetup = $state(false);
   let llmAvailable = $state(null);
+  let pendingMessage = $state("");
   let messages = $state([]);
   let convoEl = $state(null);
   let isLoadingLlm = $state(false);
@@ -141,6 +142,9 @@
       await checkLlmAvailable();
     }
     if (llmAvailable === false) {
+      pendingMessage = trimmed;
+      // Remove the message we just added — it will be re-sent after config
+      messages = messages.slice(0, -1);
       showLlmSetup = true;
       isLoadingLlm = false;
       return;
@@ -317,9 +321,42 @@
     }
   }
 
+  let _configuring = false;
+
   function handleLlmConfigured() {
+    // Guard against double-invocation (auto-close timeout + manual button click)
+    if (_configuring) return;
+    _configuring = true;
+
     showLlmSetup = false;
     llmAvailable = true;
+    // Resend the message the user typed before the setup modal appeared
+    const msg = pendingMessage;
+    pendingMessage = "";
+    if (msg) {
+      // Use setTimeout to let the modal fully close before re-submitting
+      setTimeout(() => {
+        handleSubmit(msg);
+        _configuring = false;
+      }, 100);
+    } else {
+      _configuring = false;
+    }
+  }
+
+  function handleLlmDismiss() {
+    showLlmSetup = false;
+    const msg = pendingMessage;
+    pendingMessage = "";
+    if (msg) {
+      messages = [...messages, {
+        role: "assistant",
+        html: "<p>You can use <code>!commands</code> directly while the LLM is not configured. "
+          + "Type <code>!help</code> to see available commands, or open the LLM setup again "
+          + "from the settings later.</p>",
+      }];
+      hasSentLlmMessage = true;
+    }
   }
 </script>
 
@@ -420,10 +457,10 @@
   </div>
 </div>
 
-{#if showLlmSetup}
+  {#if showLlmSetup}
   <LlmSetupModal
     onConfigured={handleLlmConfigured}
-    onDismiss={() => { showLlmSetup = false; }}
+    onDismiss={handleLlmDismiss}
   />
 {/if}
 

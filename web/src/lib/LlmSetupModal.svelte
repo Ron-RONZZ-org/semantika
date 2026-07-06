@@ -97,7 +97,6 @@
     error = "";
 
     if (p.id === "ollama") {
-      step = "done";
       saveConfig();
     } else if (p.id === "custom") {
       step = "custom";
@@ -126,15 +125,17 @@
         const detail = await resp.json().catch(() => ({}));
         throw new Error(detail.detail || `HTTP ${resp.status}`);
       }
-      onConfigured();
+      step = "done";
+      // Let the user see the success confirmation, then close
+      setTimeout(() => onConfigured(), 800);
     } catch (err) {
-      error = err.message;
+      error = err.message || "Failed to save. Check your credentials and try again.";
     } finally {
       saving = false;
     }
   }
 
-  function handleCustomSave() {
+  async function handleCustomSave() {
     if (!baseUrl) {
       error = "Base URL is required.";
       return;
@@ -143,8 +144,7 @@
       error = "Model name is required.";
       return;
     }
-    step = "done";
-    saveConfig();
+    await saveConfig();
   }
 </script>
 
@@ -197,13 +197,20 @@
         </label>
         {#if error}
           <p class="error">{error}</p>
+          <div class="form-actions">
+            <button class="btn-primary" onclick={saveConfig} disabled={saving}>
+              {saving ? "Saving\u2026" : "Retry"}
+            </button>
+            <button class="btn-secondary" onclick={() => { step = "select"; error = ""; }}>Back</button>
+          </div>
+        {:else}
+          <div class="form-actions">
+            <button class="btn-primary" onclick={saveConfig} disabled={saving || !apiKey}>
+              {saving ? "Saving\u2026" : "Save & Start"}
+            </button>
+            <button class="btn-secondary" onclick={() => { step = "select"; error = ""; }}>Back</button>
+          </div>
         {/if}
-        <div class="form-actions">
-          <button class="btn-primary" onclick={saveConfig} disabled={saving || !apiKey}>
-            {saving ? "Saving\u2026" : "Save & Start"}
-          </button>
-          <button class="btn-secondary" onclick={() => { step = "select"; }}>Back</button>
-        </div>
       </div>
     </div>
   </div>
@@ -231,13 +238,20 @@
         </label>
         {#if error}
           <p class="error">{error}</p>
+          <div class="form-actions">
+            <button class="btn-primary" onclick={handleCustomSave} disabled={saving}>
+              {saving ? "Saving\u2026" : "Retry"}
+            </button>
+            <button class="btn-secondary" onclick={() => { step = "select"; error = ""; }}>Back</button>
+          </div>
+        {:else}
+          <div class="form-actions">
+            <button class="btn-primary" onclick={handleCustomSave} disabled={saving || !baseUrl || !model}>
+              {saving ? "Saving\u2026" : "Save & Start"}
+            </button>
+            <button class="btn-secondary" onclick={() => { step = "select"; error = ""; }}>Back</button>
+          </div>
         {/if}
-        <div class="form-actions">
-          <button class="btn-primary" onclick={handleCustomSave} disabled={saving || !baseUrl || !model}>
-            {saving ? "Saving\u2026" : "Save & Start"}
-          </button>
-          <button class="btn-secondary" onclick={() => { step = "select"; }}>Back</button>
-        </div>
       </div>
     </div>
   </div>
