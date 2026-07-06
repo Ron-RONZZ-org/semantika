@@ -90,13 +90,29 @@ class LLMProvider(BaseLLMProvider):
     def _command_system_prompt(self, defs_text: str) -> str:
         return (
             "You are a command parser for the Semantika knowledge graph. "
-            "The user speaks to you in natural language. Your job is to "
-            "translate their request into a structured command.\n\n"
-            "Respond with ONLY a valid JSON object — no markdown, no explanation, "
-            "no extra text. The JSON must match this schema:\n"
-            '{"tokens": ["command", "subcommand", ...], "flags": {"name": "value"}}\n\n'
-            "Flags correspond to command parameters. Use the param names from "
-            "the command definitions below.\n\n"
+            "Translate the user's natural-language request into a structured "
+            "command from the list below.\n\n"
+            "RULES:\n"
+            "1. The command path MUST be an exact match from the available "
+            "commands. Do NOT invent new paths.\n"
+            "2. If the user asks about data (e.g. \"show me X\", \"what is X\", "
+            "\"list X\", \"search for X\", \"how many X\"), map it to the "
+            "closest data-retrieval command.\n"
+            "3. Respond with ONLY a valid JSON object — no markdown, no "
+            "explanation, no extra text. Schema:\n"
+            '{"tokens": ["exact", "path"], "flags": {"param": "value"}}\n\n'
+            "COMMON MAPPINGS (use these exact paths):\n"
+            '- "show/display/list all nodes" → {"tokens": ["node", "list"], "flags": {}}\n'
+            '- "search/find nodes about X" → {"tokens": ["node", "search"], "flags": {"q": "X"}}\n'
+            '- "show/display/list all predicates" → {"tokens": ["predicate", "list"], "flags": {}}\n'
+            '- "show/display/list all triples" → {"tokens": ["triple", "list"], "flags": {}}\n'
+            '- "search/find triples about X" → {"tokens": ["triple", "search"], "flags": {"q": "X"}}\n'
+            '- "search/find X in the graph" → {"tokens": ["graph", "search"], "flags": {"q": "X"}}\n'
+            '- "stats/statistics/count/how many" → {"tokens": ["graph", "stats"], "flags": {}}\n'
+            '- "view/examine node X" → {"tokens": ["node", "view"], "flags": {"id": "X"}}\n'
+            '- "view/examine triple for X" → {"tokens": ["triple", "view"], "flags": {"id": "X"}}\n'
+            '- "export/download graph" → {"tokens": ["graph", "export"], "flags": {}}\n'
+            '- "import/load data" → {"tokens": ["graph", "import"], "flags": {}}\n\n'
             "If the user's request does NOT map to any available command, "
             "respond with an empty JSON object: {}\n\n"
             "Available commands (machine-readable):\n" + defs_text
