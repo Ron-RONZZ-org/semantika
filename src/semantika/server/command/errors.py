@@ -9,6 +9,10 @@ from __future__ import annotations
 class CommandError(Exception):
     """Base error for command dispatch."""
 
+    def __init__(self, message: str = "", suggestion: str = "") -> None:
+        self.suggestion = suggestion
+        super().__init__(message)
+
 
 class CommandNotFound(CommandError):
     """No handler registered for the given command path."""
@@ -20,7 +24,3 @@ class CommandNotFound(CommandError):
 
 class CommandValidationError(CommandError):
     """Invalid or missing arguments for a command."""
-
-    def __init__(self, message: str, suggestion: str = "") -> None:
-        self.suggestion = suggestion
-        super().__init__(message)

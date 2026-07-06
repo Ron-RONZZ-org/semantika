@@ -293,52 +293,72 @@ def _migrate_triples_schema(db: SemantikaDB) -> None:
                 pass  # Column already exists
 
 
-def _ensure_nodes_fts(db: SemantikaDB) -> None:
-    """Create the nodes FTS5 virtual table if it doesn't exist."""
-    db.execute("""
-        CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
-            node_id UNINDEXED,
-            label_text,
-            definition_text,
-            content=nodes,
-            content_rowid=rowid,
-            tokenize='unicode61'
-        )
-    """)
-    # Populate if empty
-    row = db.execute_one("SELECT COUNT(*) AS cnt FROM nodes_fts")
+def _ensure_fts(
+    db: SemantikaDB,
+    fts_table: str,
+    content_table: str,
+    columns: list[str],
+) -> None:
+    """Create an FTS5 virtual table and populate it if empty.
+
+    Args:
+        db: Database instance.
+        fts_table: Name of the FTS virtual table (e.g. ``nodes_fts``).
+        content_table: Name of the content table (e.g. ``nodes``).
+        columns: Column names for the FTS index. The first column should be
+                 ``UNINDEXED`` (the primary key), the rest are full-text
+                 indexed.
+    """
+    col_defs = ",\n            ".join(columns)
+    db.execute(
+        f"CREATE VIRTUAL TABLE IF NOT EXISTS {fts_table} USING fts5(\n"
+        f"            {col_defs},\n"
+        f"            content={content_table},\n"
+        f"            content_rowid=rowid,\n"
+        f"            tokenize='unicode61'\n"
+        "        )"
+    )
+    row = db.execute_one(f"SELECT COUNT(*) AS cnt FROM {fts_table}")
     if row and row["cnt"] == 0:
+        col_list = ", ".join(c.split()[0] for c in columns)
         try:
             db.execute(
-                "INSERT INTO nodes_fts (rowid, node_id, label_text, definition_text)"
-                " SELECT rowid, node_id, label_text, definition_text FROM nodes"
+                f"INSERT INTO {fts_table} (rowid, {col_list})"
+                f" SELECT rowid, {col_list} FROM {content_table}"
             )
         except sqlite3.DatabaseError:
-            logger.warning("Failed to populate nodes FTS — LIKE fallback will be used")
+            logger.warning(
+                "Failed to populate %s — LIKE fallback will be used", fts_table
+            )
+
+
+def _ensure_nodes_fts(db: SemantikaDB) -> None:
+    """Create the nodes FTS5 virtual table if it doesn't exist."""
+    _ensure_fts(
+        db,
+        fts_table="nodes_fts",
+        content_table="nodes",
+        columns=[
+            "node_id UNINDEXED",
+            "label_text",
+            "definition_text",
+        ],
+    )
 
 
 def _ensure_predicates_fts(db: SemantikaDB) -> None:
     """Create the predicates FTS5 virtual table if it doesn't exist."""
-    db.execute("""
-        CREATE VIRTUAL TABLE IF NOT EXISTS predicates_fts USING fts5(
-            predicate_id UNINDEXED,
-            labels,
-            descriptions,
-            aliases,
-            content=predicates,
-            content_rowid=rowid,
-            tokenize='unicode61'
-        )
-    """)
-    row = db.execute_one("SELECT COUNT(*) AS cnt FROM predicates_fts")
-    if row and row["cnt"] == 0:
-        try:
-            db.execute(
-                "INSERT INTO predicates_fts (rowid, predicate_id, labels, descriptions, aliases)"
-                " SELECT rowid, predicate_id, labels, descriptions, aliases FROM predicates"
-            )
-        except sqlite3.DatabaseError:
-            logger.warning("Failed to populate predicates FTS — LIKE fallback will be used")
+    _ensure_fts(
+        db,
+        fts_table="predicates_fts",
+        content_table="predicates",
+        columns=[
+            "predicate_id UNINDEXED",
+            "labels",
+            "descriptions",
+            "aliases",
+        ],
+    )
 
 
 def _seed_default_predicates(db: SemantikaDB) -> None:

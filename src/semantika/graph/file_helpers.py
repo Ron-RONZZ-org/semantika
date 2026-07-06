@@ -167,55 +167,10 @@ def move_file(src: Path, node_id: str, attachment_type: str | None = None) -> Pa
     return dest
 
 
-def download_file(
-    url: str,
-    node_id: str,
-    attachment_type: str = "doc",
-    max_size: int = 100 * 1024 * 1024,
-) -> Path:
-    """Download a URL into the Semantika files directory (sync version).
-
-    For use in non-async contexts.  Use ``async_download_file`` inside
-    async FastAPI routes to avoid blocking the event loop.
-    """
+def _validate_url(url: str) -> None:
+    """Validate that *url* has an allowed scheme."""
     if not url.lower().startswith(("http://", "https://")):
         raise ValueError(f"Unsupported URL scheme: {url}")
-
-    with httpx.Client(follow_redirects=True, timeout=30.0) as client:
-        head_resp = client.head(url)
-        _check_size_from_head(head_resp, max_size, url)
-        resp = client.get(url)
-        resp.raise_for_status()
-        _check_size_from_content(resp.content, max_size, url)
-        dest_dir = _ensure_type_dir(attachment_type)
-        dest = dest_dir / node_id
-        dest.write_bytes(resp.content)
-        return dest
-
-
-async def async_download_file(
-    url: str,
-    node_id: str,
-    attachment_type: str = "doc",
-    max_size: int = 100 * 1024 * 1024,
-) -> Path:
-    """Download a URL into the Semantika files directory (async version).
-
-    Uses ``httpx.AsyncClient`` so it does not block the async event loop.
-    """
-    if not url.lower().startswith(("http://", "https://")):
-        raise ValueError(f"Unsupported URL scheme: {url}")
-
-    async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
-        head_resp = await client.head(url)
-        _check_size_from_head(head_resp, max_size, url)
-        resp = await client.get(url)
-        resp.raise_for_status()
-        _check_size_from_content(resp.content, max_size, url)
-        dest_dir = _ensure_type_dir(attachment_type)
-        dest = dest_dir / node_id
-        dest.write_bytes(resp.content)
-        return dest
 
 
 def _check_size_from_head(
@@ -229,14 +184,85 @@ def _check_size_from_head(
         )
 
 
-def _check_size_from_content(
-    content: bytes, max_size: int, url: str
-) -> None:
-    """Raise ``ValueError`` if actual content exceeds *max_size*."""
-    if len(content) > max_size:
-        raise ValueError(
-            f"Download too large: {len(content)} bytes (max {max_size} bytes) for {url}"
-        )
+def _ensure_dest_dir(attachment_type: str, node_id: str) -> Path:
+    """Return the destination path in the files directory."""
+    dest_dir = _ensure_type_dir(attachment_type)
+    return dest_dir / node_id
+
+
+def download_file(
+    url: str,
+    node_id: str,
+    attachment_type: str = "doc",
+    max_size: int = 100 * 1024 * 1024,
+) -> Path:
+    """Download a URL into the Semantika files directory (sync version).
+
+    For use in non-async contexts.  Use ``async_download_file`` inside
+    async FastAPI routes to avoid blocking the event loop.
+
+    The download is streamed and the size is enforced during streaming,
+    so a too-large file is rejected before it is fully buffered.
+    """
+    _validate_url(url)
+
+    with httpx.Client(follow_redirects=True, timeout=30.0) as client:
+        head_resp = client.head(url)
+        _check_size_from_head(head_resp, max_size, url)
+
+        dest = _ensure_dest_dir(attachment_type, node_id)
+        with client.stream("GET", url) as resp:
+            resp.raise_for_status()
+            _check_size_from_head(resp, max_size, url)
+            downloaded = 0
+            with open(dest, "wb") as f:
+                for chunk in resp.iter_bytes(chunk_size=65536):
+                    downloaded += len(chunk)
+                    if downloaded > max_size:
+                        dest.unlink(missing_ok=True)
+                        raise ValueError(
+                            f"Download too large: exceeded {max_size} bytes "
+                            f"for {url}"
+                        )
+                    f.write(chunk)
+        return dest
+
+
+async def async_download_file(
+    url: str,
+    node_id: str,
+    attachment_type: str = "doc",
+    max_size: int = 100 * 1024 * 1024,
+) -> Path:
+    """Download a URL into the Semantika files directory (async version).
+
+    Uses ``httpx.AsyncClient`` so it does not block the async event loop.
+
+    The download is streamed and the size is enforced during streaming,
+    so a too-large file is rejected before it is fully buffered.
+    """
+    _validate_url(url)
+
+    async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
+        head_resp = await client.head(url)
+        _check_size_from_head(head_resp, max_size, url)
+
+        dest = _ensure_dest_dir(attachment_type, node_id)
+        async with client.stream("GET", url) as resp:
+            resp.raise_for_status()
+            _check_size_from_head(resp, max_size, url)
+            downloaded = 0
+            with open(dest, "wb") as f:
+                async for chunk in resp.aiter_bytes(chunk_size=65536):
+                    downloaded += len(chunk)
+                    if downloaded > max_size:
+                        dest.unlink(missing_ok=True)
+                        raise ValueError(
+                            f"Download too large: exceeded {max_size} bytes "
+                            f"for {url}"
+                        )
+                    f.write(chunk)
+        return dest
 
 
 def delete_file(stored_path: Path) -> None:

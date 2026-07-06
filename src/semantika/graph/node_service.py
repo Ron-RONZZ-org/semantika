@@ -18,15 +18,15 @@ from typing import Any
 from semantika.core import AmbiguousIDError, SemantikaDB
 from semantika.core.crud import CRUDService, now
 from semantika.core.fts import FTSConfig
-from semantika.graph.node_fts import NodeFtsMixin
-from semantika.graph.node_merge_mixin import NodeMergeMixin
 from semantika.graph.helpers import escape_like
+from semantika.graph.node_fts import NodeFtsMixin
 from semantika.graph.node_helpers import (
     extract_definition_text,
     extract_label_text,
     normalize_label_to_id,
     sanitize_node_id,
 )
+from semantika.graph.node_merge_mixin import NodeMergeMixin
 
 logger = logging.getLogger(__name__)
 

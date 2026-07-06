@@ -189,7 +189,9 @@ async def delete_node(
 async def list_trash(limit: int = 50, offset: int = 0):
     """List soft-deleted nodes in the trash."""
     items = _svc()["node"].list_trash(limit=limit, offset=offset)
-    return {"items": items, "total": len(items)}
+    total_row = _svc()["node"].db.execute_one("SELECT COUNT(*) AS cnt FROM nodes_trash")
+    total = total_row["cnt"] if total_row else 0
+    return {"items": items, "total": total}
 
 
 @router.post("/trash/{node_id}/restore")

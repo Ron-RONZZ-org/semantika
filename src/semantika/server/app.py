@@ -69,7 +69,7 @@ def create_app() -> FastAPI:
 
     # API routes
     from semantika.server.routes import command as cmd
-    from semantika.server.routes import files, graph, llm, proof, prompt_commands, query, review, unit
+    from semantika.server.routes import files, graph, llm, prompt_commands, proof, query, review, unit
     from semantika.server.routes import user_config as ucfg
 
     app.include_router(graph.router, prefix="/api/v1/graph")

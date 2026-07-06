@@ -15,6 +15,10 @@ from semantika.core.backup import _db_path
 logger = logging.getLogger(__name__)
 
 
+# When adding a new keyring service name, add it here so reset clears it.
+_KNOWN_CREDENTIAL_SERVICES: tuple[str, ...] = ("semantika-llm", "semantika-key")
+
+
 def reset_to_fresh_state(
     backup_path: str | None = None,
 ) -> dict:
@@ -31,7 +35,7 @@ def reset_to_fresh_state(
     """
     from pathlib import Path
 
-    from lightercore.backup import backup_database
+    import shutil
 
     ddir = data_dir()
     db_path = _db_path()
@@ -42,10 +46,11 @@ def reset_to_fresh_state(
         "credentials_cleared": 0,
     }
 
-    # 1. Backup if requested
+    # 1. Backup if requested (simple file copy — no strategy tracking)
     if backup_path:
         dest = Path(backup_path)
-        backup_database(str(db_path), str(dest))
+        if db_path.exists():
+            shutil.copy2(str(db_path), str(dest))
         result["backup_path"] = str(dest.resolve())
 
     # 2. Remove SQLite databases
@@ -70,7 +75,9 @@ def reset_to_fresh_state(
     except ImportError:
         logger.debug("keyring not available — skipping credential cleanup")
     else:
-        for service in ("semantika-llm", "semantika-key"):
+        # Central list of known credential services.  When adding a new
+        # service name, add it here so ``reset`` clears it too.
+        for service in _KNOWN_CREDENTIAL_SERVICES:
             try:
                 _kr.delete_password(service, "api_key")
                 result["credentials_cleared"] += 1

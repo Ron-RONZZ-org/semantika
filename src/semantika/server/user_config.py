@@ -1,11 +1,16 @@
 """User configuration persistence -- locale, preferences, etc.
 
 Stored as a JSON file in the semantika data directory.
+
+Uses atomic write pattern (write to temp, rename) to prevent corruption
+from concurrent writes or partial writes.
 """
 
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 
 from semantika.core import data_dir
@@ -31,10 +36,24 @@ def load_config() -> dict[str, str]:
 
 
 def save_config(cfg: dict[str, str]) -> None:
-    """Save user config to JSON file."""
+    """Save user config to JSON file (atomic write via temp+rename)."""
     path = _config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    fd, tmp_path = tempfile.mkstemp(
+        suffix=".tmp",
+        prefix="user_config_",
+        dir=str(path.parent),
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2)
+        os.replace(tmp_path, str(path))
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 def get_locale() -> str:

@@ -32,32 +32,6 @@ _SERVICE_NAME = "semantika-llm"
 # ── Command definitions ───────────────────────────────────────────────────
 
 
-def _flatten_tree(tree: list[dict]) -> list[dict]:
-    """Walk the command tree and produce a flat list for the LLM prompt.
-
-    Each item includes the full dot-path, description, params, and flags.
-    """
-    result: list[dict] = []
-
-    def _walk(children: list[dict], parent_path: list[str] | None = None) -> None:
-        for entry in children:
-            path: list[str] = list(parent_path or []) + [entry["name"]]
-            item: dict[str, Any] = {
-                "path": path,
-                "canonical": "!" + ".".join(path),
-                "description": entry.get("description", ""),
-                "params": entry.get("params", []),
-                "flags": entry.get("flags", []),
-            }
-            result.append(item)
-            sub = entry.get("children")
-            if sub:
-                _walk(sub, path)
-
-    _walk(tree)
-    return result
-
-
 # ── Provider class ────────────────────────────────────────────────────────
 
 
@@ -224,12 +198,6 @@ class LLMProvider(BaseLLMProvider):
         self.model = config.model or self._default_model()
         self._active_profile_name = name
         return config
-
-    # ── Command helpers ──────────────────────────────────────────────────
-
-    def get_command_definitions(self, tree: list[dict]) -> list[dict]:
-        """Flatten command tree for LLM consumption."""
-        return _flatten_tree(tree)
 
 
 # ── Singleton ──────────────────────────────────────────────────────────────

@@ -6,8 +6,13 @@ Ported from A-semantika's ``_node_helpers.py`` with EO→EN rename.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import unicodedata
+
+import httpx
+
+logger = logging.getLogger(__name__)
 
 
 def extract_label_text(labels: str | dict) -> str:
@@ -56,6 +61,86 @@ def get_label_from_node(node: dict, preferred_lang: str | None = None) -> str:
         if val and isinstance(val, str):
             return val
     return _truncate_id(node.get("node_id", ""))
+
+
+# ── Wikidata helpers ──────────────────────────────────────────────────────
+
+_WIKIDATA_API = "https://www.wikidata.org/w/api.php"
+_WIKIDATA_ENTITY_API = "https://www.wikidata.org/wiki/Special:EntityData"
+
+
+def search_wikidata(query: str, lang: str = "en", limit: int = 5) -> list[dict]:
+    """Search Wikidata entities by label.
+
+    Args:
+        query: Search string.
+        lang: Language code for results.
+        limit: Max results.
+
+    Returns:
+        List of dicts with ``predicate_id`` (Q-ID), ``label``, and
+        ``description`` keys.
+    """
+    try:
+        resp = httpx.get(
+            _WIKIDATA_API,
+            params={
+                "action": "wbsearchentities",
+                "search": query,
+                "language": lang,
+                "format": "json",
+                "limit": min(limit, 50),
+            },
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        results: list[dict] = []
+        for item in data.get("search", []):
+            results.append({
+                "predicate_id": item["id"],
+                "label": item.get("label", item["id"]),
+                "description": item.get("description", ""),
+            })
+        return results
+    except Exception as exc:
+        logger.debug("Wikidata search failed for %r: %s", query, exc)
+        return []
+
+
+def fetch_wikidata_details(entity_id: str, lang: str = "en") -> dict | None:
+    """Fetch labels and descriptions for a Wikidata entity.
+
+    Args:
+        entity_id: Wikidata Q-ID (e.g. ``Q42``).
+        lang: Language code.
+
+    Returns:
+        Dict with ``labels`` and ``descriptions`` (each a ``{lang: text}``
+        mapping), or ``None`` if the entity cannot be resolved.
+    """
+    if not entity_id.startswith(("Q", "P")):
+        return None
+    try:
+        url = f"{_WIKIDATA_ENTITY_API}/{entity_id}.json"
+        resp = httpx.get(url, timeout=10.0)
+        resp.raise_for_status()
+        data = resp.json()
+        entities = data.get("entities", {})
+        entity = entities.get(entity_id)
+        if not entity:
+            return None
+
+        labels_raw = entity.get("labels", {})
+        descriptions_raw = entity.get("descriptions", {})
+
+        labels = {k: v.get("value", "") for k, v in labels_raw.items() if v.get("value")}
+        descriptions = {k: v.get("value", "") for k, v in descriptions_raw.items() if v.get("value")}
+
+        return {"labels": labels, "descriptions": descriptions}
+    except Exception as exc:
+        logger.debug("Wikidata detail fetch failed for %s: %s", entity_id, exc)
+        return None
 
 
 def _truncate_id(node_id: str) -> str:

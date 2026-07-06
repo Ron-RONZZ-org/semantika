@@ -5,7 +5,6 @@ Ported from A-semantika's ``_triple_service.py`` with EO→EN migration.
 
 from __future__ import annotations
 
-import json
 import logging
 import sqlite3
 
@@ -13,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 from semantika.core import SemantikaDB
 from semantika.core.crud import now
+from semantika.graph.node_helpers import get_label_from_node
 
 
 class TripleService:
@@ -326,33 +326,20 @@ class TripleService:
         result = []
         for t in triples:
             subj = node_map.get(t["subject_id"])
-            t["_subject_label"] = self._label_from_node(subj) if subj else t["subject_id"]
+            t["_subject_label"] = get_label_from_node(subj) if subj else t["subject_id"]
 
             pred = pred_map.get(t["predicate_id"])
-            t["_predicate_label"] = self._label_from_node(pred) if pred else t["predicate_id"]
+            t["_predicate_label"] = get_label_from_node(pred) if pred else t["predicate_id"]
 
             if t["object_type"] == "uri":
                 obj = node_map.get(t["object_value"])
-                t["_object_label"] = self._label_from_node(obj) if obj else t["object_value"]
+                t["_object_label"] = get_label_from_node(obj) if obj else t["object_value"]
             else:
                 t["_object_label"] = t["object_value"]
 
             result.append(t)
 
         return result
-
-    def _label_from_node(self, node: dict) -> str:
-        """Extract the first non-empty label from a node dict."""
-        labels_raw = node.get("labels", "{}")
-        try:
-            labels = json.loads(labels_raw) if isinstance(labels_raw, str) else labels_raw
-            if isinstance(labels, dict):
-                for val in labels.values():
-                    if val and isinstance(val, str):
-                        return val
-        except (json.JSONDecodeError, TypeError):
-            pass
-        return node.get("node_id", node.get("predicate_id", ""))
 
     def get_by_sp(self, subject_id: str, predicate_id: str) -> list[dict]:
         """Get triples matching subject + predicate."""

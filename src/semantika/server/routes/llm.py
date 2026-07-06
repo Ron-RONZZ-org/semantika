@@ -19,7 +19,6 @@ from pydantic import BaseModel
 
 from semantika.server.command.registry import (
     get_command_definitions,
-    get_command_tree,
 )
 from semantika.server.llm.provider import get_provider
 
@@ -214,7 +213,8 @@ async def chat(req: ChatRequest):
         return await _safe_chat(summary_messages)
 
     # ── Phase 1: Try structured command generation ───────────────────────
-    defs = get_command_definitions(get_command_tree())
+    # Call without args to use the internal cache (avoids O(N) tree walk)
+    defs = get_command_definitions()
     cmd = None
     try:
         cmd = await provider.generate_command(req.message, defs)

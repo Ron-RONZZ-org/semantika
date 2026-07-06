@@ -17,13 +17,13 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-
 from lightercore.paths import config_dir
 from lightercore.prompt_commands import (
     expand_prompt_template,
     list_prompt_commands,
     load_prompt_command,
 )
+
 from semantika.server.llm.provider import get_provider
 
 logger = logging.getLogger(__name__)
