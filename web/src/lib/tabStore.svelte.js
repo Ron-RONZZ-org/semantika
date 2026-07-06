@@ -21,6 +21,17 @@ function genId() {
   return `tab-${_nextId++}-${Date.now()}`;
 }
 
+/** Blur the input field when switching away from home, so the first
+ *  Escape press closes the active tab instead of being trapped by a
+ *  hidden-but-focused textarea. */
+function _blurInputOnTabSwitch(newActiveId) {
+  if (newActiveId === HOME_TAB.id) return;
+  requestAnimationFrame(() => {
+    const el = document.querySelector(".input-field");
+    if (el && el === document.activeElement) el.blur();
+  });
+}
+
 export const tabStore = {
   get tabs() { return _tabs; },
   get active() { return _tabs.find((t) => t.id === _activeId) || HOME_TAB; },
@@ -34,6 +45,7 @@ export const tabStore = {
       if (existing) {
         _activeId = existing.id;
         _tabs = _tabs.map((t) => (t.id === existing.id ? { ...t, title, data } : t));
+        _blurInputOnTabSwitch(_activeId);
         return existing.id;
       }
     }
@@ -45,6 +57,7 @@ export const tabStore = {
       _tabs = [..._tabs, tab];
     }
     _activeId = tab.id;
+    _blurInputOnTabSwitch(_activeId);
     return tab.id;
   },
 
@@ -56,6 +69,7 @@ export const tabStore = {
     _tabs = newTabs;
     if (id === _activeId) {
       _activeId = newTabs.length > 0 ? newTabs[Math.min(idx, newTabs.length - 1)].id : HOME_TAB.id;
+      if (_activeId === HOME_TAB.id) _refocusInput();
     }
   },
 
@@ -66,7 +80,15 @@ export const tabStore = {
   update(id, data, title) {
     _tabs = _tabs.map((t) => t.id === id ? { ...t, data, ...(title !== undefined ? { title } : {}) } : t);
   },
-  closeAll() { _tabs = [HOME_TAB]; _activeId = HOME_TAB.id; },
-  goHome() { _activeId = HOME_TAB.id; },
+  closeAll() { _tabs = [HOME_TAB]; _activeId = HOME_TAB.id; _refocusInput(); },
+  goHome() { _activeId = HOME_TAB.id; _refocusInput(); },
   get isHome() { return _activeId === HOME_TAB.id; },
 };
+
+/** Focus the input after switching back to the Home tab. */
+function _refocusInput() {
+  requestAnimationFrame(() => {
+    const el = document.querySelector(".input-field");
+    if (el) el.focus();
+  });
+}
