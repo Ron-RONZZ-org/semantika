@@ -184,8 +184,8 @@ async def chat(req: ChatRequest):
         try:
             result = dispatch(cmd["tokens"], cmd.get("flags", {}))
         except CommandError:
-            # Command generation failed — try plain chat
-            plain = await _safe_chat(messages + [{"role": "user", "content": req.message}])
+            # Command generation failed — try plain chat with system context
+            plain = await _safe_chat(_build_chat_messages(messages, req.message))
             return {"reply": plain or _stub_response(req.message)["reply"]}
 
         # Phase 3: Summarize the result
@@ -194,12 +194,13 @@ async def chat(req: ChatRequest):
             {
                 "role": "system",
                 "content": (
-                    "You are a helpful assistant for the Semantika knowledge graph. "
-                    "The user asked a question and the system executed a command on their behalf. "
-                    "Summarize the result in a friendly, natural way. "
-                    "Use markdown formatting for readability.\n\n"
+                    _SEMANTIKA_SYSTEM_PROMPT
+                    + "\n\n"
+                    "The user's question was answered by executing a command "
+                    "on their behalf. Summarize the result in a friendly, "
+                    "natural way. Use markdown formatting for readability.\n\n"
                     "Command executed: !" + " ".join(cmd["tokens"]) + "\n"
-                    "Result:\n" + result_summary
+                    "Raw result:\n" + result_summary
                 ),
             },
             {"role": "user", "content": req.message},
@@ -208,8 +209,8 @@ async def chat(req: ChatRequest):
         if reply:
             return {"reply": reply}
 
-    # Phase 3b: No command or summarization failed — plain chat or stub
-    reply = await _safe_chat(messages + [{"role": "user", "content": req.message}])
+    # Phase 3b: No command or summarization failed — plain chat with system context
+    reply = await _safe_chat(_build_chat_messages(messages, req.message))
     return {"reply": reply or _stub_response(req.message)["reply"]}
 
 
@@ -238,6 +239,58 @@ async def confirm_command(req: ConfirmRequest) -> dict:
         "title": result.get("title", ""),
         "data": result.get("data", result),
     }
+
+
+# ── Semantika system prompt ──────────────────────────────────────────────
+
+
+_SEMANTIKA_SYSTEM_PROMPT = (
+    "You are Semantika AI, an intelligent assistant for the **Semantika "
+    "knowledge graph** application.\n\n"
+    "## What Semantika Is\n"
+    "Semantika is a personal knowledge graph tool where users store "
+    "structured knowledge as:\n"
+    "- **Nodes** — entities or concepts (e.g. \"Albert Einstein\", "
+    "\"Physics\", \"Python\")\n"
+    "- **Predicates** — relationship types between nodes "
+    "(e.g. \"is_a\", \"wrote\", \"discovered\")\n"
+    "- **Triples** — subject-predicate-object statements connecting "
+    "nodes into a graph\n\n"
+    "## Available Commands\n"
+    "Users can explore and manage their graph via these commands:\n"
+    "- `!node` — list, add, search, show, edit, delete, merge nodes\n"
+    "- `!predicate` — list, add, search, show, edit, delete predicates\n"
+    "- `!triple` — list, add, search, show, edit, delete triples\n"
+    "- `!search` — full-text search across nodes and predicates\n"
+    "- `!stats` — show graph statistics\n"
+    "- `!export` — export graph in Turtle (.ttl) format\n"
+    "- `!review` — review triples\n"
+    "- `!unit` — manage units/ontology\n"
+    "- `!backup` — backup management\n"
+    "- `!llm` — LLM provider configuration\n\n"
+    "## How to Respond\n"
+    "- When users ask about their knowledge graph, answer contextually "
+    "based on the data you can see.\n"
+    "- If you don't have enough information to answer accurately, "
+    "suggest relevant commands they can run (e.g. `!node list`, "
+    "`!triple list`).\n"
+    "- Keep responses concise and helpful. Use Markdown formatting "
+    "for readability.\n"
+    "- Never invent data — if you are not sure, say so and suggest "
+    "how the user can find the answer."
+)
+
+
+def _build_chat_messages(
+    messages: list[dict],
+    user_message: str,
+) -> list[dict]:
+    """Build message list with Semantika system context prepended."""
+    return [
+        {"role": "system", "content": _SEMANTIKA_SYSTEM_PROMPT},
+        *messages,
+        {"role": "user", "content": user_message},
+    ]
 
 
 # ── Stub fallback ────────────────────────────────────────────────────────
