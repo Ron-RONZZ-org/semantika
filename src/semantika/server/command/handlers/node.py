@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from lightercore.permissions import PermissionLevel
+
 from semantika.core.exceptions import AmbiguousIDError
 from semantika.graph.db import get_services
 from semantika.server.command.errors import CommandValidationError
@@ -283,14 +284,15 @@ def cmd_node_add(remaining: list[str], flags: dict[str, str]) -> dict:
         for fp in (":hasFilePath", ":hasFileMime", ":hasFileSize", ":hasFileSource"):
             _ensure_predicate(svc, fp)
 
-    # ── Create arc triples ────────────────────────────────────────────
-    if arc_targets:
-        created_arcs = _create_arc_triples(svc, node_id_val, arc_targets)
-        msg_parts.append(f"with {len(created_arcs)} arc(s)")
+    # ── Create arc triples + handle file attachment ──────────────────
+    # Both are inside the try block so that any failure rolls back
+    # the entire post-creation operation (node hard-delete cascades FK).
+    try:
+        if arc_targets:
+            created_arcs = _create_arc_triples(svc, node_id_val, arc_targets)
+            msg_parts.append(f"with {len(created_arcs)} arc(s)")
 
-    # ── Handle file attachment ───────────────────────────────────────
-    if file_source:
-        try:
+        if file_source:
             file_triples = _handle_file_attachment(
                 svc, file_source, file_attachment_type, node_id_val,
                 in_place=in_place, do_move=do_move,
@@ -303,10 +305,12 @@ def cmd_node_add(remaining: list[str], flags: dict[str, str]) -> dict:
                 ]
                 _create_arc_triples(svc, node_id_val, [(o, p) for _, p, o in file_arcs])
                 msg_parts.append("with file attachment")
-        except CommandValidationError:
-            # Roll back node creation if file attachment fails
-            svc["node"].delete(node_id_val, soft=False)
-            raise
+    except CommandValidationError:
+        # Roll back node creation if any post-creation step fails.
+        # The schema has REFERENCES without ON DELETE CASCADE, so
+        # hard-deleting the node removes orphan triples too.
+        svc["node"].delete(node_id_val, soft=False)
+        raise
 
     result: dict = {"message": ". ".join(msg_parts), "node": node}
     if arc_targets:

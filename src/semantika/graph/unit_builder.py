@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Callable
 
+from semantika.core.crud import now
+from semantika.graph.unit_errors import UnitNotFoundError
 from semantika.graph.unit_parser import (
     SingularUnit,
     UnitExpression,
@@ -15,12 +17,10 @@ from semantika.graph.unit_parser import (
     UnitProduct,
     normalize,
 )
-from semantika.graph.unit_errors import UnitNotFoundError
-from semantika.core.crud import now
 
 if TYPE_CHECKING:
-    from semantika.graph.node_service import NodeService
     from semantika.core import SemantikaDB
+    from semantika.graph.node_service import NodeService
 
 
 class UnitBuilder:
@@ -62,7 +62,6 @@ class UnitBuilder:
 
     def _build_power_node(self, base_id: str, exponent: int) -> str:
         """Create or find a UnitPower node."""
-        from semantika.graph.node_helpers import normalize_label_to_id
 
         now_iso = now()
         local_name = base_id.split(":")[-1]

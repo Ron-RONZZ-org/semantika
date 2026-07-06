@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from semantika.graph.db import get_services
 from semantika.graph.file_helpers import (
     async_download_file,
-    classify_attachment,
     copy_file,
     delete_file,
     detect_mime,

@@ -121,7 +121,7 @@ class NodeFtsMixin:
     def _remove_from_fts(self, node_id: str) -> None:
         """Remove a node from FTS index."""
         row = self.db.execute_one(
-            f"SELECT rowid FROM nodes WHERE node_id = ?", (node_id,)
+            "SELECT rowid FROM nodes WHERE node_id = ?", (node_id,)
         )
         if not row or row.get("rowid") is None:
             return

@@ -13,7 +13,6 @@ import logging
 import mimetypes
 import shutil
 from pathlib import Path
-from typing import Literal
 
 import httpx
 

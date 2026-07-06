@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from lightercore.permissions import PermissionLevel
+
 from semantika.server.command.errors import CommandValidationError
 from semantika.server.command.registry import command
 
@@ -14,6 +15,7 @@ from semantika.server.command.registry import command
          flags=[{"name": "no-backup", "type": "flag", "help": "Skip backup"},
                 {"name": "confirmed", "type": "flag", "help": "Confirm reset"}])
 def cmd_reset(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Reset semantika to a fresh state, optionally backing up first."""
     has_path = bool(remaining)
     no_backup = "no-backup" in flags
     confirmed = flags.get("confirmed", "").lower() in ("true", "1", "yes")

@@ -6,7 +6,6 @@ from semantika.graph.db import get_services
 from semantika.server.command.errors import CommandValidationError
 from semantika.server.command.registry import command
 
-
 # ── Review commands ───────────────────────────────────────────────────────
 
 

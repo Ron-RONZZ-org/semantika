@@ -2,20 +2,19 @@
 from __future__ import annotations
 
 from lightercore.backup import *  # noqa: F401, F403
-
-# Private helpers used by tests — not in __all__
-from lightercore.paths import data_dir
 from lightercore.backup import (  # noqa: F401
+    BackupStrategy,
     _backup_dir,
     _backup_filename,
     _config_path,
     _timestamp,
-    BackupStrategy,
     get_strategy,
     prune_backups,
     resolve_target_path,
 )
 
+# Private helpers used by tests — not in __all__
+from lightercore.paths import data_dir
 
 # ── Semantika-specific helpers (not in lightercore) ─────────────────────
 

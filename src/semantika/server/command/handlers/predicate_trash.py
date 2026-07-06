@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from lightercore.permissions import PermissionLevel
+
 from semantika.graph.db import get_services
 from semantika.server.command.errors import CommandValidationError
 from semantika.server.command.registry import command
@@ -10,6 +11,7 @@ from semantika.server.command.registry import command
 
 @command("predicate.trash.list", description="List trashed predicates")
 def cmd_predicate_trash_list(remaining: list[str], flags: dict[str, str]) -> dict:
+    """List all trashed predicates."""
     svc = get_services()
     items = svc["predicate"].list_trash()
     return {"type": "table", "data": items, "label": "Predicate Trash"}
@@ -18,6 +20,7 @@ def cmd_predicate_trash_list(remaining: list[str], flags: dict[str, str]) -> dic
 @command("predicate.trash.restore", description="Restore a trashed predicate",
          params=[{"name": "predicate_id", "type": "string", "required": True}])
 def cmd_predicate_trash_restore(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Restore a trashed predicate by ID."""
     svc = get_services()
     pred_id = flags.get("predicate_id") or (remaining[0] if remaining else "") or ""
     if not pred_id:
@@ -31,6 +34,7 @@ def cmd_predicate_trash_restore(remaining: list[str], flags: dict[str, str]) -> 
 @command("predicate.trash.delete", description="Permanently delete a trashed predicate",
          params=[{"name": "predicate_id", "type": "string", "required": True}])
 def cmd_predicate_trash_delete(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Permanently delete a trashed predicate."""
     svc = get_services()
     pred_id = flags.get("predicate_id") or (remaining[0] if remaining else "") or ""
     if not pred_id:
@@ -42,6 +46,7 @@ def cmd_predicate_trash_delete(remaining: list[str], flags: dict[str, str]) -> d
 @command("predicate.trash.purge", description="Empty the predicate trash permanently",
          permission_level=PermissionLevel.DESTRUCTIVE)
 def cmd_predicate_trash_purge(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Empty the predicate trash permanently."""
     svc = get_services()
     count = svc["predicate"].empty_trash()
     return {"type": "status", "data": {"message": f"Purged {count} predicate(s) from trash"}}

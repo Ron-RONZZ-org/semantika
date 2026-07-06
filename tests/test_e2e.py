@@ -22,8 +22,13 @@ import pytest
 SCRIPTS: list[tuple[str, str, int]] = [
     (
         "semantika_e2e.mjs",
-        "Full command tree coverage (node, predicate, triple, unit, search, export, import, stats, review, llm, backup, help)",
+        "Basic command tree coverage (44 commands + 3 permission gate tests)",
         300,
+    ),
+    (
+        "semantika_full_e2e.mjs",
+        "Full coverage: all commands with all flags/options, GUI functions, CLI→GUI routing, LLM endpoints",
+        480,
     ),
 ]
 

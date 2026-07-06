@@ -13,7 +13,6 @@ from typing import Any
 from semantika.core import SemantikaDB
 from semantika.core.crud import CRUDService, now
 from semantika.graph.constants import FTS5_KEYWORDS
-from semantika.graph.node_helpers import extract_label_text
 
 logger = logging.getLogger(__name__)
 
@@ -418,29 +417,31 @@ class PredicateService(CRUDService):
             # Temporarily disable FK enforcement for the PK rename.
             # Cascade updates below restore consistency before commit.
             conn.execute("PRAGMA foreign_keys=OFF")
-            # FTS operations inside the transaction so rollback keeps them in sync
-            self._remove_from_fts(old_id, conn=conn)
-            set_parts = [f"{k} = ?" for k in updates]
-            params = list(updates.values()) + [old_id]
-            conn.execute(
-                f"UPDATE predicates SET {', '.join(set_parts)} WHERE predicate_id = ?",
-                params,
-            )
+            try:
+                # FTS operations inside the transaction so rollback keeps them in sync
+                self._remove_from_fts(old_id, conn=conn)
+                set_parts = [f"{k} = ?" for k in updates]
+                params = list(updates.values()) + [old_id]
+                conn.execute(
+                    f"UPDATE predicates SET {', '.join(set_parts)} WHERE predicate_id = ?",
+                    params,
+                )
 
-            # Cascade to triples
-            conn.execute(
-                "UPDATE triples SET predicate_id = ? WHERE predicate_id = ?",
-                (new_id, old_id),
-            )
+                # Cascade to triples
+                conn.execute(
+                    "UPDATE triples SET predicate_id = ? WHERE predicate_id = ?",
+                    (new_id, old_id),
+                )
 
-            # Cascade to predicate_group_members
-            conn.execute(
-                "UPDATE predicate_group_members SET predicate_id = ? WHERE predicate_id = ?",
-                (new_id, old_id),
-            )
+                # Cascade to predicate_group_members
+                conn.execute(
+                    "UPDATE predicate_group_members SET predicate_id = ? WHERE predicate_id = ?",
+                    (new_id, old_id),
+                )
 
-            self._index_fts(new_id, conn=conn)
-            conn.execute("PRAGMA foreign_keys=ON")
+                self._index_fts(new_id, conn=conn)
+            finally:
+                conn.execute("PRAGMA foreign_keys=ON")
 
         return self.get(new_id)
 

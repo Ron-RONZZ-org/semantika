@@ -9,6 +9,7 @@ from semantika.server.command.registry import command
 
 @command("unit.list", description="List all units")
 def cmd_unit_list(remaining: list[str], flags: dict[str, str]) -> dict:
+    """List all units in the ontology."""
     svc = get_services()
     from semantika.graph.unit_service import UnitService
     us = UnitService(svc["node"].db, svc["node"], svc["triple"])
@@ -19,6 +20,7 @@ def cmd_unit_list(remaining: list[str], flags: dict[str, str]) -> dict:
 @command("unit.view", description="View unit info",
          params=[{"name": "id", "type": "string", "required": True}])
 def cmd_unit_view(remaining: list[str], flags: dict[str, str]) -> dict:
+    """View detailed info for a unit by ID."""
     svc = get_services()
     node_id = flags.get("id") or (remaining[0] if remaining else "") or ""
     from semantika.graph.unit_service import UnitService
@@ -32,6 +34,7 @@ def cmd_unit_view(remaining: list[str], flags: dict[str, str]) -> dict:
 @command("unit.resolve", description="Resolve a unit expression",
          params=[{"name": "expr", "type": "string", "required": True}])
 def cmd_unit_resolve(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Resolve a unit expression (e.g. 'm/s^2') to a unit node."""
     svc = get_services()
     expr = flags.get("expr") or (remaining[0] if remaining else "") or ""
     from semantika.graph.unit_service import UnitService
@@ -44,6 +47,7 @@ def cmd_unit_resolve(remaining: list[str], flags: dict[str, str]) -> dict:
 @command("unit.decompose", description="Decompose a compound unit",
          params=[{"name": "id", "type": "string", "required": True}])
 def cmd_unit_decompose(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Show the decomposition of a compound unit."""
     svc = get_services()
     node_id = flags.get("id") or (remaining[0] if remaining else "") or ""
     from semantika.graph.unit_service import UnitService
@@ -59,6 +63,7 @@ def cmd_unit_decompose(remaining: list[str], flags: dict[str, str]) -> dict:
                 {"name": "labels", "type": "string"},
                 {"name": "symbol", "type": "string"}])
 def cmd_unit_add(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Create a new unit in the ontology."""
     svc = get_services()
     node_id = flags.get("node_id") or (remaining[0] if remaining else "") or ""
     labels = flags.get("labels") or (remaining[1] if len(remaining) > 1 else "") or ""

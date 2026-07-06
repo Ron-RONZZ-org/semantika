@@ -31,6 +31,7 @@ def _detect_chromium_path() -> str | None:
     for pattern in [
         home + "/.cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell",
         home + "/.cache/ms-playwright/chromium-*/chrome-linux/chrome",
+        home + "/.cache/ms-playwright/chromium-*/chrome-linux64/chrome",
     ]:
         candidates.extend(glob.glob(pattern))
     # System installations

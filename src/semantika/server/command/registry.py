@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from lightercore.permissions import PermissionLevel
+
 from semantika.server.command.errors import CommandNotFound
 
 # ── Registry ──────────────────────────────────────────────────────────────

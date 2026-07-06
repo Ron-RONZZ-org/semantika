@@ -127,18 +127,3 @@ def cmd_llm_profile_delete(remaining: list[str], flags: dict[str, str]) -> dict:
     if p.delete_profile(name):
         return {"type": "status", "title": "Profile Deleted", "data": {"removed": [name]}}
     raise CommandValidationError(f"Profile not found: {name}")
-    return {"type": "status", "title": "Profile Loaded",
-            "data": {"name": name, "protocol": config.provider_type, "model": config.model, "available": p.available}}
-
-
-@command("llm.profile.delete", description="Delete a saved LLM profile",
-         params=[{"name": "name", "type": "string", "required": True}])
-def cmd_llm_profile_delete(remaining: list[str], flags: dict[str, str]) -> dict:
-    name = flags.get("name") or (remaining[0] if remaining else "") or ""
-    if not name:
-        raise CommandValidationError("Missing profile name.", "Usage: !llm profile delete <name>")
-    from semantika.server.llm.provider import LLMProvider
-    p = LLMProvider()
-    if p.delete_profile(name):
-        return {"type": "status", "title": "Profile Deleted", "data": {"removed": [name]}}
-    raise CommandValidationError(f"Profile not found: {name}")

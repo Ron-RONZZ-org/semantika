@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from lightercore.permissions import PermissionLevel
+
 from semantika.server.command.errors import CommandValidationError
 from semantika.server.command.helpers import backup_dir_abs, fmt_size, fmt_ts
 from semantika.server.command.registry import command, group_command
@@ -18,7 +19,11 @@ def cmd_backup_root(remaining: list[str], flags: dict[str, str]) -> dict:
 
 @command("backup.now", description="Create timestamped backup")
 def cmd_backup_now(remaining: list[str], flags: dict[str, str]) -> dict:
-    from semantika.core.backup import backup_all_strategies, load_config, resolve_target_path
+    from semantika.core.backup import (
+        backup_all_strategies,
+        load_config,
+        resolve_target_path,
+    )
     created = backup_all_strategies()
     if not created:
         return {"type": "status", "title": "Backup", "data": {"message": "No data files found to back up."}}
@@ -54,8 +59,8 @@ def cmd_backup_list(remaining: list[str], flags: dict[str, str]) -> dict:
          permission_level=PermissionLevel.DESTRUCTIVE,
          flags=[{"name": "timestamp", "type": "string", "help": "Specific timestamp"}])
 def cmd_backup_restore(remaining: list[str], flags: dict[str, str]) -> dict:
-    from semantika.core.backup import restore_latest, restore_by_timestamp
-    from semantika.graph.db import get_db_path, close_db
+    from semantika.core.backup import restore_by_timestamp, restore_latest
+    from semantika.graph.db import close_db, get_db_path
     timestamp = flags.get("timestamp")
     close_db()
     target = str(get_db_path().parent)
@@ -121,11 +126,11 @@ def cmd_backup_config_add(remaining: list[str], flags: dict[str, str]) -> dict:
     try:
         interval_minutes = int(flags.get("interval", "0"))
     except ValueError:
-        raise CommandValidationError(f"Invalid --interval value")
+        raise CommandValidationError("Invalid --interval value")
     try:
         max_copies = int(flags.get("max_copies", "10"))
     except ValueError:
-        raise CommandValidationError(f"Invalid --max-copies value")
+        raise CommandValidationError("Invalid --max-copies value")
     if interval_minutes < 0:
         raise CommandValidationError("--interval must be >= 0")
     target = flags.get("target", "local")
@@ -156,7 +161,7 @@ def cmd_backup_config_modify(remaining: list[str], flags: dict[str, str]) -> dic
     if "label" in flags: updates["label"] = flags["label"]
     if "interval" in flags:
         try: updates["interval_minutes"] = int(flags["interval"])
-        except ValueError: raise CommandValidationError(f"Invalid interval value")
+        except ValueError: raise CommandValidationError("Invalid interval value")
     if "max_copies" in flags: updates["max_copies"] = flags["max_copies"]
     if "target" in flags: updates["target"] = flags["target"]
     if "enabled" in flags:

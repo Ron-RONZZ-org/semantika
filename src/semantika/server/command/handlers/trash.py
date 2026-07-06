@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from lightercore.permissions import PermissionLevel
+
 from semantika.graph.db import get_services
 from semantika.server.command.errors import CommandValidationError
 from semantika.server.command.registry import command
@@ -10,6 +11,7 @@ from semantika.server.command.registry import command
 
 @command("node.trash.list", description="List trashed nodes")
 def cmd_trash_list(remaining: list[str], flags: dict[str, str]) -> dict:
+    """List all trashed nodes."""
     svc = get_services()
     items = svc["node"].list_trash()
     return {"type": "table", "data": items, "label": "Trash"}
@@ -18,6 +20,7 @@ def cmd_trash_list(remaining: list[str], flags: dict[str, str]) -> dict:
 @command("node.trash.restore", description="Restore a trashed node",
          params=[{"name": "id", "type": "string", "required": True}])
 def cmd_trash_restore(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Restore a trashed node by ID."""
     svc = get_services()
     node_id = flags.get("id") or (remaining[0] if remaining else "") or ""
     if not node_id:
@@ -31,6 +34,7 @@ def cmd_trash_restore(remaining: list[str], flags: dict[str, str]) -> dict:
 @command("node.trash.delete", description="Permanently delete one or more trashed nodes",
          params=[{"name": "id", "type": "string"}])
 def cmd_trash_delete(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Permanently delete one or more trashed nodes."""
     svc = get_services()
     ids: list[str] = []
     pos_id = flags.get("id") or ""
@@ -61,6 +65,7 @@ def cmd_trash_delete(remaining: list[str], flags: dict[str, str]) -> dict:
          permission_level=PermissionLevel.DESTRUCTIVE,
          params=[{"name": "days", "type": "number", "default": 30}])
 def cmd_trash_purge(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Purge trashed nodes older than a given number of days."""
     svc = get_services()
     raw_days = flags.get("days") or (remaining[0] if remaining else "") or "30"
     try:

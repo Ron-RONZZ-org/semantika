@@ -21,37 +21,51 @@ async function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+async function ensureInputVisible() {
+  const input = page.locator("[aria-label='Message input']");
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const vis = await input.isVisible().catch(() => false);
+    if (vis) return true;
+    // Try clicking on tab close buttons to dismiss popups
+    try {
+      const tabClose = page.locator(".tab-close").first();
+      if (await tabClose.isVisible({ timeout: 300 }).catch(() => false)) {
+        await tabClose.click({ timeout: 500 });
+        await sleep(300);
+        continue;
+      }
+    } catch {}
+    // Try clicking on the home-tab area to switch back
+    try {
+      const homeTabBtn = page.locator('button[role="tab"]', { hasText: "Home" });
+      if (await homeTabBtn.isVisible({ timeout: 200 }).catch(() => false)) {
+        await homeTabBtn.click();
+        await sleep(300);
+        continue;
+      }
+    } catch {}
+    // Fallback: press Escape
+    await page.keyboard.press("Escape");
+    await sleep(250);
+  }
+  return await input.isVisible().catch(() => false);
+}
+
 async function typeAndRun(cmd) {
   const input = page.locator("[aria-label='Message input']");
-  // Ensure input is visible — press Escape to close any open popups first
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const vis = await input.isVisible().catch(() => false);
-    if (vis) break;
-    await page.keyboard.press("Escape");
-    await sleep(300);
-  }
+  await ensureInputVisible();
   await input.waitFor({ state: "visible", timeout: 5000 });
   await input.click();
   await input.fill("");
-  await sleep(50);
-  await input.pressSequentially(cmd, { delay: 8 });
+  await sleep(20);
+  await input.pressSequentially(cmd, { delay: 6 });
   await sleep(300);
   await input.press("Enter");
-  // Wait for result to appear (popup tab or status change)
-  await sleep(1000);
+  await sleep(800);
 }
 
 async function closeResult() {
-  // Press Escape to close result popups/tabs
-  for (let i = 0; i < 6; i++) {
-    await page.keyboard.press("Escape");
-    await sleep(200);
-  }
-  // Focus back on input
-  const input = page.locator("[aria-label='Message input']");
-  if (await input.isVisible().catch(() => false)) {
-    await input.focus();
-  }
+  await ensureInputVisible();
 }
 
 async function verifyNoCrash() {

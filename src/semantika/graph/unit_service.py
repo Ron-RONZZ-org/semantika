@@ -16,18 +16,18 @@ from typing import TYPE_CHECKING
 from semantika.graph.unit_builder import UnitBuilder
 
 logger = logging.getLogger(__name__)
-from semantika.graph.unit_decomposition import UnitDecomposer, format_unit_ref
+from semantika.core.crud import now
+from semantika.core.exceptions import AmbiguousIDError
+from semantika.graph.node_helpers import extract_label_text
+from semantika.graph.unit_decomposition import UnitDecomposer
 from semantika.graph.unit_errors import UnitNotFoundError
 from semantika.graph.unit_parser import parse
 from semantika.graph.unit_seed_data import ALL_UNITS, BASE_AND_DERIVED
-from semantika.core.crud import now
-from semantika.graph.node_helpers import extract_label_text
-from semantika.core.exceptions import AmbiguousIDError
 
 if TYPE_CHECKING:
+    from semantika.core import SemantikaDB
     from semantika.graph.node_service import NodeService
     from semantika.graph.triple_service import TripleService
-    from semantika.core import SemantikaDB
 
 
 class UnitService:

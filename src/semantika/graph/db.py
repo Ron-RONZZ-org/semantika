@@ -6,13 +6,15 @@ Ported from A-semantika's ``data/storage.py`` with Esperanto-to-English migratio
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from pathlib import Path
 from typing import Any
 
 from semantika.core import SemantikaDB, data_dir, ensure_dirs
 from semantika.core.crud import now
-from semantika.graph.constants import FTS5_KEYWORDS
+
+logger = logging.getLogger(__name__)
 
 _DB_FILENAME = "semantika.db"
 
@@ -63,11 +65,11 @@ def get_services() -> dict[str, Any]:
     """
     init_db()
     from semantika.graph.node_service import NodeService
-    from semantika.graph.predicate_service import PredicateService
     from semantika.graph.predicate_group_service import PredicateGroupService
-    from semantika.graph.triple_service import TripleService
-    from semantika.graph.review_service import ReviewService
+    from semantika.graph.predicate_service import PredicateService
     from semantika.graph.proof_service import ProofService
+    from semantika.graph.review_service import ReviewService
+    from semantika.graph.triple_service import TripleService
 
     db = get_db()
     return {
@@ -317,7 +319,8 @@ def _ensure_nodes_fts(conn: sqlite3.Connection) -> None:
                 " SELECT rowid, node_id, label_text, definition_text FROM nodes"
             )
         except sqlite3.DatabaseError:
-            pass  # FTS population failed — LIKE fallback will work
+            logger.warning("Failed to populate nodes FTS — LIKE fallback will be used")
+            pass
 
 
 def _ensure_predicates_fts(conn: sqlite3.Connection) -> None:
@@ -341,7 +344,8 @@ def _ensure_predicates_fts(conn: sqlite3.Connection) -> None:
                 " SELECT rowid, predicate_id, labels, descriptions, aliases FROM predicates"
             )
         except sqlite3.DatabaseError:
-            pass  # LIKE fallback still works
+            logger.warning("Failed to populate predicates FTS — LIKE fallback will be used")
+            pass
 
 
 def _seed_default_predicates(db: SemantikaDB) -> None:

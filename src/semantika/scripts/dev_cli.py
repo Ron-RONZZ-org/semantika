@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import sys
-import tempfile
 
 import uvicorn
 

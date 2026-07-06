@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 import logging
 import urllib.parse
-from typing import Any
 
 from semantika.core import SemantikaDB
 
@@ -79,6 +78,7 @@ def import_turtle(turtle_content: str) -> dict[str, int]:
         Dict with counts: nodes_created, predicates_created, triples_added.
     """
     from rdflib import BNode, Graph, Literal, URIRef
+
     from semantika.graph.db import get_services
 
     svc = get_services()

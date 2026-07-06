@@ -11,14 +11,13 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
 
 from fastapi import APIRouter, HTTPException
+from lightercore.permissions import PermissionLevel
 from pydantic import BaseModel
 
-from lightercore.permissions import PermissionLevel
-from semantika.server.llm.provider import get_provider, reset_provider
 from semantika.server.command.registry import get_command_definitions
+from semantika.server.llm.provider import get_provider
 
 logger = logging.getLogger(__name__)
 
@@ -157,8 +156,12 @@ async def chat(req: ChatRequest):
 
     if cmd and cmd.get("tokens"):
         # Phase 2a: Permission check — gate destructive commands
-        from semantika.server.command.registry import dispatch, get_command_level, get_handler_metadata
         from semantika.server.command.errors import CommandError
+        from semantika.server.command.registry import (
+            dispatch,
+            get_command_level,
+            get_handler_metadata,
+        )
 
         cmd_path = ".".join(cmd["tokens"])
         level = get_command_level(cmd_path)
@@ -180,7 +183,7 @@ async def chat(req: ChatRequest):
         # Phase 2b: Execute the command
         try:
             result = dispatch(cmd["tokens"], cmd.get("flags", {}))
-        except CommandError as e:
+        except CommandError:
             # Command generation failed — try plain chat
             plain = await _safe_chat(messages + [{"role": "user", "content": req.message}])
             return {"reply": plain or _stub_response(req.message)["reply"]}

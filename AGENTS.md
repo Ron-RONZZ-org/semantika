@@ -122,7 +122,7 @@ semantika/
 │       │   ├── __init__.py      # Re-exports SemantikaDB, paths, exceptions
 │       │   ├── db.py / paths.py / exceptions.py / backup.py / crud.py / fts.py
 │       │   └── reset.py         # Reset to fresh state
-│       ├── graph/               # Triple store services (18 Python files)
+│       ├── graph/               # Triple store services (16 source files + services/)
 │       │   ├── __init__.py + constants.py + db.py + file_helpers.py
 │       │   ├── node_helpers.py + node_service.py
 │       │   ├── predicate_service.py + predicate_group_service.py
@@ -159,16 +159,19 @@ semantika/
     └── src/
         ├── main.js + App.svelte
         └── lib/                  # UI components
-            ├── CommandBar.svelte / CommandBar.svelte
-            ├── DynamicForm.svelte / FormField.svelte / FormTab.svelte
-            ├── PopupOverlay.svelte / StatusPopup.svelte / ErrorPopup.svelte
-            ├── TabView.svelte / HomeTab.svelte / SearchTab.svelte
-            ├── LoadingPopup.svelte / BannerContainer.svelte
-            ├── HelpPopup.svelte / ConfirmDialog.svelte
-            ├── LlmSetupModal.svelte / GraphView.svelte
+            ├── CommandBar.svelte / DynamicForm.svelte / FormField.svelte
+            ├── FormTab.svelte / PopupOverlay.svelte / StatusPopup.svelte
+            ├── ErrorPopup.svelte / LoadingPopup.svelte / BannerContainer.svelte
+            ├── HelpPopup.svelte / ConfirmDialog.svelte / KeyboardShortcutOverlay.svelte
+            ├── LlmSetupModal.svelte / GraphView.svelte / QuizPanel.svelte
+            ├── ChatInput.svelte / TabView.svelte / HomeTab.svelte
             ├── NodeListTab.svelte / PredicateListTab.svelte / TripleListTab.svelte
             ├── listTabFormat.js / listTabSelection.svelte.js / listTabShared.svelte.js
-            └── command*.js / popupStore.svelte.js / tabStore.svelte.js / api.js / markdown.js
+            ├── commandRouter.js / commandEngine.js / commandExecutor.js
+            ├── commandTree.js / commandHistory.svelte.js / parser.js
+            ├── popupStore.svelte.js / tabStore.svelte.js / bannerStore.svelte.js
+            ├── dirtyFormStore.svelte.js / keyboardShortcuts.svelte.js
+            └── userConfig.svelte.js / markdown.js
 ```
 
 ---
@@ -228,6 +231,22 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 3. **Every bug fix must include a test that would have caught the regression.**
 
 ---
+
+## Local Development Secrets (`.dev`)
+
+A `.dev` file in the project root stores local development secrets (API keys, test credentials).
+It is **gitignored** (see `.gitignore`) and never committed.
+
+This follows the same pattern as [lighterbird](../lighterbird), which uses `.dev` for test email
+accounts, calendar credentials, and LLM API keys used by `--seed` mode.
+
+```bash
+# .dev — local development secrets (gitignored)
+DEEPSEEK_API_KEY="sk-..."
+```
+
+The `--seed` flag (dev server) reads `.dev` to populate test data. Production deployments
+should use environment variables or system keyring exclusively.
 
 ## What to Avoid
 

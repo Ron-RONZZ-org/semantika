@@ -17,7 +17,8 @@ TEST_DATA_DIR.mkdir(parents=True, exist_ok=True)
 os.environ["SEMANTIKA_DATA_DIR"] = str(TEST_DATA_DIR)
 
 from semantika.server.app import create_app
-from semantika.server.routes.llm import get_provider, reset_provider
+from semantika.server.routes.llm import get_provider
+from semantika.server.llm.provider import reset_provider
 
 
 @pytest.fixture(scope="class")

@@ -8,10 +8,6 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
-from typing import Any
-
-from semantika.graph.constants import FTS5_KEYWORDS
-from semantika.core.exceptions import AmbiguousIDError
 
 
 def extract_label_text(labels: str | dict) -> str:

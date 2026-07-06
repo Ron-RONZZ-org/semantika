@@ -15,17 +15,16 @@ import sqlite3
 import uuid as _uuid
 from typing import Any
 
-from semantika.core import SemantikaDB, AmbiguousIDError
+from semantika.core import AmbiguousIDError, SemantikaDB
 from semantika.core.crud import CRUDService, now
 from semantika.core.fts import FTSConfig
+from semantika.graph.node_fts import NodeFtsMixin
 from semantika.graph.node_helpers import (
     extract_definition_text,
     extract_label_text,
-    get_label_from_node,
     normalize_label_to_id,
     sanitize_node_id,
 )
-from semantika.graph.node_fts import NodeFtsMixin
 
 logger = logging.getLogger(__name__)
 
@@ -301,7 +300,7 @@ class NodeService(NodeFtsMixin, CRUDService):
                 f"VALUES ({placeholders})", values,
             )
             conn.execute(
-                f"DELETE FROM nodes WHERE node_id = ?", (node_id,)
+                "DELETE FROM nodes WHERE node_id = ?", (node_id,)
             )
 
     # ── Node ID Rename ───────────────────────────────────────────────

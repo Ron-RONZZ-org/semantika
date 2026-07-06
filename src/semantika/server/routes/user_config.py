@@ -5,7 +5,11 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from semantika.server.user_config import get_locale, load_config, save_config, set_locale
+from semantika.server.user_config import (
+    get_locale,
+    load_config,
+    set_locale,
+)
 
 router = APIRouter(prefix="/api/v1/user")
 

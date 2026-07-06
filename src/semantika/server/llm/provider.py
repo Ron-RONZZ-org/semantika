@@ -11,15 +11,17 @@ Three-phase command flow:
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
-from lightercore.exceptions import AIError
 from lightercore.llm import BaseLLMProvider, ProfileManager, ProviderConfig
 from lightercore.llm.config import (
     clear_active_config as _clear_active,
+)
+from lightercore.llm.config import (
     load_active_config as _load_active,
+)
+from lightercore.llm.config import (
     save_active_config as _save_active,
 )
 

@@ -17,8 +17,11 @@ from fastapi import APIRouter, HTTPException
 
 # Side-effect: trigger @command decorator registration
 from semantika.server.command import handlers  # noqa: F401
-
-from semantika.server.command.errors import CommandError, CommandNotFound, CommandValidationError
+from semantika.server.command.errors import (
+    CommandError,
+    CommandNotFound,
+    CommandValidationError,
+)
 from semantika.server.command.models import CommandRequest, CommandResponse
 from semantika.server.command.registry import (
     dispatch,

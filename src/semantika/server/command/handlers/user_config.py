@@ -9,7 +9,7 @@ import logging
 
 from semantika.server.command.errors import CommandValidationError
 from semantika.server.command.registry import command, group_command
-from semantika.server.user_config import load_config, save_config, set_locale
+from semantika.server.user_config import load_config, set_locale
 
 logger = logging.getLogger(__name__)
 

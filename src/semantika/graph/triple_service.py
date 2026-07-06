@@ -8,11 +8,10 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
-from semantika.core import SemantikaDB, AmbiguousIDError
+from semantika.core import SemantikaDB
 from semantika.core.crud import now
 
 

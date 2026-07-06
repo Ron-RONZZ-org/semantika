@@ -15,7 +15,6 @@ import logging
 import random
 import sqlite3
 import uuid as _uuid
-from typing import Any
 
 from semantika.core import SemantikaDB
 from semantika.core.crud import now
