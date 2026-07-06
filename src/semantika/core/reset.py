@@ -35,8 +35,6 @@ def reset_to_fresh_state(
     """
     from pathlib import Path
 
-    import shutil
-
     ddir = data_dir()
     db_path = _db_path()
 

@@ -8,11 +8,11 @@ from __future__ import annotations
 import logging
 import sqlite3
 
-logger = logging.getLogger(__name__)
-
 from semantika.core import SemantikaDB
 from semantika.core.crud import now
 from semantika.graph.node_helpers import get_label_from_node
+
+logger = logging.getLogger(__name__)
 
 
 class TripleService:
@@ -293,11 +293,13 @@ class TripleService:
             params.append(created_before)
 
         if not clauses:
-            return []
-
-        where = " AND ".join(clauses)
-        sql = f"SELECT * FROM triples WHERE {where} ORDER BY subject_id, predicate_id LIMIT ?"
-        params.append(limit)
+            # No filters — return all triples (capped by limit)
+            sql = "SELECT * FROM triples ORDER BY subject_id, predicate_id LIMIT ?"
+            params.append(limit)
+        else:
+            where = " AND ".join(clauses)
+            sql = f"SELECT * FROM triples WHERE {where} ORDER BY subject_id, predicate_id LIMIT ?"
+            params.append(limit)
 
         triples = self.db.execute(sql, tuple(params))
         if not triples:

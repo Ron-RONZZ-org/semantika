@@ -105,32 +105,35 @@ class NodeMergeMixin:
             old_rowid = row["rowid"]
 
         with self.db.transaction() as conn:
-            conn.execute("PRAGMA defer_foreign_keys=ON")
+            try:
+                conn.execute("PRAGMA defer_foreign_keys=ON")
 
-            if old_rowid is not None:
+                if old_rowid is not None:
+                    conn.execute(
+                        "INSERT INTO nodes_fts(nodes_fts, rowid) VALUES('delete', ?)",
+                        (old_rowid,),
+                    )
+
+                set_parts = [f"{k} = ?" for k in updates]
+                params = list(updates.values()) + [old_id]
                 conn.execute(
-                    "INSERT INTO nodes_fts(nodes_fts, rowid) VALUES('delete', ?)",
-                    (old_rowid,),
+                    f"UPDATE nodes SET {', '.join(set_parts)} WHERE node_id = ?",
+                    params,
                 )
 
-            set_parts = [f"{k} = ?" for k in updates]
-            params = list(updates.values()) + [old_id]
-            conn.execute(
-                f"UPDATE nodes SET {', '.join(set_parts)} WHERE node_id = ?",
-                params,
-            )
+                conn.execute(
+                    "UPDATE triples SET subject_id = ? WHERE subject_id = ?",
+                    (new_id, old_id),
+                )
+                conn.execute(
+                    "UPDATE triples SET object_value = ? "
+                    "WHERE object_type = 'uri' AND object_value = ?",
+                    (new_id, old_id),
+                )
 
-            conn.execute(
-                "UPDATE triples SET subject_id = ? WHERE subject_id = ?",
-                (new_id, old_id),
-            )
-            conn.execute(
-                "UPDATE triples SET object_value = ? "
-                "WHERE object_type = 'uri' AND object_value = ?",
-                (new_id, old_id),
-            )
-
-            self._index_fts(new_id)
+                self._index_fts(new_id)
+            finally:
+                conn.execute("PRAGMA defer_foreign_keys=OFF")
 
         return self.get(new_id)
 
@@ -158,19 +161,23 @@ class NodeMergeMixin:
             raise ValueError(f"Target node not found: {target_id}")
 
         try:
-            source_labels: dict = json.loads(source["labels"]) if isinstance(source["labels"], str) else source.get("labels", {})
+            raw = source["labels"]
+            source_labels = json.loads(raw) if isinstance(raw, str) else raw
         except (json.JSONDecodeError, TypeError):
             source_labels = {}
         try:
-            target_labels: dict = json.loads(target["labels"]) if isinstance(target["labels"], str) else target.get("labels", {})
+            raw = target["labels"]
+            target_labels = json.loads(raw) if isinstance(raw, str) else raw
         except (json.JSONDecodeError, TypeError):
             target_labels = {}
         try:
-            source_defns: dict = json.loads(source["definitions"]) if isinstance(source["definitions"], str) else source.get("definitions", {})
+            raw = source["definitions"]
+            source_defns = json.loads(raw) if isinstance(raw, str) else raw
         except (json.JSONDecodeError, TypeError):
             source_defns = {}
         try:
-            target_defns: dict = json.loads(target["definitions"]) if isinstance(target["definitions"], str) else target.get("definitions", {})
+            raw = target["definitions"]
+            target_defns = json.loads(raw) if isinstance(raw, str) else raw
         except (json.JSONDecodeError, TypeError):
             target_defns = {}
 
@@ -180,59 +187,62 @@ class NodeMergeMixin:
         ts = now()
 
         with self.db.transaction() as conn:
-            conn.execute("PRAGMA defer_foreign_keys=ON")
+            try:
+                conn.execute("PRAGMA defer_foreign_keys=ON")
 
-            self._remove_from_fts(source_id)
-            self._remove_from_fts(target_id)
+                self._remove_from_fts(source_id)
+                self._remove_from_fts(target_id)
 
-            conn.execute(
-                "UPDATE nodes SET labels = ?, label_text = ?, definitions = ?, "
-                "definition_text = ?, updated_at = ? WHERE node_id = ?",
-                (
-                    json.dumps(merged_labels),
-                    extract_label_text(merged_labels),
-                    json.dumps(merged_defns),
-                    extract_definition_text(merged_defns),
-                    ts,
-                    target_id,
-                ),
-            )
+                conn.execute(
+                    "UPDATE nodes SET labels = ?, label_text = ?, definitions = ?, "
+                    "definition_text = ?, updated_at = ? WHERE node_id = ?",
+                    (
+                        json.dumps(merged_labels),
+                        extract_label_text(merged_labels),
+                        json.dumps(merged_defns),
+                        extract_definition_text(merged_defns),
+                        ts,
+                        target_id,
+                    ),
+                )
 
-            conn.execute(
-                """UPDATE triples SET subject_id = ?
-                   WHERE subject_id = ?
-                     AND NOT EXISTS (
-                       SELECT 1 FROM triples AS t2
-                       WHERE t2.subject_id = ?
-                         AND t2.predicate_id = triples.predicate_id
-                         AND t2.object_value = triples.object_value
-                         AND t2.object_type = triples.object_type
-                     )""",
-                (target_id, source_id, target_id),
-            )
+                conn.execute(
+                    """UPDATE triples SET subject_id = ?
+                       WHERE subject_id = ?
+                         AND NOT EXISTS (
+                           SELECT 1 FROM triples AS t2
+                           WHERE t2.subject_id = ?
+                             AND t2.predicate_id = triples.predicate_id
+                             AND t2.object_value = triples.object_value
+                             AND t2.object_type = triples.object_type
+                         )""",
+                    (target_id, source_id, target_id),
+                )
 
-            conn.execute(
-                """UPDATE triples SET object_value = ?
-                   WHERE object_type = 'uri' AND object_value = ?
-                     AND NOT EXISTS (
-                       SELECT 1 FROM triples AS t2
-                       WHERE t2.object_type = 'uri'
-                         AND t2.object_value = ?
-                         AND t2.subject_id = triples.subject_id
-                         AND t2.predicate_id = triples.predicate_id
-                         AND t2.object_type = triples.object_type
-                     )""",
-                (target_id, source_id, target_id),
-            )
+                conn.execute(
+                    """UPDATE triples SET object_value = ?
+                       WHERE object_type = 'uri' AND object_value = ?
+                         AND NOT EXISTS (
+                           SELECT 1 FROM triples AS t2
+                           WHERE t2.object_type = 'uri'
+                             AND t2.object_value = ?
+                             AND t2.subject_id = triples.subject_id
+                             AND t2.predicate_id = triples.predicate_id
+                             AND t2.object_type = triples.object_type
+                         )""",
+                    (target_id, source_id, target_id),
+                )
 
-            conn.execute(
-                "DELETE FROM triples WHERE subject_id = ? "
-                "OR (object_type = 'uri' AND object_value = ?)",
-                (source_id, source_id),
-            )
+                conn.execute(
+                    "DELETE FROM triples WHERE subject_id = ? "
+                    "OR (object_type = 'uri' AND object_value = ?)",
+                    (source_id, source_id),
+                )
 
-            conn.execute("DELETE FROM nodes WHERE node_id = ?", (source_id,))
+                conn.execute("DELETE FROM nodes WHERE node_id = ?", (source_id,))
 
-            self._index_fts(target_id)
+                self._index_fts(target_id)
+            finally:
+                conn.execute("PRAGMA defer_foreign_keys=OFF")
 
         return self.get(target_id)

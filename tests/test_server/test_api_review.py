@@ -22,7 +22,7 @@ from semantika.server.app import create_app
 
 @pytest.fixture(scope="class")
 def client() -> TestClient:
-    """Return a TestClient with an isolated test DB."""
+    """Return a TestClient with an isolated test DB per class."""
     app = create_app()
     with TestClient(app) as c:
         yield c

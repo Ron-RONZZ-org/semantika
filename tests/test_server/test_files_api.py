@@ -11,16 +11,15 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-# Must override data dir before importing app
-TEST_DATA_DIR = Path("/tmp/semantika-files-test") / str(os.getpid())
-TEST_DATA_DIR.mkdir(parents=True, exist_ok=True)
-os.environ["SEMANTIKA_DATA_DIR"] = str(TEST_DATA_DIR)
-
-from semantika.server.app import create_app
-
 
 @pytest.fixture(scope="class")
 def client() -> TestClient:
+    from semantika.server.app import create_app
+
+    data_dir = Path("/tmp/semantika-files-test") / str(os.getpid())
+    data_dir.mkdir(parents=True, exist_ok=True)
+    os.environ["SEMANTIKA_DATA_DIR"] = str(data_dir)
+
     app = create_app()
     with TestClient(app) as c:
         yield c

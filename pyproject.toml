@@ -53,7 +53,8 @@ lightercore = { path = "../lightercore", editable = true }
 line-length = 120
 
 [tool.ruff.lint]
-select = ["S110", "S112", "E", "F", "I"]
+select = ["S110", "S112", "E", "F", "I", "W", "B", "SIM"]
+ignore = ["B904"]
 
 [dependency-groups]
 dev = [

@@ -16,7 +16,7 @@ router = APIRouter()
 
 
 @router.get("/search")
-async def search_all(q: str, limit: int = 50):
+def search_all(q: str, limit: int = 50):
     """Full-text search across nodes and predicates."""
     svc = get_services()
     nodes = svc["node"].search(q, limit=limit)
@@ -25,7 +25,7 @@ async def search_all(q: str, limit: int = 50):
 
 
 @router.get("/triples/search")
-async def search_triples(
+def search_triples(
     subject: str | None = None,
     predicate: str | None = None,
     object: str | None = None,  # noqa: A002
@@ -51,14 +51,14 @@ async def search_triples(
 
 
 @router.get("/export")
-async def export_turtle():
+def export_turtle():
     """Export the graph in Turtle (.ttl) format."""
     ttl = get_services()["triple"].export_turtle()
     return {"data": ttl, "format": "turtle"}
 
 
 @router.get("/stats")
-async def graph_stats():
+def graph_stats():
     """Return graph statistics."""
     stats = get_services()["triple"].get_stats()
     return stats
@@ -69,7 +69,7 @@ class ImportRequest(BaseModel):
 
 
 @router.post("/import")
-async def import_turtle(req: ImportRequest):
+def import_turtle(req: ImportRequest):
     """Import Turtle (.ttl) content into the triple store."""
     from semantika.graph.triple_turtle import import_turtle as _import
     stats = _import(req.data)
@@ -102,7 +102,7 @@ def _readonly_conn() -> sqlite3.Connection:
 
 
 @router.post("/raw")
-async def raw_query(req: RawQuery):
+def raw_query(req: RawQuery):
     """Execute a read-only SQL SELECT query against the triple store.
 
     This is **not** SPARQL — it runs raw SQL against the internal

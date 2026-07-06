@@ -43,8 +43,13 @@ class TestLooksLikeUUIDPrefix:
     def test_empty(self):
         assert looks_like_uuid_prefix("") is False
 
-    def test_with_hyphens(self):
-        assert looks_like_uuid_prefix("a1b2-c3d4") is True
+    def test_with_canonical_hyphen(self):
+        """Hyphen only allowed after first 8 hex chars (UUID prefix format)."""
+        assert looks_like_uuid_prefix("a1b2c3d4-e5f6") is True
+
+    def test_non_canonical_hyphen(self):
+        """Hyphen at wrong position is rejected."""
+        assert looks_like_uuid_prefix("a1b2-c3d4") is False
 
     def test_uppercase(self):
         assert looks_like_uuid_prefix("ABCDEF01") is True

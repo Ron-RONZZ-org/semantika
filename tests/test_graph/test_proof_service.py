@@ -320,9 +320,19 @@ class TestProofServiceDelete:
         assert len(remaining) == 1
         assert remaining[0]["uuid"] == p2["uuid"]
 
-    def test_delete_returns_true(self, svc: dict):
-        """delete returns True."""
+    def test_delete_returns_false_for_missing(self, svc: dict):
+        """delete returns False when UUID does not exist."""
         result = svc["proof"].delete("00000000-0000-0000-0000-000000000000")
+        assert result is False
+
+    def test_delete_returns_true_for_existing(self, svc: dict):
+        """delete returns True when a row was actually deleted."""
+        _create_nodes(svc, "A", "B")
+        _add_triple(svc, "A", "ex:knows", "B")
+        p = svc["proof"].create({
+            "subject_id": "A", "predicate_id": "ex:knows", "object_value": "B",
+        })
+        result = svc["proof"].delete(p["uuid"])
         assert result is True
 
 

@@ -413,17 +413,22 @@ def _build_chat_messages(
 
 
 def _stub_response(message: str) -> dict:
-    """Keyword-based stub responses when no LLM provider is configured."""
+    """Keyword-based stub responses when no LLM provider is configured.
+
+    Delegates to the command dispatch system for consistency with the
+    LLM-driven flow — both code paths produce the same result.
+    """
     msg = message.strip().lower()
-    from semantika.graph.db import get_services
+    from semantika.server.command.registry import dispatch
 
     if "stats" in msg or "count" in msg or "how many" in msg:
-        stats = get_services()["triple"].get_stats()
+        result = dispatch(["graph", "stats"], {})
+        stats = result.get("data", {})
         return {
             "reply": (
-                f"Your knowledge graph has **{stats['nodes']}** nodes, "
-                f"**{stats['predicates']}** predicates, and "
-                f"**{stats['triples']}** triples."
+                f"Your knowledge graph has **{stats.get('nodes', 0)}** nodes, "
+                f"**{stats.get('predicates', 0)}** predicates, and "
+                f"**{stats.get('triples', 0)}** triples."
             )
         }
 
@@ -434,7 +439,9 @@ def _stub_response(message: str) -> dict:
                 break
         else:
             q = message.strip()
-        nodes = get_services()["node"].search(q)
+        result = dispatch(["graph", "search"], {"q": q})
+        data = result.get("data", {})
+        nodes = data.get("nodes", [])
         if nodes:
             names = []
             for n in nodes[:5]:

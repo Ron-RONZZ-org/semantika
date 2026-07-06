@@ -62,9 +62,10 @@ class ProofService:
         )
 
     def delete(self, proof_uuid: str) -> bool:
-        """Delete a proof."""
+        """Delete a proof. Returns True if a row was actually deleted."""
         self.db.execute("DELETE FROM proofs WHERE uuid = ?", (proof_uuid,))
-        return True
+        result = self.db.execute_one("SELECT changes() AS cnt")
+        return (result["cnt"] if result else 0) > 0
 
     def migrate_proofs(
         self,

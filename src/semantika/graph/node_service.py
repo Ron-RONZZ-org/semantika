@@ -263,6 +263,12 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
                 saved_rowid = row["rowid"]
 
             with self.db.transaction() as conn:
+                # Remove referencing triples first to avoid orphaned rows
+                conn.execute(
+                    "DELETE FROM triples WHERE subject_id = ? "
+                    "OR (object_type = 'uri' AND object_value = ?)",
+                    (node_id, node_id),
+                )
                 conn.execute(
                     f"DELETE FROM {self.table} WHERE node_id = ?", (node_id,)
                 )

@@ -67,27 +67,27 @@ class PredicateUpdate(BaseModel):
 # ── Nodes (static routes BEFORE dynamic {node_id}) ─────────────────────
 
 @router.get("/nodes")
-async def list_nodes(limit: int = 100, offset: int = 0):
+def list_nodes(limit: int = 100, offset: int = 0):
     """List all nodes."""
     svc = _svc()["node"]
     return {"nodes": svc.list(limit=limit, offset=offset), "total": svc.count()}
 
 
 @router.get("/nodes/search")
-async def search_nodes(q: str, limit: int = 50):
+def search_nodes(q: str, limit: int = 50):
     """Search nodes by label text."""
     results = _svc()["node"].search(q, limit=limit)
     return {"results": results}
 
 
 @router.get("/nodes/stats")
-async def node_stats():
+def node_stats():
     """Get graph statistics."""
     return _svc()["triple"].get_stats()
 
 
 @router.post("/nodes")
-async def create_node(data: NodeCreate):
+def create_node(data: NodeCreate):
     """Create a node."""
     svc = _svc()["node"]
     try:
@@ -98,7 +98,7 @@ async def create_node(data: NodeCreate):
 
 
 @router.get("/nodes/{node_id}")
-async def get_node(node_id: str):
+def get_node(node_id: str):
     """Get a single node by ID."""
     node = _svc()["node"].resolve_node_id_prefix(node_id)
     if not node:
@@ -108,7 +108,7 @@ async def get_node(node_id: str):
 
 
 @router.patch("/nodes/{node_id}")
-async def update_node(node_id: str, data: NodeUpdate):
+def update_node(node_id: str, data: NodeUpdate):
     """Update a node."""
     svc = _svc()["node"]
     try:
@@ -119,7 +119,7 @@ async def update_node(node_id: str, data: NodeUpdate):
 
 
 @router.patch("/nodes/{node_id}/rename")
-async def rename_node(node_id: str, data: NodeRename):
+def rename_node(node_id: str, data: NodeRename):
     """Rename a node's node_id, cascading to all referencing triples."""
     svc = _svc()["node"]
     try:
@@ -137,7 +137,7 @@ class PredicateRename(BaseModel):
 
 
 @router.patch("/predicates/{predicate_id}/rename")
-async def rename_predicate(predicate_id: str, data: PredicateRename):
+def rename_predicate(predicate_id: str, data: PredicateRename):
     """Rename a predicate's predicate_id, cascading to all references."""
     svc = _svc()["predicate"]
     try:
@@ -148,7 +148,7 @@ async def rename_predicate(predicate_id: str, data: PredicateRename):
 
 
 @router.post("/nodes/merge")
-async def merge_nodes(source_id: str, target_id: str):
+def merge_nodes(source_id: str, target_id: str):
     """Merge source node INTO target node.
 
     Source is deleted after all triples and metadata are reassigned.
@@ -162,7 +162,7 @@ async def merge_nodes(source_id: str, target_id: str):
 
 
 @router.delete("/nodes/{node_id}")
-async def delete_node(
+def delete_node(
     node_id: str,
     soft: bool = Query(default=True, alias="soft"),
     force: bool = Query(default=False, alias="force"),
@@ -186,7 +186,7 @@ async def delete_node(
 # ── Trash (soft-deleted nodes) ─────────────────────────────────────────
 
 @router.get("/trash")
-async def list_trash(limit: int = 50, offset: int = 0):
+def list_trash(limit: int = 50, offset: int = 0):
     """List soft-deleted nodes in the trash."""
     items = _svc()["node"].list_trash(limit=limit, offset=offset)
     total_row = _svc()["node"].db.execute_one("SELECT COUNT(*) AS cnt FROM nodes_trash")
@@ -195,7 +195,7 @@ async def list_trash(limit: int = 50, offset: int = 0):
 
 
 @router.post("/trash/{node_id}/restore")
-async def restore_node(node_id: str):
+def restore_node(node_id: str):
     """Restore a soft-deleted node from trash."""
     restored = _svc()["node"].restore_from_trash(node_id)
     if not restored:
@@ -204,7 +204,7 @@ async def restore_node(node_id: str):
 
 
 @router.delete("/trash/purge")
-async def purge_trash(days: int = 30):
+def purge_trash(days: int = 30):
     """Permanently delete trash entries older than *days*.
 
     If *days* is 0, empties the entire trash.
@@ -225,21 +225,21 @@ async def purge_trash(days: int = 30):
 # ── Predicates ─────────────────────────────────────────────────────────
 
 @router.get("/predicates")
-async def list_predicates(limit: int = 100, offset: int = 0):
+def list_predicates(limit: int = 100, offset: int = 0):
     """List all predicates."""
     svc = _svc()["predicate"]
     return {"predicates": svc.list(limit=limit, offset=offset), "total": svc.count()}
 
 
 @router.get("/predicates/search")
-async def search_predicates(q: str, limit: int = 50):
+def search_predicates(q: str, limit: int = 50):
     """Search predicates by ID/label."""
     results = _svc()["predicate"].search(q, limit=limit)
     return {"results": results}
 
 
 @router.post("/predicates")
-async def create_predicate(data: PredicateCreate):
+def create_predicate(data: PredicateCreate):
     """Create a predicate."""
     svc = _svc()["predicate"]
     try:
@@ -250,7 +250,7 @@ async def create_predicate(data: PredicateCreate):
 
 
 @router.patch("/predicates/{predicate_id}")
-async def update_predicate(predicate_id: str, data: PredicateUpdate):
+def update_predicate(predicate_id: str, data: PredicateUpdate):
     """Update a predicate's labels/descriptions."""
     svc = _svc()["predicate"]
     try:
@@ -261,7 +261,7 @@ async def update_predicate(predicate_id: str, data: PredicateUpdate):
 
 
 @router.delete("/predicates/{predicate_id}")
-async def delete_predicate(predicate_id: str):
+def delete_predicate(predicate_id: str):
     """Delete a predicate (moves to trash if supported)."""
     svc = _svc()
     deleted = svc["predicate"].delete(predicate_id, soft=True)
@@ -273,7 +273,7 @@ async def delete_predicate(predicate_id: str):
 # ── Triples ────────────────────────────────────────────────────────────
 
 @router.get("/triples")
-async def list_triples(limit: int = 100, offset: int = 0):
+def list_triples(limit: int = 100, offset: int = 0):
     """List all triples."""
     svc = _svc()["triple"]
     all_t = svc.db.execute(
@@ -283,14 +283,14 @@ async def list_triples(limit: int = 100, offset: int = 0):
 
 
 @router.get("/triples/by-subject/{subject_id}")
-async def get_triples_by_subject(subject_id: str):
+def get_triples_by_subject(subject_id: str):
     """Get triples for a subject."""
     triples = _svc()["triple"].get_by_subject(subject_id)
     return {"triples": triples}
 
 
 @router.patch("/triples")
-async def update_triple_metadata(
+def update_triple_metadata(
     subject_id: str,
     predicate_id: str,
     object_value: str,
@@ -316,7 +316,7 @@ async def update_triple_metadata(
 
 
 @router.post("/triples")
-async def create_triple(data: TripleCreate):
+def create_triple(data: TripleCreate):
     """Add a triple."""
     svc = _svc()["triple"]
     try:
@@ -327,7 +327,7 @@ async def create_triple(data: TripleCreate):
 
 
 @router.delete("/triples")
-async def delete_triple(
+def delete_triple(
     subject_id: str | None = None,
     predicate_id: str | None = None,
     object_value: str | None = None,

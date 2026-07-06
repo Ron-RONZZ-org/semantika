@@ -28,14 +28,14 @@ class UnitCreate(BaseModel):
 
 
 @router.get("/units")
-async def list_units():
+def list_units():
     """List all unit nodes."""
     units = _unit_svc().list_units()
     return {"units": units}
 
 
 @router.get("/units/{node_id}")
-async def get_unit(node_id: str):
+def get_unit(node_id: str):
     """Get detailed info for a unit."""
     info = _unit_svc().get_unit_info(node_id)
     if not info:
@@ -44,7 +44,7 @@ async def get_unit(node_id: str):
 
 
 @router.post("/units")
-async def create_unit(data: UnitCreate):
+def create_unit(data: UnitCreate):
     """Create a custom singular unit."""
     us = _unit_svc()
     try:
@@ -55,7 +55,7 @@ async def create_unit(data: UnitCreate):
 
 
 @router.post("/units/resolve")
-async def resolve_unit(expr: str):
+def resolve_unit(expr: str):
     """Resolve a unit expression to a node_id."""
     us = _unit_svc()
     try:
@@ -66,7 +66,7 @@ async def resolve_unit(expr: str):
 
 
 @router.post("/units/decompose")
-async def decompose_unit(node_id: str):
+def decompose_unit(node_id: str):
     """Get human-readable decomposition for a compound unit."""
     us = _unit_svc()
     info = us.get_unit_info(node_id)
