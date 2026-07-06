@@ -11,12 +11,16 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 from fastapi import APIRouter, HTTPException
 from lightercore.permissions import PermissionLevel
 from pydantic import BaseModel
 
-from semantika.server.command.registry import get_command_definitions
+from semantika.server.command.registry import (
+    get_command_definitions,
+    get_command_tree,
+)
 from semantika.server.llm.provider import get_provider
 
 logger = logging.getLogger(__name__)
@@ -145,51 +149,35 @@ async def chat(req: ChatRequest):
         except Exception:
             return None
 
-    from semantika.server.command.registry import get_command_tree
+    from semantika.server.command.errors import CommandError
+    from semantika.server.command.registry import (
+        dispatch,
+        get_command_level,
+        get_handler_metadata,
+    )
 
-    defs = get_command_definitions(get_command_tree())
-    cmd = None
-    try:
-        cmd = await provider.generate_command(req.message, defs)
-    except Exception:
-        cmd = None
-
-    if cmd and cmd.get("tokens"):
-        # Phase 2a: Permission check — gate destructive commands
-        from semantika.server.command.errors import CommandError
-        from semantika.server.command.registry import (
-            dispatch,
-            get_command_level,
-            get_handler_metadata,
-        )
-
-        cmd_path = ".".join(cmd["tokens"])
-        level = get_command_level(cmd_path)
-        if level >= PermissionLevel.DESTRUCTIVE:
-            meta = get_handler_metadata(cmd_path)
-            desc = meta.get("description", "") if meta else ""
-            return {
-                "type": "confirm",
-                "tokens": cmd["tokens"],
-                "flags": cmd.get("flags", {}),
-                "message": (
-                    f"The LLM wants to run a destructive command "
-                    f"(`!{' '.join(cmd['tokens'])}`).\n\n"
-                    f"{desc}\n\n"
-                    "Confirm to proceed."
-                ),
-            }
-
-        # Phase 2b: Execute the command
+    # ── Helper: try to execute a command and return the result dict ──────
+    async def _try_execute(
+        tokens: list[str],
+        flags: dict[str, str],
+    ) -> dict | None:
+        """Attempt to dispatch *tokens*.  Returns the result dict on success
+        or ``None`` if the command path doesn't exist."""
         try:
-            result = dispatch(cmd["tokens"], cmd.get("flags", {}))
+            return dispatch(tokens, flags)
         except CommandError:
-            # Command generation failed — try plain chat with system context
-            plain = await _safe_chat(_build_chat_messages(messages, req.message))
-            return {"reply": plain or _stub_response(req.message)["reply"]}
+            return None
 
-        # Phase 3: Summarize the result
-        result_summary = json.dumps(result.get("data", result), indent=2, default=str)
+    # ── Helper: summarise command output ─────────────────────────────────
+    async def _summarise(
+        tokens: list[str],
+        result: dict,
+        user_message: str,
+    ) -> str | None:
+        """Ask the LLM to summarise a command execution result."""
+        result_summary = json.dumps(
+            result.get("data", result), indent=2, default=str,
+        )
         summary_messages = [
             {
                 "role": "system",
@@ -199,19 +187,130 @@ async def chat(req: ChatRequest):
                     "The user's question was answered by executing a command "
                     "on their behalf. Summarize the result in a friendly, "
                     "natural way. Use markdown formatting for readability.\n\n"
-                    "Command executed: !" + " ".join(cmd["tokens"]) + "\n"
+                    "Command executed: !" + " ".join(tokens) + "\n"
                     "Raw result:\n" + result_summary
                 ),
             },
-            {"role": "user", "content": req.message},
+            {"role": "user", "content": user_message},
         ]
-        reply = await _safe_chat(summary_messages)
+        return await _safe_chat(summary_messages)
+
+    # ── Helper: extract !command from a plain text reply ─────────────────
+    _CMD_INLINE_RE = re.compile(r'`?!([\w.]+(?:\s+\S+?)*?)`?')
+
+    def _find_inline_commands(text: str) -> list[list[str]]:
+        """Find candidate ``!command`` invocations in *text*.
+
+        Returns a list of token lists (e.g. ``[["node", "list"]]``).
+        Only returns commands whose first token matches a known top-level
+        command group (``node``, ``predicate``, ``triple``, ``graph``, etc.).
+        """
+        known_groups = {
+            "node", "predicate", "triple", "graph", "search",
+            "stats", "export", "import", "review", "proof",
+            "unit", "backup", "llm", "reset", "user", "help",
+        }
+        found: list[list[str]] = []
+        for match in _CMD_INLINE_RE.finditer(text):
+            raw = match.group(1).strip()
+            parts = raw.split()
+            if parts and parts[0].lower() in known_groups:
+                found.append(parts)
+        return found
+
+    # ── Phase 1: Try structured command generation ───────────────────────
+    defs = get_command_definitions(get_command_tree())
+    cmd = None
+    try:
+        cmd = await provider.generate_command(req.message, defs)
+    except Exception:
+        cmd = None
+
+    executed_cmd = None  # (tokens, flags, result)
+    retried = False
+
+    if cmd and cmd.get("tokens"):
+        tokens = cmd["tokens"]
+        flags = cmd.get("flags", {})
+
+        # Phase 2a: Permission check
+        cmd_path = ".".join(tokens)
+        level = get_command_level(cmd_path)
+        if level >= PermissionLevel.DESTRUCTIVE:
+            meta = get_handler_metadata(cmd_path)
+            desc = meta.get("description", "") if meta else ""
+            return {
+                "type": "confirm",
+                "tokens": tokens,
+                "flags": flags,
+                "message": (
+                    f"The LLM wants to run a destructive command "
+                    f"(`!{' '.join(tokens)}`).\n\n"
+                    f"{desc}\n\n"
+                    "Confirm to proceed."
+                ),
+            }
+
+        # Phase 2b: Execute and summarise
+        result = await _try_execute(tokens, flags)
+        if result is not None:
+            executed_cmd = (tokens, flags, result)
+        else:
+            retried = True
+            # Command path was invalid — give the LLM another chance with
+            # an error hint so it can correct itself.
+            correction_prompt = (
+                "I tried to run the command `!" + " ".join(tokens)
+                + "` but that exact path does not exist. "
+                "Here are the available commands. "
+                "Please translate the user's request into a correct command "
+                "from this list. Use ONLY exact paths from the list.\n\n"
+                + json.dumps(defs, indent=2)
+            )
+            retry_msgs = [
+                {"role": "system", "content": correction_prompt},
+                {"role": "user", "content": req.message},
+            ]
+            retry_raw = await _safe_chat(retry_msgs)
+            if retry_raw:
+                from lightercore.llm.utils import parse_command_result
+                retry_cmd = parse_command_result(retry_raw.strip())
+                if retry_cmd and retry_cmd.get("tokens"):
+                    retry_result = await _try_execute(
+                        retry_cmd["tokens"], retry_cmd.get("flags", {}),
+                    )
+                    if retry_result is not None:
+                        executed_cmd = (
+                            retry_cmd["tokens"],
+                            retry_cmd.get("flags", {}),
+                            retry_result,
+                        )
+
+    # ── Phase 3: Summarise if we have a successful execution ─────────────
+    if executed_cmd is not None:
+        tokens, flags, result = executed_cmd
+        reply = await _summarise(tokens, result, req.message)
         if reply:
             return {"reply": reply}
 
-    # Phase 3b: No command or summarization failed — plain chat with system context
-    reply = await _safe_chat(_build_chat_messages(messages, req.message))
-    return {"reply": reply or _stub_response(req.message)["reply"]}
+    # ── Phase 4: Plain chat with system context ──────────────────────────
+    plain = await _safe_chat(_build_chat_messages(messages, req.message))
+    if plain:
+        # Phase 4a: If the LLM dropped a !command in its reply, try to
+        # execute it and re-synthesize.
+        inline_cmds = _find_inline_commands(plain)
+        if inline_cmds and not retried:
+            for cmd_tokens in inline_cmds[:1]:  # try only the first
+                cmd_result = await _try_execute(cmd_tokens, {})
+                if cmd_result is not None:
+                    enriched = await _summarise(
+                        cmd_tokens, cmd_result, req.message,
+                    )
+                    if enriched:
+                        return {"reply": enriched}
+        return {"reply": plain}
+
+    return {"reply": _stub_response(req.message)["reply"]}
 
 
 @router.post("/confirm")
