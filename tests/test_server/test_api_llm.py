@@ -18,14 +18,7 @@ TEST_DATA_DIR.mkdir(parents=True, exist_ok=True)
 os.environ["SEMANTIKA_DATA_DIR"] = str(TEST_DATA_DIR)
 
 from semantika.server.app import create_app
-
-# Clear any leftover LLM config from keyring before tests
-import keyring as _kr
-import keyring.errors as _kr_err
-try:
-    _kr.delete_password("semantika-llm", "active-profile")
-except (_kr_err.KeyringError, Exception):
-    pass
+from semantika.server.llm.provider import reset_provider
 
 
 @pytest.fixture(scope="class")
@@ -34,6 +27,29 @@ def client() -> TestClient:
     app = create_app()
     with TestClient(app) as c:
         yield c
+
+
+@pytest.fixture(autouse=True)
+def mock_keyring(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
+    """Replace system keyring with an in-memory dict."""
+    store: dict[str, str] = {}
+
+    def set_pw(service: str, key: str, value: str) -> None:
+        store[f"{service}:{key}"] = value
+
+    def get_pw(service: str, key: str) -> str | None:
+        return store.get(f"{service}:{key}")
+
+    def del_pw(service: str, key: str) -> None:
+        store.pop(f"{service}:{key}", None)
+
+    import keyring as _kr
+    monkeypatch.setattr(_kr, "set_password", set_pw)
+    monkeypatch.setattr(_kr, "get_password", get_pw)
+    monkeypatch.setattr(_kr, "delete_password", del_pw)
+
+    reset_provider()
+    return store
 
 
 # ── LLM Chat keyword stubs ────────────────────────────────────────────
@@ -92,8 +108,10 @@ class TestLLMConfigAPI:
         assert resp.status_code == 200
         data = resp.json()
         assert "available" in data
+        assert data["available"] is False
 
-    def test_llm_configure(self, client: TestClient):
+    def test_llm_configure_and_check(self, client: TestClient):
+        # Configure
         resp = client.post(
             "/api/v1/llm/configure",
             json={
@@ -108,12 +126,10 @@ class TestLLMConfigAPI:
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "configured"
-
-    def test_llm_config_after_setup(self, client: TestClient):
+        # Verify config now shows available
         resp = client.get("/api/v1/llm/config")
         assert resp.status_code == 200
-        data = resp.json()
-        assert data["available"] is True
+        assert resp.json()["available"] is True
 
     def test_llm_profiles(self, client: TestClient):
         resp = client.get("/api/v1/llm/profiles")
@@ -122,8 +138,17 @@ class TestLLMConfigAPI:
         assert "profiles" in data
 
     def test_llm_chat_with_keyword_fallback(self, client: TestClient):
-        # After configure with a fake key, the provider will try to use it
-        # but the API call will fail. We test the chat route still responds.
+        # First configure with a fake key
+        client.post(
+            "/api/v1/llm/configure",
+            json={
+                "provider_type": "deepseek",
+                "api_key": "test-key-123",
+                "model": "deepseek-v4-flash",
+            },
+        )
+        # Then chat — the route will try to use the LLM but the API call
+        # will fail; we test the chat route still responds gracefully.
         resp = client.post(
             "/api/v1/llm/chat",
             json={"message": "how many nodes?"},
