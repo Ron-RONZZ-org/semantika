@@ -4,168 +4,22 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
-from typing import Any
 
 from lightercore.permissions import PermissionLevel
 
-from semantika.core.exceptions import AmbiguousIDError
 from semantika.graph.db import get_services
 from semantika.server.command.errors import CommandValidationError
 from semantika.server.command.helpers import parse_lang_tag_pairs
+from semantika.server.command.handlers.node_helpers import (
+    _ARC_PREDICATES,
+    create_arc_triples,
+    ensure_predicate,
+    handle_file_attachment,
+    resolve_arc_target,
+)
 from semantika.server.command.registry import command
 
 logger = logging.getLogger(__name__)
-
-# ── Arc shortcut helpers ────────────────────────────────────────────────
-
-_ARC_PREDICATES: dict[str, str] = {
-    "type": "rdf:type",
-    "superclass": "rdfs:subClassOf",
-    "disjoint": "owl:disjointWith",
-    "inverse": "owl:inverseOf",
-}
-
-
-def _ensure_predicate(svc: dict, pred_id: str) -> None:
-    """Create a predicate if it does not exist (idempotent)."""
-    if not svc["predicate"].get(pred_id):
-        svc["predicate"].create({"predicate_id": pred_id, "source": "auto"})
-
-
-def _resolve_arc_target(
-    svc: dict,
-    user_input: str,
-    flag_name: str,
-) -> str | None:
-    """Resolve a user-supplied node reference to an exact node_id."""
-    try:
-        node = svc["node"].resolve_node_id_prefix(user_input)
-    except AmbiguousIDError:
-        raise CommandValidationError(
-            f"Ambiguous {flag_name} target: '{user_input}' matches multiple nodes"
-        )
-    if node:
-        return node["node_id"]
-    # Fallback: exact label search
-    results = svc["node"].search(user_input, limit=1)
-    if results:
-        return results[0]["node_id"]
-    raise CommandValidationError(
-        f"{flag_name.title()} target not found: '{user_input}'"
-    )
-
-
-def _create_arc_triples(
-    svc: dict,
-    subject_id: str,
-    arc_targets: list[tuple[str, str]],
-) -> list[dict]:
-    """Create arc triples for the given subject.
-
-    Returns the list of created triple dicts.
-    Skips duplicates silently (triple_service handles ``ValueError``).
-    """
-    created = []
-    for target_id, pred in arc_targets:
-        try:
-            triple = svc["triple"].add(
-                subject_id=subject_id,
-                predicate_id=pred,
-                object_value=target_id,
-                object_type="uri",
-            )
-            created.append(triple)
-        except ValueError:
-            pass  # Duplicate triple — skip silently
-    return created
-
-
-# ── File attachment helpers ──────────────────────────────────────────────
-
-
-def _handle_file_attachment(
-    svc: dict,
-    source: str,
-    attachment_type: str,
-    node_id_val: str,
-    in_place: bool = False,
-    do_move: bool = False,
-) -> list[dict]:
-    """Process a file attachment and return file metadata triples.
-
-    Args:
-        svc: Service dict.
-        source: Local path or HTTP(S) URL.
-        attachment_type: ``"img"``, ``"vid"``, or ``"doc"``.
-        node_id_val: The node ID (used as filename stem).
-        in_place: If True, store reference path instead of copying.
-        do_move: If True, move the file instead of copying.
-
-    Returns:
-        List of triple dicts (predicate, object, object_type, …).
-    """
-    from semantika.graph.file_helpers import (
-        classify_attachment,
-        copy_file,
-        detect_mime,
-        download_file,
-        get_file_size,
-        move_file,
-    )
-
-    triples: list[dict[str, Any]] = []
-
-    if in_place:
-        triples.append({
-            "predicate": ":hasFilePath",
-            "object": source,
-            "object_type": "literal",
-        })
-        return triples
-
-    is_url = source.strip().lower().startswith(("http://", "https://"))
-
-    try:
-        if is_url:
-            stored_path = download_file(source, node_id_val, attachment_type)
-            source_path = source  # Original URL
-        elif do_move:
-            stored_path = move_file(Path(source), node_id_val, attachment_type)
-            source_path = None  # Original moved — no source to record
-        else:
-            dest_type = attachment_type or classify_attachment(Path(source))
-            stored_path = copy_file(Path(source), node_id_val, dest_type)
-            source_path = source
-    except (FileNotFoundError, OSError, ValueError) as e:
-        raise CommandValidationError(f"File error: {e}")
-
-    mime_type = detect_mime(stored_path)
-    file_size = get_file_size(stored_path)
-
-    triples.append({
-        "predicate": ":hasFilePath",
-        "object": str(stored_path),
-        "object_type": "literal",
-    })
-    triples.append({
-        "predicate": ":hasFileMime",
-        "object": mime_type,
-        "object_type": "literal",
-    })
-    triples.append({
-        "predicate": ":hasFileSize",
-        "object": str(file_size),
-        "object_type": "literal",
-        "object_datatype": "xsd:integer",
-    })
-    if source_path:
-        triples.append({
-            "predicate": ":hasFileSource",
-            "object": source_path,
-            "object_type": "literal",
-        })
-    return triples
 
 
 # ── Node commands ────────────────────────────────────────────────────────
@@ -245,7 +99,7 @@ def cmd_node_add(remaining: list[str], flags: dict[str, str]) -> dict:
     for flag_name, pred in _ARC_PREDICATES.items():
         val = flags.get(flag_name) or ""
         if val:
-            target_id = _resolve_arc_target(svc, val, flag_name)
+            target_id = resolve_arc_target(svc, val, flag_name)
             if target_id:
                 arc_targets.append((target_id, pred))
 
@@ -277,23 +131,23 @@ def cmd_node_add(remaining: list[str], flags: dict[str, str]) -> dict:
 
     # ── Ensure required predicates exist ─────────────────────────────
     if arc_targets or file_source:
-        _ensure_predicate(svc, "rdf:type")
-        _ensure_predicate(svc, "rdfs:subClassOf")
-        _ensure_predicate(svc, "owl:disjointWith")
-        _ensure_predicate(svc, "owl:inverseOf")
+        ensure_predicate(svc, "rdf:type")
+        ensure_predicate(svc, "rdfs:subClassOf")
+        ensure_predicate(svc, "owl:disjointWith")
+        ensure_predicate(svc, "owl:inverseOf")
         for fp in (":hasFilePath", ":hasFileMime", ":hasFileSize", ":hasFileSource"):
-            _ensure_predicate(svc, fp)
+            ensure_predicate(svc, fp)
 
     # ── Create arc triples + handle file attachment ──────────────────
     # Both are inside the try block so that any failure rolls back
     # the entire post-creation operation (node hard-delete cascades FK).
     try:
         if arc_targets:
-            created_arcs = _create_arc_triples(svc, node_id_val, arc_targets)
+            created_arcs = create_arc_triples(svc, node_id_val, arc_targets)
             msg_parts.append(f"with {len(created_arcs)} arc(s)")
 
         if file_source:
-            file_triples = _handle_file_attachment(
+            file_triples = handle_file_attachment(
                 svc, file_source, file_attachment_type, node_id_val,
                 in_place=in_place, do_move=do_move,
             )
@@ -303,7 +157,7 @@ def cmd_node_add(remaining: list[str], flags: dict[str, str]) -> dict:
                     (node_id_val, ft["predicate"], ft["object"])
                     for ft in file_triples
                 ]
-                _create_arc_triples(svc, node_id_val, [(o, p) for _, p, o in file_arcs])
+                create_arc_triples(svc, node_id_val, [(o, p) for _, p, o in file_arcs])
                 msg_parts.append("with file attachment")
     except CommandValidationError:
         # Roll back node creation if any post-creation step fails.

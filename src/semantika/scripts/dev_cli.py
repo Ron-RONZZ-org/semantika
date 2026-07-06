@@ -9,13 +9,8 @@ import uvicorn
 
 def dev_main() -> None:
     parser = argparse.ArgumentParser(description="Semantika dev server")
-    parser.add_argument("--seed", action="store_true", help="Seed with test data")
     parser.add_argument("--port", type=int, default=8001, help="Port to bind (lighterbird uses 8000)")
     args = parser.parse_args()
-
-    # TODO: seed data logic
-    if args.seed:
-        print("Seeding test data... (not yet implemented)")
 
     print(f"Starting Semantika dev server on http://127.0.0.1:{args.port}")
     from semantika.server.app import create_app
