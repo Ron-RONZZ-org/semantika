@@ -17,21 +17,24 @@ from semantika.graph.db import init_db
 logger = logging.getLogger(__name__)
 
 
-def _resolve_cors_origins() -> list[str]:
-    """Return CORS origins from env var, or ``["*"]`` as fallback.
+def _cors_config() -> tuple[list[str], bool]:
+    """Return (origins, allow_credentials) from env var or dev defaults.
 
     Set ``SEMANTIKA_CORS_ORIGINS`` to a comma-separated list of origins,
     e.g. ``https://app.semantika.local,http://localhost:5173``.
-    In production, restrict this to your actual frontend domain(s).
+    Defaults to localhost dev ports for safe development.
     """
     raw = os.environ.get("SEMANTIKA_CORS_ORIGINS", "").strip()
     if not raw:
-        logger.warning(
-            "SEMANTIKA_CORS_ORIGINS not set — CORS defaulting to [\"*\"]! "
+        logger.info(
+            "SEMANTIKA_CORS_ORIGINS not set — defaulting to localhost dev ports. "
             "Set this env var to your frontend origin(s) in production."
         )
-        return ["*"]
-    return [o.strip() for o in raw.split(",") if o.strip()]
+        return ["http://localhost:5173", "http://127.0.0.1:5173"], True
+    origins = [o.strip() for o in raw.split(",") if o.strip()]
+    if origins == ["*"]:
+        return ["*"], False
+    return origins, True
 
 
 @asynccontextmanager
@@ -55,10 +58,11 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Semantika", version="0.1.0", lifespan=lifespan)
 
     # CORS — restrict via SEMANTIKA_CORS_ORIGINS env var in production
+    origins, allow_creds = _cors_config()
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=_resolve_cors_origins(),
-        allow_credentials=True,
+        allow_origins=origins,
+        allow_credentials=allow_creds,
         allow_methods=["*"],
         allow_headers=["*"],
     )

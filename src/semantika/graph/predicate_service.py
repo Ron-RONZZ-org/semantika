@@ -13,6 +13,7 @@ from typing import Any
 from semantika.core import SemantikaDB
 from semantika.core.crud import CRUDService, now
 from semantika.graph.constants import FTS5_KEYWORDS
+from semantika.graph.helpers import escape_like
 
 logger = logging.getLogger(__name__)
 
@@ -301,7 +302,7 @@ class PredicateService(CRUDService):
             return pred
 
         # Prefix match via LIKE
-        escaped = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        escaped = escape_like(prefix)
         matches = self.db.execute(
             "SELECT * FROM predicates WHERE predicate_id LIKE ? COLLATE NOCASE ESCAPE '\\'",
             (f"{escaped}%",),
@@ -455,7 +456,7 @@ class PredicateService(CRUDService):
                 return results
 
         # Fallback: LIKE on predicate_id and JSON text fields
-        escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        escaped = escape_like(query)
         return self.db.execute(
             "SELECT *, 0 AS _rank FROM predicates WHERE "
             "predicate_id LIKE ? COLLATE NOCASE OR "

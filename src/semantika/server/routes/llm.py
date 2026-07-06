@@ -9,6 +9,7 @@ Port of lighterbird's two-phase chat flow:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
@@ -139,12 +140,16 @@ async def chat(req: ChatRequest):
     # Build context from history
     messages = list(req.context or req.history or [])
 
-    # Helper: try provider chat, fall back to stub on any error/network issue
+    # Helper: try provider chat, fall back to stub on transient errors
     async def _safe_chat(prompt_messages: list[dict]) -> str | None:
         if not provider.available:
             return None
         try:
             return await provider.chat(prompt_messages)
+        except (SystemExit, KeyboardInterrupt):
+            raise
+        except asyncio.CancelledError:
+            raise
         except Exception:
             return None
 

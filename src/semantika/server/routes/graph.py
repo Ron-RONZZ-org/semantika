@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from semantika.graph.db import get_services
@@ -162,7 +162,11 @@ async def merge_nodes(source_id: str, target_id: str):
 
 
 @router.delete("/nodes/{node_id}")
-async def delete_node(node_id: str, soft: bool = True, force: bool = False):
+async def delete_node(
+    node_id: str,
+    soft: bool = Query(default=True, alias="soft"),
+    force: bool = Query(default=False, alias="force"),
+):
     """Delete a node.
 
     If the node is referenced by triples, returns 409 with dependency
