@@ -41,6 +41,8 @@ Semantika is the **third generation** in a toolchain. When implementing new feat
 
 The backend is forked from proven code in [A-semantika](../A-semantika) (triple store services). Shared infrastructure (DB, paths, exceptions, CRUD, backup, permissions, prompt_commands) comes from [lightercore](../lightercore), which supersedes the earlier vendored [A-core](../A-core). The frontend is a Svelte SPA served by a FastAPI Python server, with UX patterns ported from [lighterbird](../lighterbird).
 
+**Shared UI components**: Basic Svelte 5 stores and utility functions are extracted into [lightercore's `web/`](../lightercore/web/) as the `@lightercore/ui` npm package. Local files in `web/src/lib/` are thin re-export wrappers; the canonical implementations live in lightercore. See `web/AGENTS-web.md` for the import convention.
+
 ---
 
 ## Language and Naming Conventions
@@ -346,6 +348,7 @@ should use environment variables or system keyring exclusively.
 ## What to Avoid
 
 - **Do not import from A-ecosystem packages at runtime.** Use lightercore instead of vendoring A-core directly.
+- **Do not duplicate shared UI logic.** Before adding a new store, utility function, or UI primitive, check if it exists in `@lightercore/ui`. If a component has a lighterbird equivalent, extract it to lightercore rather than copying.
 - **Do not duplicate logic across modules.** Shared infrastructure comes from lightercore; domain-specific utilities go in their own module.
 - **Do not use `print()` for user output.** Use FastAPI structured responses or logging.
 - **Do not store API keys in SQLite.** Keyring only.

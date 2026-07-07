@@ -58,7 +58,7 @@
       }
     },
     () => fetchNodes(searchQuery),
-    { onNew: handleNew },
+    { onNew: handleNew, getKey: (item) => item.node_id },
   );
 
   let uuidCopy = createCopyState();

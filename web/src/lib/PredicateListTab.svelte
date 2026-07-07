@@ -57,7 +57,7 @@
       }
     },
     () => fetchPredicates(searchQuery),
-    { onNew: handleNew },
+    { onNew: handleNew, getKey: (item) => item.predicate_id },
   );
 
   let uuidCopy = createCopyState();
