@@ -12,7 +12,7 @@
   /** Fields to treat as "technical detail" — hidden behind toggle. */
   const TECH_FIELDS = new Set([
     "created_at", "updated_at", "label_text", "definition_text",
-    "_proof_count", "_proof_uuids", "_rank",
+    "_proof_count", "_proof_uuids", "_rank", "source",
   ]);
 
   function isTechField(key) {
@@ -30,6 +30,33 @@
   let techFieldCount = $derived(
     Object.entries(d).filter(([key, val]) => !isMainField(key, val)).length,
   );
+
+  /** True when data represents a single entity (node or predicate) with triples. */
+  function isDetailView() {
+    if (!d.triples || !Array.isArray(d.triples)) return false;
+    return d.node_id || d.predicate_id;
+  }
+
+  /** Parse a JSON string, returning the dict or null. */
+  function tryParseJson(raw) {
+    if (!raw || typeof raw !== "string") return null;
+    try { return JSON.parse(raw); } catch { return null; }
+  }
+
+  /** Get first non-empty value from a JSON labels/definitions dict. */
+  function firstValue(raw, locale) {
+    const parsed = tryParseJson(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    // Try locale first, then first available
+    if (locale && parsed[locale]) return parsed[locale];
+    const values = Object.values(parsed);
+    return values.length > 0 ? String(values[0]) : null;
+  }
+
+  let entityId = $derived(isDetailView() ? (d.node_id || d.predicate_id || "") : "");
+  let entityType = $derived(isDetailView() ? (d.node_id ? "Node" : "Predicate") : "");
+  let entityLabel = $derived(isDetailView() ? (firstValue(d.labels, "en") || "") : "");
+  let entityDef = $derived(isDetailView() ? (firstValue(d.definitions, "en") || "") : "");
 </script>
 
 <div class="status">
@@ -70,6 +97,48 @@
     {:else}
       <p class="empty">No predicates.</p>
     {/each}
+  {:else if isDetailView()}
+    {#if entityLabel}
+      <div class="detail-header">
+        <h3 class="detail-id">{entityId}</h3>
+        <div class="detail-label">{entityLabel}</div>
+        {#if entityDef}
+          <div class="detail-def">{entityDef}</div>
+        {/if}
+        <span class="detail-badge">{entityType}</span>
+      </div>
+    {:else}
+      <div class="detail-header">
+        <h3 class="detail-id">{entityId}</h3>
+        <span class="detail-badge">{entityType}</span>
+      </div>
+    {/if}
+    <div class="section-header">
+      <h3 class="title">Triples ({d.triples.length})</h3>
+    </div>
+    {#each d.triples as triple}
+      <div class="row">
+        <span class="key">{triple.subject_id?.slice(0, 8) || ""}</span>
+        <span class="val">{triple.predicate_id || ""} → {triple.object_value?.slice(0, 24) || ""}</span>
+      </div>
+    {:else}
+      <p class="empty">No triples.</p>
+    {/each}
+    {#if techFieldCount > 0}
+      <button class="tech-toggle" onclick={() => { showTech = !showTech; }}>
+        {showTech ? "Hide technical details" : "Show technical details"}
+      </button>
+      {#if showTech}
+        {#each Object.entries(d) as [key, val]}
+          {#if !isMainField(key, val) && key !== "triples"}
+            <div class="row tech">
+              <span class="key">{key}</span>
+              <span class="val">{renderValue(val)}</span>
+            </div>
+          {/if}
+        {/each}
+      {/if}
+    {/if}
   {:else if d.triples !== undefined}
     <div class="section-header">
       <h3 class="title">Triples ({d.triples.length})</h3>
@@ -166,6 +235,38 @@
     font-size: 0.95rem;
     color: #e0e0e0;
     font-weight: 600;
+  }
+  .detail-header {
+    padding: 0.75rem;
+    border-bottom: 1px solid #2a2a3e;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+  .detail-id {
+    font-size: 1rem;
+    color: #e0e0e0;
+    font-weight: 700;
+  }
+  .detail-label {
+    font-size: 0.9rem;
+    color: #c0c0d0;
+    font-style: italic;
+  }
+  .detail-def {
+    font-size: 0.8rem;
+    color: var(--clr-sub);
+  }
+  .detail-badge {
+    display: inline-block;
+    align-self: flex-start;
+    font-size: 0.65rem;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: #2a2a4a;
+    color: var(--clr-sub);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
   }
   table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
   th, td { padding: 0.3rem 0.5rem; border: 1px solid #333; text-align: left; }

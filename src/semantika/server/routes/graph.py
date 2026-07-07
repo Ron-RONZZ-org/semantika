@@ -238,6 +238,16 @@ def search_predicates(q: str, limit: int = 50):
     return {"results": results}
 
 
+@router.get("/predicates/{predicate_id}")
+def get_predicate(predicate_id: str):
+    """Get a single predicate by ID."""
+    pred = _svc()["predicate"].get(predicate_id)
+    if not pred:
+        raise HTTPException(404, f"Predicate not found: {predicate_id}")
+    triples = _svc()["triple"].get_by_predicate(predicate_id)
+    return {"predicate": pred, "triples": triples}
+
+
 @router.post("/predicates")
 def create_predicate(data: PredicateCreate):
     """Create a predicate."""

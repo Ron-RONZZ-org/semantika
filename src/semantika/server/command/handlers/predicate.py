@@ -49,7 +49,7 @@ def cmd_predicate_search(remaining: list[str], flags: dict[str, str]) -> dict:
 @command("predicate.view", description="View predicate details",
          params=[{"name": "predicate_id", "type": "string", "required": True}])
 def cmd_predicate_view(remaining: list[str], flags: dict[str, str]) -> dict:
-    """View a single predicate by ID."""
+    """View a single predicate by ID, including triples that use it."""
     svc = get_services()
     pred_id = flags.get("predicate_id") or (remaining[0] if remaining else "") or ""
     if not pred_id:
@@ -57,6 +57,8 @@ def cmd_predicate_view(remaining: list[str], flags: dict[str, str]) -> dict:
     pred = svc["predicate"].get(pred_id)
     if not pred:
         raise CommandValidationError(f"Predicate not found: {pred_id}")
+    triples = svc["triple"].get_by_predicate(pred["predicate_id"])
+    pred["triples"] = triples
     return {"type": "status", "data": pred}
 
 

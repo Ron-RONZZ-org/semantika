@@ -67,8 +67,13 @@
     try {
       const resp = await fetch(`/api/v1/graph/predicates/${encodeURIComponent(id)}`);
       if (!resp.ok) return;
-      const pred = await resp.json();
-      tabStore.open("status", id, pred, { idKey: `pred-${id}`, replaceable: false });
+      const result = await resp.json();
+      const pred = result.predicate;
+      const triples = result.triples || [];
+      const label = getLabel(pred?.labels, getLocale()) || id;
+      tabStore.open("status", label, { ...pred, triples }, {
+        idKey: `pred-${id}`, replaceable: false,
+      });
     } catch { /* silent */ }
   }
 
@@ -143,7 +148,6 @@
         / Search</button>
       <button class="btn-small" onclick={() => sel.toggleSelectionMode()}>v Select</button>
     {/if}
-    <span class="hint">{showSearch ? "Esc close" : "/ search \u00b7 n new \u00b7 v select"}</span>
   </div>
 
   <div class="list" role="listbox" aria-label="Predicates" aria-multiselectable="true">
@@ -188,7 +192,6 @@
   .btn-small:disabled { opacity: 0.4; cursor: default; }
   .btn-icon { background: none; border: none; color: var(--clr-sub); cursor: pointer; padding: 0 4px; font-size: 0.85rem; }
   .btn-icon:hover { color: #e0e0e0; }
-  .hint { margin-left: auto; color: var(--clr-dim); font-size: 0.68rem; }
   .list { flex: 1; overflow-y: auto; padding: 0; }
   .row { display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0.75rem; border-bottom: 1px solid #2a2a3e; cursor: pointer; }
   .row:hover { background: #22223a; }
