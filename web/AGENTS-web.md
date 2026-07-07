@@ -92,8 +92,52 @@ Svelte 5 SPA frontend — command-bar UI with rich result rendering for the Sema
 - Locale fetched from `GET /api/v1/user/config`, falls back to browser language
 - No hardcoded command tree — the frontend is driven by backend metadata
 
+## Shared UI Components (`@lightercore/ui`)
+
+Several files in `web/src/lib/` are **re-export wrappers** — the canonical implementation lives in `lightercore/web/src/lib/` (published as `@lightercore/ui` on the npm `file:` dependency path).
+
+### Import convention
+
+```js
+// Correct: import directly from @lightercore/ui when possible
+import { banner } from "@lightercore/ui/bannerStore.svelte.js";
+
+// Also correct: import from local re-export for backward compat
+import { banner } from "./bannerStore.svelte.js";
+```
+
+### Currently shared modules
+
+| Local file | Re-exports from `@lightercore/ui` | Type |
+|------------|-----------------------------------|------|
+| `bannerStore.svelte.js` | `banner` | Reactive store |
+| `keyboardShortcuts.svelte.js` | `registerShortcuts`, `getAllShortcuts`, `getScopeShortcuts`, `normalizeKey`, `isInputFocused` | Reactive store |
+| `dirtyFormStore.svelte.js` | `dirtyFormStore`, `createFormGuard` | Reactive store |
+| `tabStore.svelte.js` | `tabStore` | Reactive store |
+| `listTabFormat.js` | `formatListItemDate`, `truncate`, `preview`, `getLabel`, `shortId` | Utility functions |
+| `listTabSelection.svelte.js` | `createCopyState`, `createSelectionManager` | Reactive utility |
+| `listTabShared.svelte.js` | barrel of above | Barrel |
+| `BannerContainer.svelte` | imports `bannerStore` from `@lightercore/ui` | Svelte component |
+
+### Adding shared code
+
+Before adding a new store, utility function, or UI component:
+1. Check if a similar component exists in lighterbird or lightercore.
+2. If it's shareable, add the canonical version to `lightercore/web/src/lib/`.
+3. Add a re-export wrapper in this directory.
+4. Add tests in lightercore.
+5. See `lightercore/AGENTS.md` → Migration Policy (Svelte/JS) for the detailed process.
+
+### Not yet extracted (future phases)
+
+These components are identified as shareable but need behavioral alignment before extraction:
+- `FormField.svelte`, `ConfirmDialog.svelte`, `DynamicForm.svelte`
+- `MultiEntryField.svelte` (doesn't exist in semantika yet — add from lightercore when needed)
+- `ListTabBase.svelte` (new abstraction for list tabs)
+
 ## Documentation Reference
 - lighterbird's web frontend: `../lighterbird/web/` for proven patterns
+- lightercore's UI package: `../../lightercore/web/` for canonical shared components
 
 ## Domain-Specific Rules for Agents
 - **Graph view component**: Use vis.js or D3-force for interactive graph visualization. Nodes are draggable, clickable. Edges show predicate labels.
@@ -103,4 +147,5 @@ Svelte 5 SPA frontend — command-bar UI with rich result rendering for the Sema
 - **Form popups**: `NodeAddForm`, `TripleAddForm`, `PredicateAddForm` — each maps to a `!command` with missing params.
 - **Prompt command autocomplete**: The `/` prefix shows all available prompt commands from the backend. After selecting a name, show placeholder hints for positional args.
 - **Locale**: The locale badge in HomeHeader lets users switch language. Sync via `PATCH /api/v1/user/config`.
+- **Shared components**: Before modifying a re-export file, check if the change should go into `@lightercore/ui` instead. Canonical implementations are in lightercore.
 - Follow the same component patterns as lighterbird: `FormField.svelte`, `MultiEntryField.svelte` for shared form components.
