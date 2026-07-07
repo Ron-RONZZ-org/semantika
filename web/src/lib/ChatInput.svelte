@@ -196,7 +196,7 @@
       const cmd = value.trim();
       if (!cmd) return;
 
-      if (isCommandMode && displaySuggestions.length > 0) {
+      if ((isCommandMode || isPromptCommand) && displaySuggestions.length > 0) {
         const lastToken = cmd.split(/\s+/).pop() || "";
         const isPartial = displaySuggestions.some(
           (s) =>
