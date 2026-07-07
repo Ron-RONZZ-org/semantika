@@ -22,8 +22,8 @@ import pytest
 SCRIPTS: list[tuple[str, str, int]] = [
     (
         "semantika_full_e2e.mjs",
-        "Full coverage: all commands with all flags/options, GUI functions, CLI→GUI routing, LLM endpoints",
-        480,
+        "109 tests: all commands + flags/options, GUI (tabs, forms, autocomplete, keyboard shortcuts), CLI→GUI routing, empty states, LLM endpoints",
+        540,
     ),
 ]
 
