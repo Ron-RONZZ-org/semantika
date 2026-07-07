@@ -19,7 +19,12 @@ Context resolution order (highest priority first):
 
 **Semantika** is a command-driven knowledge graph tool integrating semantic triple storage, natural-language querying, and LLM-native interaction into a single webapp with BYOK (Bring Your Own Key) LLM support.
 
-The interaction model is a **centralized command box** — type `!node add` to create entities, `!ask "What do I know about X?"` to query naturally, or just type naturally to chat with the built-in LLM. The philosophy: *you see only what you need* — no sidebars, no bloat.
+The interaction model is a **centralized command box** — three input modes:
+- `!command` — built-in graph operations (`!node add`, `!triple list`, `!backup now`, etc.)
+- `/*prompt-command` — user-defined file-based LLM prompt templates stored in `~/.config/semantika/commands/*.md`
+- natural text — free-form chat with the built-in LLM via `!ask` or plain input
+
+The philosophy: *you see only what you need* — no sidebars, no bloat.
 
 ### Project Family & Design Inheritance
 
@@ -28,13 +33,13 @@ Semantika is the **third generation** in a toolchain. When implementing new feat
 | Project | Role | What to reference |
 |---------|------|-------------------|
 | **[A-semantika](../A-semantika)** | EO-first CLI ancestor | **Business logic**: NodeService, PredicateService, TripleService, Turtle export/import, review/proof mechanics, unit ontology. Forked with Esperanto→English migration. |
-| **[lighterbird](../lighterbird)** | Mature sister PIM app | **UX/LLM/DB**: Command-bar interaction, command tree + dispatch architecture, autocomplete engine, tab/result-panel UI, LLM provider integration (OpenAI/Ollama), text-based command generation, keyring-based config management. |
-| **[lightercore](../lightercore)** | Shared core library | **DB/paths/exceptions/CRUD/backup/permissions/prompt_commands**: Canonical implementations consumed by both lighterbird and semantika. Replaces the earlier vendored A-core. The `prompt_commands` module provides file-based LLM prompt templates (`/*` prefix) from `~/.config/semantika/commands/*.md`. |
+| **[lighterbird](../lighterbird)** | Mature sister PIM app | **UX/LLM/DB**: Command-bar interaction, command tree + dispatch architecture, autocomplete engine, tab/result-panel UI, LLM provider integration (OpenAI/Ollama), text-based command generation, keyring-based config management, prompt commands (`/*` prefix). |
+| **[lightercore](../lightercore)** | Shared core library | **DB/paths/exceptions/CRUD/backup/permissions/prompt_commands/user_config**: Canonical implementations consumed by both lighterbird and semantika. Replaces the earlier vendored A-core. |
 | **[A-core](../A-core)** | First-gen core library | Historical reference only. Superseded by lightercore. |
 
-**Key rule**: When the task is about graph business logic (nodes, predicates, triples, TTL, review, proof, units), look at **A-semantika** first. When the task is about UX patterns (command routing, LLM, autocomplete, tabs, forms) or DB management, look at **lighterbird** first. For shared infrastructure (DB, paths, exceptions, CRUD, backup, permissions), look at **lightercore** first — that is the canonical source.
+**Key rule**: When the task is about graph business logic (nodes, predicates, triples, TTL, review, proof, units), look at **A-semantika** first. When the task is about UX patterns (command routing, LLM, autocomplete, tabs, forms, prompt commands, user config) or DB management, look at **lighterbird** first. For shared infrastructure (DB, paths, exceptions, CRUD, backup, permissions, prompt_commands), look at **lightercore** first — that is the canonical source.
 
-The backend is forked from proven code in [A-semantika](../A-semantika) (triple store services). Shared infrastructure (DB, paths, exceptions, CRUD, backup, permissions) comes from [lightercore](../lightercore), which supersedes the earlier vendored [A-core](../A-core). The frontend is a Svelte SPA served by a FastAPI Python server, with UX patterns ported from [lighterbird](../lighterbird).
+The backend is forked from proven code in [A-semantika](../A-semantika) (triple store services). Shared infrastructure (DB, paths, exceptions, CRUD, backup, permissions, prompt_commands) comes from [lightercore](../lightercore), which supersedes the earlier vendored [A-core](../A-core). The frontend is a Svelte SPA served by a FastAPI Python server, with UX patterns ported from [lighterbird](../lighterbird).
 
 ---
 
@@ -114,6 +119,7 @@ semantika/
 ├── LICENSE                      # AGPL-3.0
 ├── pyproject.toml
 ├── .gitignore
+├── .dev                         # Local dev secrets (gitignored) — API keys for --seed mode
 ├── src/
 │   └── semantika/               # Main Python package
 │       ├── __init__.py
@@ -124,37 +130,68 @@ semantika/
 │       │   └── reset.py         # Reset to fresh state
 │       ├── graph/               # Triple store services (16 source files + services/)
 │       │   ├── __init__.py + constants.py + db.py + file_helpers.py
-│       │   ├── node_helpers.py + node_service.py
+│       │   ├── node_helpers.py + node_service.py + node_merge_mixin.py + node_fts.py
 │       │   ├── predicate_service.py + predicate_group_service.py
 │       │   ├── triple_service.py + triple_turtle.py
 │       │   ├── review_service.py + proof_service.py
 │       │   ├── unit_service.py + unit_builder.py + unit_decomposition.py
 │       │   ├── unit_errors.py + unit_parser.py + unit_seed_data.py
 │       │   └── services/__init__.py
+│       ├── scripts/             # CLI entry points
+│       │   ├── __init__.py
+│       │   └── dev_cli.py       # semantika-dev CLI: temp DB, --seed prompt commands
 │       └── server/              # FastAPI web server
 │           ├── __init__.py
 │           ├── app.py           # Application factory
-│           ├── tasks.py         # Background scheduled tasks
+│           ├── tasks.py         # Background scheduled tasks (backup scheduler)
+│           ├── user_config.py   # User config persistence (locale, preferences) — JSON file on disk
 │           ├── command/         # Command engine (models, parser, registry, handlers)
+│           │   ├── __init__.py
+│           │   ├── registry.py  # @command/@group_command decorators, dispatch, tree generation
+│           │   ├── parser.py    # Tokenizer for !command input
+│           │   ├── models.py    # CommandRequest/CommandResponse pydantic models
+│           │   ├── errors.py    # CommandError, CommandNotFound, CommandValidationError
+│           │   ├── helpers.py   # Shared helper utilities
+│           │   └── handlers/    # One file per domain (auto-registered via import)
+│           │       ├── __init__.py
+│           │       ├── graph.py / node.py / node_helpers.py
+│           │       ├── predicate.py / predicate_group.py / predicate_trash.py
+│           │       ├── triple.py / review.py
+│           │       ├── backup.py / reset.py
+│           │       ├── llm.py
+│           │       ├── trash.py
+│           │       ├── unit.py
+│           │       └── user_config.py
 │           ├── llm/             # LLM provider abstraction
-│           └── routes/
+│           │   ├── __init__.py
+│           │   └── provider.py  # Provider singleton (get_provider / reset_provider)
+│           └── routes/          # FastAPI route handlers
 │               ├── graph.py     # /api/v1/graph/* — CRUD for nodes, predicates, triples
-│               ├── query.py     # /api/v1/query/* — search, export, stats, sparql
-│               ├── command.py   # /api/v1/command/* — tree, dispatch, execute
+│               ├── query.py     # /api/v1/query/* — search, export, stats, raw SQL
+│               ├── command.py   # /api/v1/command/* — tree, dispatch, execute, help
 │               ├── review.py    # /api/v1/review/* — session management
 │               ├── proof.py     # /api/v1/proof/* — proof CRUD
 │               ├── unit.py      # /api/v1/units/* — unit ontology
 │               ├── files.py     # /api/v1/files/* — file attachments
-│               └── llm.py       # /api/v1/llm/* — chat routing
-├── tests/                       # pytest tests
-│   ├── test_core/               # Backup, infrastructure tests
-│   ├── test_graph/              # Service integration tests
-│   └── test_server/             # API E2E tests (includes conftest.py)
+│               ├── llm.py       # /api/v1/llm/* — chat, config, profiles, confirm
+│               ├── prompt_commands.py  # /api/v1/prompt-commands/* — list, expand, execute, SSE stream
+│               └── user_config.py      # /api/v1/user/config — locale, preferences
+├── tests/                       # pytest tests (817 tests)
+│   ├── conftest.py
+│   ├── test_core/               # Backup, entry points, reset tests
+│   ├── test_graph/              # Service integration tests (nodes, predicates, triples, units, proofs)
+│   └── test_server/             # API E2E + handler dispatch tests
+│       ├── conftest.py
+│       ├── test_api_*.py        # API endpoint tests per domain
+│       ├── test_handler_*.py    # Command handler dispatch tests
+│       ├── test_command_*.py    # Command parser + dispatch
+│       ├── test_llm_*.py        # LLM provider + API tests
+│       └── test_files_api.py    # File attachment API tests
 ├── core/                        # AGENTS-core.md (doc only — code is under src/semantika/core/)
 ├── graph/                       # AGENTS-graph.md (doc only — code is under src/semantika/graph/)
 ├── server/                      # AGENTS-server.md (doc only — code is under src/semantika/server/)
-├── scripts/                     # AGENTS-scripts.md (doc only — scripts live at src/semantika/__main__.py + pyproject.toml)
-└── web/                         # Svelte frontend
+├── scripts/                     # AGENTS-scripts.md (doc only — code is at src/semantika/scripts/)
+└── web/                         # Svelte 5 SPA frontend
     ├── package.json / vite.config.js / svelte.config.js / index.html
     └── src/
         ├── main.js + App.svelte
@@ -164,7 +201,8 @@ semantika/
             ├── ErrorPopup.svelte / LoadingPopup.svelte / BannerContainer.svelte
             ├── HelpPopup.svelte / ConfirmDialog.svelte / KeyboardShortcutOverlay.svelte
             ├── LlmSetupModal.svelte / GraphView.svelte / QuizPanel.svelte
-            ├── ChatInput.svelte / TabView.svelte / HomeTab.svelte
+            ├── HomeTab.svelte / HomeHeader.svelte
+            ├── TabView.svelte / MessageList.svelte
             ├── NodeListTab.svelte / PredicateListTab.svelte / TripleListTab.svelte
             ├── listTabFormat.js / listTabSelection.svelte.js / listTabShared.svelte.js
             ├── commandRouter.js / commandEngine.js / commandExecutor.js
@@ -187,6 +225,62 @@ semantika/
 
 ---
 
+## Prompt Commands (`/*` prefix)
+
+Prompt commands are user-defined LLM prompt templates stored as Markdown files in the config directory. They provide a way to extend Semantika with custom reusable prompts.
+
+### How they work
+
+- Files live at `~/.config/semantika/commands/*.md` (XDG config dir)
+- The first line starting with `# ` is the description (shown in autocomplete)
+- Everything after is the template body, with `$1`, `$2`, … positional placeholders
+- `$ARGUMENTS` is a catch-all for all remaining args joined with spaces
+- Files without a `# ` first line are silently skipped
+
+### Example
+
+Create `~/.config/semantika/commands/weekly.md`:
+
+```markdown
+# Weekly review of what I learned
+Review the nodes added in the past $1 days and identify key themes.
+
+Then look at $2 area specifically.
+```
+
+Usage: `/*weekly 7 productivity`
+
+### Adding new prompt commands
+
+To add a new `/*` command, simply create a new `.md` file in the commands directory:
+
+```bash
+# Pick a descriptive filename (no spaces) — the stem becomes the command name
+echo '# Summarize the last N emails
+Summarise the last $1 emails focusing on key items.' \
+  > ~/.config/semantika/commands/summarize.md
+```
+
+The command is immediately available — no restart needed. The frontend fetches the list on startup and the dev server supports hot-reload.
+
+### API
+
+Prompt commands are served by `GET/POST /api/v1/prompt-commands/*`:
+- `GET /list` — autocomplete source
+- `POST /expand` — preview expanded template
+- `POST /execute` — expand + send to LLM (sync JSON)
+- `POST /execute/stream` — SSE streaming variant
+
+The `--seed` flag on `semantika-dev` creates a demo prompt command for testing.
+
+## User Configuration
+
+Semantika supports persistent user preferences stored as JSON at `~/.local/share/semantika/user_config.json`:
+
+- **Locale** — set via `!user config --locale CODE` or the GUI locale badge
+- API: `GET/PATCH /api/v1/user/config`
+- The frontend fetches locale on startup and falls back to browser language
+
 ## Coding Guidelines
 
 1. **No file > 500 lines.** Split by functional unit.
@@ -198,6 +292,7 @@ semantika/
 7. **Async where it matters.** FastAPI routes are async; business logic can be sync.
 8. **Error messages include actionable suggestions.**
 9. **Missing CLI args → form popup (default behaviour).** When a `!command` is invoked with missing required options and the command has an interactive form registered, the system redirects the user to a form with pre-filled options. All interactive commands must be registered in `registry.py` (backend) with `interactive: true`.
+10. **Prompt command files go in `~/.config/semantika/commands/*.md`.** The first line must start with `# ` (description). Positional args use `$1`, `$2`, …, `$9` and `$ARGUMENTS` catch-all.
 
 ---
 
@@ -264,12 +359,10 @@ should use environment variables or system keyring exclusively.
 | Module | AGENTS File | Description |
 |--------|-------------|-------------|
 | Core | `core/AGENTS-core.md` | DB, FTS5, paths, interactive helpers |
-| Graph | `graph/AGENTS-graph.md` | Triple store services (node, predicate, triple, recenzi, provo) |
-| Server | `server/AGENTS-server.md` | FastAPI routes, command engine, LLM |
-| Scripts | `scripts/AGENTS-scripts.md` | Dev CLI, seed data generator |
-| Web | `web/AGENTS-web.md` | Svelte SPA, command-bar UI |
-
-(Update this table as new modules are added)
+| Graph | `graph/AGENTS-graph.md` | Triple store services (node, predicate, triple, review, proof) |
+| Server | `server/AGENTS-server.md` | FastAPI routes, command engine, LLM, prompt commands, user config |
+| Scripts | `scripts/AGENTS-scripts.md` | Dev CLI, seed data generator, --seed prompt commands |
+| Web | `web/AGENTS-web.md` | Svelte SPA, command-bar UI, prompt command autocomplete, locale
 
 ---
 
@@ -279,7 +372,7 @@ should use environment variables or system keyring exclusively.
 Root AGENTS.md (global rules)
     │
     ├── core/AGENTS-core.md       DB, FTS5, paths, interactive helpers
-    ├── graph/AGENTS-graph.md     Triple store: nodes, predicates, triples, recenzi, provo
+    ├── graph/AGENTS-graph.md     Triple store: nodes, predicates, triples, review, proof
     ├── server/AGENTS-server.md   FastAPI backend, API routes, LLM
     ├── scripts/AGENTS-scripts.md Dev CLI, seed data, test infra
     └── web/AGENTS-web.md         Svelte SPA frontend
