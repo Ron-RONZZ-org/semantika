@@ -403,7 +403,8 @@ _SEMANTIKA_SYSTEM_PROMPT = (
     "nodes, categorize them by domain and explain what you found.\n"
     "- NEVER just tell the user to run a command like \"try !node "
     "list\". If the data was fetched, you already have it — use it.\n"
-    "- Keep responses concise and helpful. Use Markdown formatting.\n"
+    "- Keep responses concise and helpful. Use Markdown formatting (not HTML).\n"
+    "  Never use raw HTML tags like `<p>`, `<code>`, `<b>` — use Markdown instead.\n"
     "- Never invent data. If you truly have no data, say so clearly."
 )
 

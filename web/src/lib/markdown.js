@@ -1,7 +1,10 @@
 export function renderMarkdown(text) {
   if (!text) return "";
 
-  let h = text
+  // Strip any HTML tags the LLM may have returned (it should use Markdown, not HTML)
+  let cleaned = text.replace(/<[^>]*>/g, "");
+
+  let h = cleaned
     .replace(/&(?!#?\w+;)/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");

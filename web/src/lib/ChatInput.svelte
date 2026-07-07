@@ -196,33 +196,33 @@
       const cmd = value.trim();
       if (!cmd) return;
 
-      if ((isCommandMode || isPromptCommand) && displaySuggestions.length > 0) {
+      // ── Completion fill mode: fill input on Enter when suggestions are visible ──
+      if (displaySuggestions.length > 0) {
+        const idx = selectedSuggestion >= 0 ? selectedSuggestion : 0;
+        const completion = displaySuggestions[idx];
+        // Case-insensitive — /command prompt names may differ in casing
         const lastToken = cmd.split(/\s+/).pop() || "";
-        const isPartial = displaySuggestions.some(
-          (s) =>
-            s.toLowerCase().startsWith(lastToken.toLowerCase()) &&
-            s !== lastToken &&
-            !s.startsWith("<") &&
-            !s.startsWith("["),
-        );
-        if (isPartial) {
-          const idx = selectedSuggestion >= 0 ? selectedSuggestion : 0;
-          applyCompletion(displaySuggestions[idx]);
+        if (completion.toLowerCase() !== lastToken.toLowerCase()) {
+          applyCompletion(completion);
           return;
         }
+        // Completion is the same as what's already typed → clear suggestions and submit.
+        suggestions = [];
+        hints = [];
+        dataCompletions = [];
+        positionals = [];
       }
-
       if (dataCompletions.length > 0) {
+        const idx = selectedDataIndex >= 0 ? selectedDataIndex : 0;
+        const completion = getDataValue(dataCompletions[idx]);
         const lastToken = cmd.split(/\s+/).pop() || "";
-        if (selectedDataIndex >= 0) {
-          applyCompletion(getDataValue(dataCompletions[selectedDataIndex]));
+        if (completion.toLowerCase() !== lastToken.toLowerCase()) {
+          applyCompletion(completion);
           return;
         }
-        if (!/^[0-9a-f]{8,}$/i.test(lastToken)) {
-          applyCompletion(getDataValue(dataCompletions[0]));
-          return;
-        }
+        // Same token → fall through to submit.
       }
+      // No completions or completion is already typed → submit.
 
       history.push(cmd);
       value = "";

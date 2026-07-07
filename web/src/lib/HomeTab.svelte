@@ -67,14 +67,45 @@
     messages = [...messages, { role: "user", text: trimmed }];
     hasSentLlmMessage = true;
 
-    // ── Prompt commands (/ prefix) → execute via prompt-commands API ───
+    // ── Prompt commands (/ prefix) → show in conversation, not popup ───
     if (trimmed.startsWith("/")) {
+      isLoadingLlm = true;
+      const msgIdx = messages.length;
+      messages = [...messages, { role: "assistant", html: "", text: "", actions: [], _streaming: true }];
+      scrollToBottom();
+
       try {
         const result = await execute(trimmed);
-        popup.show(result.type, result.title, result.data);
+
+        if (result.type === "error") {
+          const errMsg = result.data?.message || "Command failed";
+          messages = messages.map((m, i) =>
+            i === msgIdx
+              ? { ...m, html: `<p>${errMsg}</p>`, text: errMsg, _streaming: false }
+              : m,
+          );
+        } else {
+          const replyHtml =
+            result.data?.html ||
+            (result.data?.message ? renderMarkdown(result.data.message) : "") ||
+            (result.data?.reply ? renderMarkdown(result.data.reply) : "") ||
+            JSON.stringify(result.data || result);
+          const replyText = result.data?.message || result.data?.reply || "";
+          messages = messages.map((m, i) =>
+            i === msgIdx
+              ? { ...m, html: replyHtml, text: replyText, _streaming: false }
+              : m,
+          );
+        }
       } catch (err) {
-        popup.show("error", "Error", { message: err.message || String(err) });
+        messages = messages.map((m, i) =>
+          i === msgIdx
+            ? { ...m, html: `<p>Error: ${err.message}</p>`, _streaming: false }
+            : m,
+        );
       }
+
+      isLoadingLlm = false;
       scrollToBottom();
       return;
     }

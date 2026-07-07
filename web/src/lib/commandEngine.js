@@ -106,8 +106,11 @@ export function getPromptCompletions(input) {
       hints: promptCommands.map((c) => c.description || ""),
     };
   }
+  // Exclude exact matches — once the user has typed the full command name,
+  // there's nothing to autocomplete; showing the same command again traps them
+  // in a fill loop on Enter.
   const matches = promptCommands.filter((c) =>
-    c.name.toLowerCase().startsWith(prefix),
+    c.name.toLowerCase().startsWith(prefix) && c.name.toLowerCase() !== prefix,
   );
   return {
     completions: matches.map((c) => `/${c.name}`),

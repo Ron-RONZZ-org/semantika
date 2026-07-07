@@ -26,6 +26,10 @@
     if (key === "definitions" && typeof val === "string" && val.startsWith("{")) return false;
     return true;
   }
+
+  let techFieldCount = $derived(
+    Object.entries(d).filter(([key, val]) => !isMainField(key, val)).length,
+  );
 </script>
 
 <div class="status">
@@ -125,7 +129,7 @@
     {/each}
     {#if Object.keys(d).length === 0}
       <p class="message">No data.</p>
-    {:else}
+    {:else if techFieldCount > 0}
       <button class="tech-toggle" onclick={() => { showTech = !showTech; }}>
         {showTech ? "Hide technical details" : "Show technical details"}
       </button>
