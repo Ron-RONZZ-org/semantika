@@ -12,13 +12,18 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
+from lightercore.llm.utils import parse_command_result
 from lightercore.permissions import PermissionLevel
 from pydantic import BaseModel
 
+from semantika.server.command.errors import CommandError
 from semantika.server.command.registry import (
+    dispatch,
     get_command_definitions,
+    get_handler_metadata,
 )
 from semantika.server.llm.provider import get_provider
 
@@ -119,6 +124,92 @@ async def load_profile(name: str):
     return {"status": "loaded", "profile": name}
 
 
+# ── Helpers ──────────────────────────────────────────────────────────────
+
+
+async def _safe_chat(provider: Any, prompt_messages: list[dict]) -> str | None:
+    """Try provider chat, returning ``None`` on transient errors."""
+    if not provider.available:
+        return None
+    try:
+        return await provider.chat(prompt_messages)
+    except (SystemExit, KeyboardInterrupt):
+        raise
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        return None
+
+
+def _resolve_command_meta(tokens: list[str]) -> tuple[str, dict[str, Any]] | None:
+    """Find the longest registered command prefix and return (path, metadata).
+
+    Uses the same longest-prefix matching as :func:`dispatch` so that
+    ``["node", "add", "MyLabel"]`` matches the ``"node.add"`` handler.
+    Returns ``None`` when no registered command matches.
+    """
+    for i in range(len(tokens), 0, -1):
+        path = ".".join(tokens[:i])
+        meta = get_handler_metadata(path)
+        if meta is not None:
+            return path, meta
+    return None
+
+
+def _command_permission_level(tokens: list[str]) -> PermissionLevel | None:
+    """Return the explicit permission level for the matched command, or ``None``.
+
+    Only returns a value when the command path is registered.  Unlike
+    :func:`get_command_level`, this does **not** return a default for
+    unknown paths — callers should treat ``None`` as "not a command".
+    """
+    resolved = _resolve_command_meta(tokens)
+    if resolved is None:
+        return None
+    _, meta = resolved
+    return meta.get("permission_level", PermissionLevel.WRITE)
+
+
+async def _try_execute(
+    tokens: list[str],
+    flags: dict[str, str],
+) -> dict | None:
+    """Attempt to dispatch *tokens*.  Returns the result dict on success
+    or ``None`` if the command path doesn't exist."""
+    try:
+        return dispatch(tokens, flags)
+    except CommandError:
+        return None
+
+
+async def _summarise(
+    tokens: list[str],
+    result: dict,
+    user_message: str,
+) -> str | None:
+    """Ask the LLM to summarise a command execution result."""
+    result_summary = json.dumps(
+        result.get("data", result), indent=2, default=str,
+    )
+    summary_messages = [
+        {
+            "role": "system",
+            "content": (
+                _SEMANTIKA_SYSTEM_PROMPT
+                + "\n\n"
+                "The user's question was answered by executing a command "
+                "on their behalf. Summarize the result in a friendly, "
+                "natural way. Use markdown formatting for readability.\n\n"
+                "Command executed: !" + " ".join(tokens) + "\n"
+                "Raw result:\n" + result_summary
+            ),
+        },
+        {"role": "user", "content": user_message},
+    ]
+    provider = get_provider()
+    return await _safe_chat(provider, summary_messages)
+
+
 # ── Chat route (with command generation) ─────────────────────────────────
 
 
@@ -138,79 +229,6 @@ async def chat(req: ChatRequest):
 
     # Build context from history
     messages = list(req.context or req.history or [])
-
-    # Helper: try provider chat, fall back to stub on transient errors
-    async def _safe_chat(prompt_messages: list[dict]) -> str | None:
-        if not provider.available:
-            return None
-        try:
-            return await provider.chat(prompt_messages)
-        except (SystemExit, KeyboardInterrupt):
-            raise
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            return None
-
-    from semantika.server.command.errors import CommandError
-    from semantika.server.command.registry import (
-        dispatch,
-        get_command_level,
-        get_handler_metadata,
-    )
-
-    # ── Helper: detect write/modify commands ─────────────────────────────
-    _WRITE_VERBS = {
-        "add", "new", "delete", "remove", "update", "set", "modify",
-        "edit", "rename", "merge", "clear", "purge", "restore",
-        "import", "prune", "load", "save", "create",
-    }
-
-    def _is_write_command(tokens: list[str]) -> bool:
-        """Return ``True`` if *tokens* describe a data-modifying action."""
-        if not tokens:
-            return False
-        leaf = tokens[-1].lower()
-        return leaf in _WRITE_VERBS
-
-    # ── Helper: try to execute a command and return the result dict ──────
-    async def _try_execute(
-        tokens: list[str],
-        flags: dict[str, str],
-    ) -> dict | None:
-        """Attempt to dispatch *tokens*.  Returns the result dict on success
-        or ``None`` if the command path doesn't exist."""
-        try:
-            return dispatch(tokens, flags)
-        except CommandError:
-            return None
-
-    # ── Helper: summarise command output ─────────────────────────────────
-    async def _summarise(
-        tokens: list[str],
-        result: dict,
-        user_message: str,
-    ) -> str | None:
-        """Ask the LLM to summarise a command execution result."""
-        result_summary = json.dumps(
-            result.get("data", result), indent=2, default=str,
-        )
-        summary_messages = [
-            {
-                "role": "system",
-                "content": (
-                    _SEMANTIKA_SYSTEM_PROMPT
-                    + "\n\n"
-                    "The user's question was answered by executing a command "
-                    "on their behalf. Summarize the result in a friendly, "
-                    "natural way. Use markdown formatting for readability.\n\n"
-                    "Command executed: !" + " ".join(tokens) + "\n"
-                    "Raw result:\n" + result_summary
-                ),
-            },
-            {"role": "user", "content": user_message},
-        ]
-        return await _safe_chat(summary_messages)
 
     # ── Phase 1: Try structured command generation ───────────────────────
     # Call without args to use the internal cache (avoids O(N) tree walk)
@@ -240,9 +258,8 @@ async def chat(req: ChatRequest):
             },
             {"role": "user", "content": req.message},
         ]
-        probe_raw = await _safe_chat(probe_msgs)
+        probe_raw = await _safe_chat(provider, probe_msgs)
         if probe_raw:
-            from lightercore.llm.utils import parse_command_result
             probe_cmd = parse_command_result(probe_raw.strip())
             if probe_cmd and probe_cmd.get("tokens"):
                 cmd = probe_cmd
@@ -251,14 +268,12 @@ async def chat(req: ChatRequest):
         tokens = cmd["tokens"]
         flags = cmd.get("flags", {})
 
-        # Phase 2a: Permission check — gate destructive AND write commands
-        cmd_path = ".".join(tokens)
-        level = get_command_level(cmd_path)
-        is_destructive = level >= PermissionLevel.DESTRUCTIVE
-        is_write = _is_write_command(tokens) and not is_destructive
-        if is_destructive or is_write:
-            meta = get_handler_metadata(cmd_path)
-            desc = meta.get("description", "") if meta else ""
+        # Phase 2a: Permission check — gate write & destructive commands
+        level = _command_permission_level(tokens)
+        if level is not None and level >= PermissionLevel.WRITE:
+            is_destructive = level >= PermissionLevel.DESTRUCTIVE
+            resolved_path, meta = _resolve_command_meta(tokens)
+            desc = meta.get("description", "")
             if is_destructive:
                 tag = "destructive"
                 advice = (
@@ -303,9 +318,8 @@ async def chat(req: ChatRequest):
                 {"role": "system", "content": correction_prompt},
                 {"role": "user", "content": req.message},
             ]
-            retry_raw = await _safe_chat(retry_msgs)
+            retry_raw = await _safe_chat(provider, retry_msgs)
             if retry_raw:
-                from lightercore.llm.utils import parse_command_result
                 retry_cmd = parse_command_result(retry_raw.strip())
                 if retry_cmd and retry_cmd.get("tokens"):
                     retry_result = await _try_execute(
@@ -326,7 +340,7 @@ async def chat(req: ChatRequest):
             return {"reply": reply}
 
     # ── Phase 4: Plain chat with system context ──────────────────────────
-    plain = await _safe_chat(_build_chat_messages(messages, req.message))
+    plain = await _safe_chat(provider, _build_chat_messages(messages, req.message))
     if plain:
         return {"reply": plain}
 
@@ -341,9 +355,6 @@ async def confirm_command(req: ConfirmRequest) -> dict:
     LLM-generated command in the confirmation modal.  Dispatches
     directly without the permission gate — the user has approved it.
     """
-    from semantika.server.command.errors import CommandError
-    from semantika.server.command.registry import dispatch
-
     if not req.tokens:
         raise HTTPException(status_code=400, detail="No command tokens provided.")
 
@@ -419,7 +430,6 @@ def _stub_response(message: str) -> dict:
     LLM-driven flow — both code paths produce the same result.
     """
     msg = message.strip().lower()
-    from semantika.server.command.registry import dispatch
 
     if "stats" in msg or "count" in msg or "how many" in msg:
         result = dispatch(["graph", "stats"], {})

@@ -133,8 +133,9 @@ def _invalidate_cache() -> None:
 
     Called automatically by ``@command()`` / ``@group_command()``.
     """
-    global _command_tree_cache
+    global _command_tree_cache, _command_defs_cache
     _command_tree_cache = None
+    _command_defs_cache = None
 
 
 def clear_command_cache() -> None:
@@ -234,6 +235,7 @@ _command_defs_cache: list[dict] | None = None
 def get_command_definitions(tree: list[dict] | None = None) -> list[dict]:
     """Flatten the command tree into machine-readable definitions for the LLM."""
     global _command_defs_cache
+    should_cache = tree is None
     if tree is None:
         if _command_defs_cache is not None:
             return list(_command_defs_cache)
@@ -263,7 +265,7 @@ def get_command_definitions(tree: list[dict] | None = None) -> list[dict]:
                 _walk(node["children"], path)
 
     _walk(tree)
-    if tree is None:
+    if should_cache:
         _command_defs_cache = list(definitions)
     return definitions
 

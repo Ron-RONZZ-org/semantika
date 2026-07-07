@@ -9,10 +9,13 @@ Ported from A-semantika's ``_file_helpers.py``.
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import mimetypes
+import re
 import shutil
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 
@@ -33,6 +36,24 @@ _ATTACHMENT_SUBDIRS: dict[str, str] = {
     "vid": "vid",
     "doc": "doc",
 }
+
+
+def _sanitize_filename(component: str) -> str:
+    """Strip path-traversal characters from a filename component.
+
+    Removes null bytes, path separators, and parent-directory references
+    that could allow ``node_id`` values like ``../../etc/passwd`` to
+    escape the managed storage directory.
+    """
+    # Null bytes
+    safe = component.replace("\0", "")
+    # Path separators
+    safe = safe.replace("/", "_").replace("\\", "_")
+    # Collapse any remaining ``..`` sequences
+    safe = re.sub(r"(?:^|_)\.\.(?:$|_)", "_", safe)
+    # Strip leading dots/dashes that could be interpreted as hidden files
+    safe = safe.lstrip(".-_")
+    return safe or "unnamed"
 
 
 def _files_root() -> Path:
@@ -58,9 +79,12 @@ def _ensure_type_dir(attachment_type: str) -> Path:
 
 
 def _resolve_stem(node_id: str, src: Path) -> str:
-    """Return the filename stem for *node_id*, preserving source extension."""
+    """Return the filename stem for *node_id*, preserving source extension.
+
+    *node_id* is sanitised to prevent path-traversal attacks.
+    """
     suffix = src.suffix.lower() if src.suffix else ""
-    return f"{node_id}{suffix}"
+    return f"{_sanitize_filename(node_id)}{suffix}"
 
 
 def detect_mime(path: Path) -> str:
@@ -168,9 +192,28 @@ def move_file(src: Path, node_id: str, attachment_type: str | None = None) -> Pa
 
 
 def _validate_url(url: str) -> None:
-    """Validate that *url* has an allowed scheme."""
+    """Validate URL scheme and block SSRF against private/reserved hosts.
+
+    Raises:
+        ValueError: If the scheme is unsupported or the host is a private
+            or loopback IP address.
+    """
     if not url.lower().startswith(("http://", "https://")):
         raise ValueError(f"Unsupported URL scheme: {url}")
+
+    parsed = urlparse(url)
+    hostname = parsed.hostname or ""
+
+    # Block private, loopback, and link-local IPs (SSRF prevention)
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if ip.is_private or ip.is_loopback or ip.is_link_local:
+            raise ValueError(
+                f"URL resolves to a private/reserved IP and is blocked: {url}"
+            )
+    except ValueError:
+        # Not a bare IP — hostname is fine (DNS-based SSRF is out of scope)
+        pass
 
 
 def _check_size_from_head(
@@ -185,9 +228,12 @@ def _check_size_from_head(
 
 
 def _ensure_dest_dir(attachment_type: str, node_id: str) -> Path:
-    """Return the destination path in the files directory."""
+    """Return the destination path in the files directory.
+
+    *node_id* is sanitised to prevent path-traversal attacks.
+    """
     dest_dir = _ensure_type_dir(attachment_type)
-    return dest_dir / node_id
+    return dest_dir / _sanitize_filename(node_id)
 
 
 def download_file(
