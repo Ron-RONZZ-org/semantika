@@ -146,11 +146,30 @@ def cmd_triple_search(remaining: list[str], flags: dict[str, str]) -> dict:
     except ValueError:
         limit = 50
 
-    # Resolve matching node IDs (subject + object) and predicate IDs
-    matching_nodes = svc["node"].search(q, limit=5)
-    matching_preds = svc["predicate"].search(q, limit=5)
-    node_ids = [n["node_id"] for n in matching_nodes]
-    pred_ids = [p["predicate_id"] for p in matching_preds]
+    # Resolve matching node IDs (subject + object) and predicate IDs.
+    # Strategy (matching A-semantika's multi-step resolution):
+    #   1. Node ID prefix resolution (covers short human-readable IDs)
+    #   2. FTS5/label search for nodes and predicates
+    #   3. Always include object_value LIKE fallback for literal matches
+    node_ids: list[str] = []
+
+    # Step 1: Node ID prefix resolution
+    prefix_node = svc["node"].resolve_node_id_prefix(q)
+    if prefix_node:
+        node_ids.append(prefix_node["node_id"])
+    else:
+        # Step 2: FTS5/label search
+        matching_nodes = svc["node"].search(q, limit=5)
+        node_ids = [n["node_id"] for n in matching_nodes]
+
+    # Predicate resolution: prefix ID then label search
+    pred_ids: list[str] = []
+    prefix_pred = svc["predicate"].resolve_predicate_id_prefix(q)
+    if prefix_pred:
+        pred_ids.append(prefix_pred["predicate_id"])
+    else:
+        matching_preds = svc["predicate"].search(q, limit=5)
+        pred_ids = [p["predicate_id"] for p in matching_preds]
 
     # Build unified OR query across subject, predicate, and object_value
     clauses: list[str] = []
@@ -173,9 +192,6 @@ def cmd_triple_search(remaining: list[str], flags: dict[str, str]) -> dict:
     escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     clauses.append("object_value LIKE ? ESCAPE '\\'")
     params.append(f"%{escaped}%")
-
-    if not clauses:
-        return {"type": "triple-list", "data": [], "label": f"No matches for '{q}'"}
 
     where = " OR ".join(clauses)
     rows = svc["triple"].db.execute(
@@ -210,9 +226,21 @@ def cmd_triple_view(remaining: list[str], flags: dict[str, str]) -> dict:
                 {"name": "lang", "type": "string", "help": "Language tag"},
                 {"name": "unit", "type": "string", "help": "Unit for numeric literals"},
                 {"name": "katex", "type": "string", "help": "KaTeX math expression"},
-                {"name": "str-dosiero", "type": "string", "help": "Read content from file"}])
+                {"name": "str-dosiero", "type": "string", "help": "Read content from file"},
+                {"name": "template", "type": "string", "help": "Triple template name"}])
 def cmd_triple_add(remaining: list[str], flags: dict[str, str]) -> dict:
-    """Add a new triple (subject predicate object)."""
+    """Add a triple (or batch from template).
+
+    When ``--template <name>`` is given, loads the named template from
+    ``~/.config/semantika/templates/``, fills placeholders from remaining
+    args / flags, and adds all triples in a batch.
+
+    Without ``--template``, behaves as the standard single-triple add.
+    """
+    template_name = flags.get("template", "").strip()
+    if template_name:
+        return _handle_template_add(template_name, flags, remaining)
+
     svc = get_services()
     subject_id = flags.get("subject_id") or (remaining[0] if remaining else "") or ""
     predicate_id = flags.get("predicate_id") or (remaining[1] if len(remaining) > 1 else "") or ""
@@ -343,3 +371,56 @@ def cmd_triple_modify(remaining: list[str], flags: dict[str, str]) -> dict:
     svc["triple"].add(subject_id=new_subject, predicate_id=new_predicate, object_value=new_object,
                       object_type=new_type, object_lang=new_lang, object_datatype=new_datatype, object_unit=new_unit)
     return {"type": "status", "data": {"message": "Triple modified"}}
+
+
+# ── Template-based triple add ────────────────────────────────────────────────
+
+
+def _handle_template_add(template_name: str, flags: dict[str, str], remaining: list[str]) -> dict:
+    """Handle ``!triple add --template <name> ...``.
+
+    Loads the template, fills values from flags and remaining args,
+    and either executes (all params present) or returns a
+    ``form-required`` response for the frontend.
+    """
+    from semantika.server.templates import execute_template, load_template
+
+    tpl = load_template(template_name)
+    if tpl is None:
+        from semantika.server.templates import list_templates
+        available = [t.name for t in list_templates()]
+        raise CommandValidationError(
+            f"Template '{template_name}' not found. "
+            f"Available: {', '.join(available) or '(none)'}"
+        )
+
+    # Extract values from flags and remaining positional args
+    values: dict[str, str] = {}
+    remaining_copy = list(remaining)
+
+    for param in tpl.params:
+        val = flags.get(param.name, "")
+        if not val and remaining_copy:
+            val = remaining_copy.pop(0)
+        if val:
+            values[param.name] = val
+
+    # Check required params
+    missing = [p.name for p in tpl.params if p.required and not values.get(p.name, "").strip()]
+    if missing:
+        return {
+            "type": "form-required",
+            "data": {
+                "form": f"triple-template-{template_name}",
+                "templateName": template_name,
+                "params": [
+                    {"name": p.name, "label": p.label, "type": p.type, "required": p.required}
+                    for p in tpl.params
+                ],
+                "initialData": values,
+                "missing": missing,
+                "message": f"Missing required parameters: {', '.join(missing)}",
+            },
+        }
+
+    return execute_template(tpl, values)
