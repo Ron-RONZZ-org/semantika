@@ -1,5 +1,5 @@
 <script>
-  import { banner } from "./bannerStore.svelte.js";
+  import { banner } from "@lightercore/ui/bannerStore.svelte.js";
 
   let msg = $derived(banner.message);
   let type = $derived(banner.type);
@@ -9,13 +9,13 @@
 {#if visible && msg}
   <div class="banner-container" class:banner-success={type === "success"} class:banner-error={type === "error"} class:banner-info={type === "info"} role="status">
     <span class="banner-icon">
-      {#if type === "success"}\u2713
-      {:else if type === "error"}\u2717
-      {:else}\u2139
+      {#if type === "success"}✓
+      {:else if type === "error"}✗
+      {:else}ℹ
       {/if}
     </span>
     <span class="banner-text">{msg}</span>
-    <button class="banner-close" onclick={() => banner.dismiss()} aria-label="Dismiss">\u2715</button>
+    <button class="banner-close" onclick={() => banner.dismiss()} aria-label="Dismiss">✕</button>
   </div>
 {/if}
 
