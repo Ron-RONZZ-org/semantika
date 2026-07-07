@@ -13,6 +13,7 @@
   import NodeListTab from "./NodeListTab.svelte";
   import PredicateListTab from "./PredicateListTab.svelte";
   import TripleListTab from "./TripleListTab.svelte";
+  import TemplateYamlPopup from "./TemplateYamlPopup.svelte";
 
   let showGlobalHelp = $state(false);
   let inputFocused = $state(false);
@@ -94,6 +95,41 @@
       if (tabStore.active && tabStore.active.closable) {
         handleCloseTab(tabStore.active.id);
       }
+      return;
+    }
+
+    // Alt+N/P — next/previous tab
+    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+      if (e.key === "n" || e.key === "N") {
+        e.preventDefault();
+        const idx = tabStore.activeIndex;
+        if (idx < tabStore.count - 1) {
+          tabStore.setActiveIndex(idx + 1);
+        } else {
+          tabStore.setActiveIndex(0); // wrap to first
+        }
+        return;
+      }
+      if (e.key === "p" || e.key === "P") {
+        e.preventDefault();
+        const idx = tabStore.activeIndex;
+        if (idx > 0) {
+          tabStore.setActiveIndex(idx - 1);
+        } else {
+          tabStore.setActiveIndex(tabStore.count - 1); // wrap to last
+        }
+        return;
+      }
+    }
+
+    // Alt+1/2/3/4 — switch to numbered tab
+    if (e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+      const num = parseInt(e.key, 10);
+      if (num >= 1 && num <= 9) {
+        e.preventDefault();
+        tabStore.setActiveIndex(num - 1);
+        return;
+      }
     }
   }
 </script>
@@ -126,6 +162,8 @@
         <PredicateListTab data={tabStore.active.data} />
       {:else if tabStore.active.type === "triple-list"}
         <TripleListTab data={tabStore.active.data} />
+      {:else if tabStore.active.type === "template_yaml"}
+        <TemplateYamlPopup data={tabStore.active.data} />
       {:else}
         <StatusPopup data={tabStore.active.data} />
       {/if}
@@ -215,6 +253,7 @@
       chat: "\ud83d\udcac",
       form: "\u270f",
       quiz: "?",
+      template_yaml: "\u2699",
     };
     return icons[type] || "\u2022";
   }
