@@ -77,8 +77,15 @@ def import_turtle(req: ImportRequest):
 
 
 def _strip_sql_comments(sql: str) -> str:
-    """Remove SQL comments to prevent comment-based bypass of statement checks."""
-    sql = re.sub(r"/\*.*?\*/", "", sql, flags=re.DOTALL)
+    """Remove SQL comments to prevent comment-based bypass of statement checks.
+
+    Applies block-comment removal iteratively to defeat nested comments
+    like ``/*/*/ SELECT 1 */`` which would otherwise survive a single pass.
+    """
+    prev = None
+    while prev != sql:
+        prev = sql
+        sql = re.sub(r"/\*.*?\*/", "", sql, flags=re.DOTALL)
     sql = re.sub(r"--.*$", "", sql, flags=re.MULTILINE)
     return sql.strip()
 

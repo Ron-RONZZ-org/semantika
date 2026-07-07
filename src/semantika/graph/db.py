@@ -328,7 +328,8 @@ def _ensure_fts(
             )
         except sqlite3.DatabaseError:
             logger.warning(
-                "Failed to populate %s — LIKE fallback will be used", fts_table
+                "Failed to populate %s — LIKE fallback will be used", fts_table,
+                exc_info=True,
             )
 
 
