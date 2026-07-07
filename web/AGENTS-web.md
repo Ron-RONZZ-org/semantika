@@ -4,10 +4,10 @@
 Svelte 5 SPA frontend — command-bar UI with rich result rendering for the Semantika knowledge graph.
 
 ## Purpose and Expected Behavior
-- **Command bar**: Always-visible input at the top; `!` prefix triggers command mode; `/*` prefix triggers prompt commands; natural text triggers LLM chat
+- **Command bar**: Always-visible input at the top; `!` prefix triggers command mode; `/` prefix triggers prompt commands; natural text triggers LLM chat
 - **Autocomplete**: As-you-type suggestions for:
   - `!` commands (fetched from `GET /api/v1/command/tree`)
-  - `/*` prompt commands (fetched from `GET /api/v1/prompt-commands/list`)
+  - `/` prompt commands (fetched from `GET /api/v1/prompt-commands/list`)
   - Node IDs and predicate IDs (via command engine level-N completions)
 - **Result area**: Shows command results (tables, forms, graph visualizations, chat responses, status messages)
 - **Tab system**: Multi-tab result area with pinned Home tab — each tab type has a dedicated component
@@ -19,7 +19,7 @@ Svelte 5 SPA frontend — command-bar UI with rich result rendering for the Sema
 
 ## Input Modes
 1. `!command` — built-in operations (`!node add`, `!triple list`, `!backup now`, etc.)
-2. `/*name [args...]` — user-defined prompt command from `~/.config/semantika/commands/*.md`
+2. `/name [args...]` — user-defined prompt command from `~/.config/semantika/commands/*.md`
 3. Natural text — free-form chat with the built-in LLM
 
 ## Key Frontend Files
@@ -34,9 +34,9 @@ Svelte 5 SPA frontend — command-bar UI with rich result rendering for the Sema
 | `MessageList.svelte` | Chat message rendering in HomeTab |
 | `commandEngine.js` | Level-by-level command autocomplete engine |
 | `commandTree.js` | Command hierarchy fetched from backend; also hosts `promptCommands` array and `initPromptCommands()` |
-| `commandExecutor.js` | Routes input to !command or /* prefix, normalizes response types |
+| `commandExecutor.js` | Routes input to !command or / prefix, normalizes response types |
 | `commandRouter.js` | Maps response types to tab/component display |
-| `parser.js` | Tokenizer for !commands; `parsePromptCommand()` for /* prefix |
+| `parser.js` | Tokenizer for !commands; `parsePromptCommand()` for / prefix |
 | `commandHistory.svelte.js` | Navigation history with up/down arrow recall |
 | `popupStore.svelte.js` | Popup/overlay state management |
 | `tabStore.svelte.js` | Multi-tab state management (pinned home, open/close/update) |
@@ -71,16 +71,16 @@ Svelte 5 SPA frontend — command-bar UI with rich result rendering for the Sema
 ## Autocomplete Flow
 
 1. On startup, `initCommandTree()` fetches `GET /api/v1/command/tree`
-2. `initPromptCommands()` fetches `GET /api/v1/prompt-commands/list` and appends a virtual `/*` root node
+2. `initPromptCommands()` fetches `GET /api/v1/prompt-commands/list` and appends a virtual `/` root node
 3. `initLocale()` fetches `GET /api/v1/user/config` for locale
-4. As user types, `ChatInput.svelte` detects mode (`!`, `/*`, or plain text)
+4. As user types, `ChatInput.svelte` detects mode (`!`, `/`, or plain text)
 5. `commandEngine.js` provides level-by-level completions for `!` commands
-6. `getPromptCompletions()` provides completions for `/*` prompt commands
+6. `getPromptCompletions()` provides completions for `/` prompt commands
 
 ## Prompt Command Flow
 
-1. User types `/*command-name arg1 arg2` in input
-2. `HomeTab.svelte` detects `/*` prefix, calls `execute()` from `commandExecutor.js`
+1. User types `/command-name arg1 arg2` in input
+2. `HomeTab.svelte` detects `/` prefix, calls `execute()` from `commandExecutor.js`
 3. `commandExecutor.js` calls `POST /api/v1/prompt-commands/execute` with `{name, args}`
 4. Backend loads the `.md` file from `~/.config/semantika/commands/`, expands `$1`/`$2`/`$ARGUMENTS`, sends to LLM
 5. Response is rendered as chat in the HomeTab
@@ -101,6 +101,6 @@ Svelte 5 SPA frontend — command-bar UI with rich result rendering for the Sema
 - **Code blocks**: Use `highlight.js` or similar for syntax highlighting in triple literal display.
 - **Command bar autocomplete**: Must suggest node IDs and predicate IDs as the user types, not just command names.
 - **Form popups**: `NodeAddForm`, `TripleAddForm`, `PredicateAddForm` — each maps to a `!command` with missing params.
-- **Prompt command autocomplete**: The `/*` prefix shows all available prompt commands from the backend. After selecting a name, show placeholder hints for positional args.
+- **Prompt command autocomplete**: The `/` prefix shows all available prompt commands from the backend. After selecting a name, show placeholder hints for positional args.
 - **Locale**: The locale badge in HomeHeader lets users switch language. Sync via `PATCH /api/v1/user/config`.
 - Follow the same component patterns as lighterbird: `FormField.svelte`, `MultiEntryField.svelte` for shared form components.

@@ -6,14 +6,14 @@ const CHAT_ENDPOINT = "/api/v1/llm/chat";
 export async function execute(input) {
   const trimmed = input.trim();
 
-  // ── Prompt command (/*name) → prompt-commands execute endpoint ──────
-  if (trimmed.startsWith("/*")) {
+  // ── Prompt command (/name) → prompt-commands execute endpoint ───────
+  if (trimmed.startsWith("/") && !trimmed.startsWith("//")) {
     const parsed = parsePromptCommand(trimmed);
     if (!parsed || !parsed.name) {
       return {
         type: "error",
         title: "Invalid Command",
-        data: { message: "Usage: /*command-name [args...]" },
+        data: { message: "Usage: /command-name [args...]" },
       };
     }
     try {

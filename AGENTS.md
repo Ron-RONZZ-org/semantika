@@ -21,7 +21,7 @@ Context resolution order (highest priority first):
 
 The interaction model is a **centralized command box** — three input modes:
 - `!command` — built-in graph operations (`!node add`, `!triple list`, `!backup now`, etc.)
-- `/*prompt-command` — user-defined file-based LLM prompt templates stored in `~/.config/semantika/commands/*.md`
+- `/prompt-command` — user-defined file-based LLM prompt templates stored in `~/.config/semantika/commands/*.md`
 - natural text — free-form chat with the built-in LLM via `!ask` or plain input
 
 The philosophy: *you see only what you need* — no sidebars, no bloat.
@@ -33,7 +33,7 @@ Semantika is the **third generation** in a toolchain. When implementing new feat
 | Project | Role | What to reference |
 |---------|------|-------------------|
 | **[A-semantika](../A-semantika)** | EO-first CLI ancestor | **Business logic**: NodeService, PredicateService, TripleService, Turtle export/import, review/proof mechanics, unit ontology. Forked with Esperanto→English migration. |
-| **[lighterbird](../lighterbird)** | Mature sister PIM app | **UX/LLM/DB**: Command-bar interaction, command tree + dispatch architecture, autocomplete engine, tab/result-panel UI, LLM provider integration (OpenAI/Ollama), text-based command generation, keyring-based config management, prompt commands (`/*` prefix). |
+| **[lighterbird](../lighterbird)** | Mature sister PIM app | **UX/LLM/DB**: Command-bar interaction, command tree + dispatch architecture, autocomplete engine, tab/result-panel UI, LLM provider integration (OpenAI/Ollama), text-based command generation, keyring-based config management, prompt commands (`/` prefix). |
 | **[lightercore](../lightercore)** | Shared core library | **DB/paths/exceptions/CRUD/backup/permissions/prompt_commands/user_config**: Canonical implementations consumed by both lighterbird and semantika. Replaces the earlier vendored A-core. |
 | **[A-core](../A-core)** | First-gen core library | Historical reference only. Superseded by lightercore. |
 
@@ -225,7 +225,7 @@ semantika/
 
 ---
 
-## Prompt Commands (`/*` prefix)
+## Prompt Commands (`/` prefix)
 
 Prompt commands are user-defined LLM prompt templates stored as Markdown files in the config directory. They provide a way to extend Semantika with custom reusable prompts.
 
@@ -248,11 +248,11 @@ Review the nodes added in the past $1 days and identify key themes.
 Then look at $2 area specifically.
 ```
 
-Usage: `/*weekly 7 productivity`
+Usage: `/weekly 7 productivity`
 
 ### Adding new prompt commands
 
-To add a new `/*` command, simply create a new `.md` file in the commands directory:
+To add a new `/` command, simply create a new `.md` file in the commands directory:
 
 ```bash
 # Pick a descriptive filename (no spaces) — the stem becomes the command name

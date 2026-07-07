@@ -9,7 +9,7 @@ Semantika is the **third-generation** of a knowledge-graph toolchain. Understand
 | Project | Role | Relationship |
 |---------|------|-------------|
 | **[A-semantika](../A-semantika)** | EO-first CLI ancestor | **Business-logic reference.** Forked and migrated from Esperanto to English. Core triple store services (NodeService, PredicateService, TripleService, ReviewService, ProofService, unit ontology) originate here. Refer to A-semantika when implementing graph operations, Turtle export, or review/proof mechanics. |
-| **[lighterbird](../lighterbird)** | Mature sister PIM app | **UX/LLM/DB reference.** The command-bar interaction model, command tree + dispatch architecture, autocomplete engine, tab/result-panel UI, LLM provider integration (OpenAI/Ollama with text-based command generation), and prompt commands (`/*` prefix) are all ported from lighterbird. Refer to lighterbird when designing frontend components, command routing, LLM tool-calling, or keyring-based config management. |
+| **[lighterbird](../lighterbird)** | Mature sister PIM app | **UX/LLM/DB reference.** The command-bar interaction model, command tree + dispatch architecture, autocomplete engine, tab/result-panel UI, LLM provider integration (OpenAI/Ollama with text-based command generation), and prompt commands (`/` prefix) are all ported from lighterbird. Refer to lighterbird when designing frontend components, command routing, LLM tool-calling, or keyring-based config management. |
 | **[lightercore](../lightercore)** | Shared core library | **Infrastructure reference.** DB, paths, exceptions, CRUD, backup, permissions, prompt_commands, LLM config, profile management come from lightercore — the canonical source shared with lighterbird. |
 | **Semantika (this repo)** | Modern English successor | **Combines the best of all.** Graph business logic from A-semantika + UX/LLM patterns from lighterbird + shared infrastructure from lightercore + Svelte 5 SPA frontend. |
 
@@ -20,7 +20,7 @@ Semantika uses a **centralized command box** with three input modes:
 ```
 ┌──────────────────────────────────────────────────────────┐
 │ ❯ !node add --label "Concept"            ← ! built-in   │
-│ ❯ /*weekly 7 productivity               ← /* prompt     │
+│ ❯ /weekly 7 productivity                ← / prompt      │
 │ ❯ What do I know about X?                ← natural text  │
 ├──────────────────────────────────────────────────────────┤
 │                                                          │
@@ -32,7 +32,7 @@ Semantika uses a **centralized command box** with three input modes:
 ```
 
 - `!command` — built-in graph operations
-- `/*name [args...]` — user-defined prompt commands (see below)
+- `/name [args...]` — user-defined prompt commands (see below)
 - Natural text — free-form LLM chat
 
 ## Features
@@ -74,7 +74,7 @@ Semantika uses a **centralized command box** with three input modes:
 - **Permission gate**: Write/destructive commands from LLM require user confirmation
 - As-you-type command suggestions with node/predicate/predicate-group completion — no memorisation needed
 
-### Prompt Commands (`/*` prefix)
+### Prompt Commands (`/` prefix)
 Prompt commands are user-defined LLM prompt templates stored as Markdown files:
 
 ```bash
@@ -88,7 +88,7 @@ Review the nodes added in the past $1 days and identify key themes.
 Then look at $2 area specifically.' > ~/.config/semantika/commands/weekly.md
 
 # Usage:
-/*weekly 7 productivity
+/weekly 7 productivity
 ```
 
 ### Backup & Recovery
@@ -111,7 +111,7 @@ semantika/
 ├── server/      FastAPI backend              — REST API, command engine, LLM provider,
 │   └── llm/     Ported from lighterbird      — user config, prompt commands
 └── web/         Svelte 5 SPA                 — Command-bar UI (lighterbird pattern),
-                                               rich results, /* prompt commands
+                                               rich results, / prompt commands
 ```
 
 ## Stack
@@ -365,4 +365,4 @@ CREATE TABLE triples (
 
 ## Status
 
-**Pre-alpha — core complete.** All core triple store operations (nodes, predicates, triples, review, proof, units, TTL import/export, trash, predicate trash) are implemented and tested. The LLM provider (OpenAI-compatible + Ollama) supports configurable profiles with keyring-based key storage and two-phase command generation with permission gate. File-based prompt commands (`/*` prefix) and user configuration (locale) are operational. **817 pytest tests pass.**
+**Pre-alpha — core complete.** All core triple store operations (nodes, predicates, triples, review, proof, units, TTL import/export, trash, predicate trash) are implemented and tested. The LLM provider (OpenAI-compatible + Ollama) supports configurable profiles with keyring-based key storage and two-phase command generation with permission gate. File-based prompt commands (`/` prefix) and user configuration (locale) are operational. **817 pytest tests pass.**

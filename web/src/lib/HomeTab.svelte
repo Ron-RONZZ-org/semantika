@@ -67,8 +67,8 @@
     messages = [...messages, { role: "user", text: trimmed }];
     hasSentLlmMessage = true;
 
-    // ── Prompt commands (/* prefix) → execute via prompt-commands API ──
-    if (trimmed.startsWith("/*")) {
+    // ── Prompt commands (/ prefix) → execute via prompt-commands API ───
+    if (trimmed.startsWith("/")) {
       try {
         const result = await execute(trimmed);
         popup.show(result.type, result.title, result.data);

@@ -1,4 +1,4 @@
-"""API routes for file-based prompt commands (/* prefix).
+"""API routes for file-based prompt commands (/ prefix).
 
 Provides three endpoints:
 - GET  /api/v1/prompt-commands/list      — autocomplete source
@@ -132,7 +132,7 @@ async def execute_endpoint(data: dict[str, Any]) -> dict[str, Any]:
     if not provider.available:
         return {
             "type": "status",
-            "title": f"/*{name}",
+            "title": f"/{name}",
             "data": {
                 "message": (
                     "LLM not configured. "
@@ -146,10 +146,10 @@ async def execute_endpoint(data: dict[str, Any]) -> dict[str, Any]:
     try:
         response = await provider.chat(messages)
     except Exception as exc:
-        logger.exception("Prompt command /*%s LLM call failed", name)
+        logger.exception("Prompt command /%s LLM call failed", name)
         return {
             "type": "status",
-            "title": f"/*{name}",
+            "title": f"/{name}",
             "data": {
                 "message": f"LLM call failed: {exc}",
             },
@@ -159,13 +159,13 @@ async def execute_endpoint(data: dict[str, Any]) -> dict[str, Any]:
         html = _render_markdown(response.strip())
         return {
             "type": "chat",
-            "title": f"/*{name}",
+            "title": f"/{name}",
             "data": {"html": html, "actions": []},
         }
 
     return {
         "type": "chat",
-        "title": f"/*{name}",
+        "title": f"/{name}",
         "data": {"html": "<p><em>(empty response)</em></p>", "actions": []},
     }
 
