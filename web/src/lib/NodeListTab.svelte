@@ -10,9 +10,14 @@
   } from "./listTabShared.svelte.js";
   import { getLocale } from "./userConfig.svelte.js";
 
-  let { data = {} } = $props();
+  let { data = [] } = $props();
 
-  let nodes = $derived(data?.nodes || data?.data || []);
+  let nodes = $derived(
+    Array.isArray(data) ? data
+    : Array.isArray(data?.nodes) ? data.nodes
+    : Array.isArray(data?.data) ? data.data
+    : []
+  );
   let showSearch = $state(false);
   let searchQuery = $state("");
   let searchTimeout;
@@ -26,12 +31,21 @@
 
   async function fetchNodes(query) {
     try {
-      const params = new URLSearchParams({ limit: "100" });
-      if (query && query.length >= 2) params.set("q", query);
-      const resp = await fetch(`/api/v1/graph/nodes?${params}`);
-      if (!resp.ok) return;
-      const result = await resp.json();
-      tabStore.update(tabStore.active.id, { nodes: result, data: result });
+      let items;
+      if (query && query.length >= 2) {
+        const params = new URLSearchParams({ q: query, limit: "100" });
+        const resp = await fetch(`/api/v1/graph/nodes/search?${params}`);
+        if (!resp.ok) return;
+        const result = await resp.json();
+        items = result.results || result.data || result;
+      } else {
+        const params = new URLSearchParams({ limit: "100" });
+        const resp = await fetch(`/api/v1/graph/nodes?${params}`);
+        if (!resp.ok) return;
+        const result = await resp.json();
+        items = result.nodes || result.results || result.data || result;
+      }
+      tabStore.update(tabStore.active.id, { nodes: items, data: items });
     } catch { /* silent */ }
   }
 

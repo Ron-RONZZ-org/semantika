@@ -8,8 +8,13 @@
     createCopyState,
   } from "./listTabShared.svelte.js";
 
-  let { data = {} } = $props();
-  let triples = $derived(data?.triples || data?.data || []);
+  let { data = [] } = $props();
+  let triples = $derived(
+    Array.isArray(data) ? data
+    : Array.isArray(data?.triples) ? data.triples
+    : Array.isArray(data?.data) ? data.data
+    : []
+  );
   let showSearch = $state(false);
   let searchQuery = $state("");
   let searchTimeout;
@@ -23,12 +28,21 @@
 
   async function fetchTriples(query) {
     try {
-      const params = new URLSearchParams({ limit: "100" });
-      if (query && query.length >= 2) params.set("subject", query);
-      const resp = await fetch(`/api/v1/graph/triples?${params}`);
-      if (!resp.ok) return;
-      const result = await resp.json();
-      tabStore.update(tabStore.active.id, { triples: result, data: result });
+      let items;
+      if (query && query.length >= 2) {
+        const params = new URLSearchParams({ subject: query, limit: "100" });
+        const resp = await fetch(`/api/v1/query/triples/search?${params}`);
+        if (!resp.ok) return;
+        const result = await resp.json();
+        items = result.triples || result.results || result.data || result;
+      } else {
+        const params = new URLSearchParams({ limit: "100" });
+        const resp = await fetch(`/api/v1/graph/triples?${params}`);
+        if (!resp.ok) return;
+        const result = await resp.json();
+        items = result.triples || result.results || result.data || result;
+      }
+      tabStore.update(tabStore.active.id, { triples: items, data: items });
     } catch { /* silent */ }
   }
 

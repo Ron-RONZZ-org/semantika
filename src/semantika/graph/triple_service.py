@@ -10,6 +10,7 @@ import sqlite3
 
 from semantika.core import SemantikaDB
 from semantika.core.crud import now
+from semantika.graph.helpers import escape_like
 from semantika.graph.node_helpers import get_label_from_node
 
 logger = logging.getLogger(__name__)
@@ -203,10 +204,14 @@ class TripleService:
         node/predicate IDs via prefix matching and FTS5 label search,
         then queries triples matching all provided criteria.
 
+        For the *object* parameter, if the text does not resolve to any
+        node, it falls back to ``object_value LIKE '%text%'`` so that
+        literal values (strings, numbers, etc.) can be searched directly.
+
         Args:
             subject: Partial subject node ID or label.
             predicate: Partial predicate ID or label.
-            object: Partial object node ID or label (URI objects only).
+            object: Partial object node ID, label, or literal value.
             limit: Maximum results.
             created_after: ISO 8601 start datetime (inclusive). Filters
                 triples where ``created_at >= created_after``.
@@ -224,6 +229,7 @@ class TripleService:
         subject_ids: list[str] | None = None
         predicate_ids: list[str] | None = None
         object_ids: list[str] | None = None
+        object_literals: list[str] | None = None
 
         # Resolve subject
         if subject:
@@ -251,7 +257,7 @@ class TripleService:
             else:
                 predicate_ids = [pred["predicate_id"]]
 
-        # Resolve object
+        # Resolve object — try node resolution first, fall back to literal LIKE
         if object:
             obj_node = node_svc.resolve_node_id_prefix(object)
             if not obj_node:
@@ -259,7 +265,10 @@ class TripleService:
                 if results:
                     object_ids = [r["node_id"] for r in results]
                 else:
-                    return []
+                    # Fall back to literal value LIKE matching so that
+                    # users can search for object text directly (e.g.
+                    # ``!triple search --object "some phrase"``).
+                    object_literals = [object]
             else:
                 object_ids = [obj_node["node_id"]]
 
@@ -277,12 +286,21 @@ class TripleService:
             clauses.append(f"predicate_id IN ({placeholders})")
             params.extend(predicate_ids)
 
+        # Object clause: URI matches (exact node IDs) OR literal LIKE matches
+        object_clauses: list[str] = []
         if object_ids:
             placeholders = ", ".join(["?"] * len(object_ids))
-            clauses.append(
-                f"(object_type = 'uri' AND object_value IN ({placeholders}))"
+            object_clauses.append(
+                f"object_value IN ({placeholders})"
             )
             params.extend(object_ids)
+        if object_literals:
+            for val in object_literals:
+                escaped = escape_like(val)
+                object_clauses.append("object_value LIKE ? ESCAPE '\\'")
+                params.append(f"%{escaped}%")
+        if object_clauses:
+            clauses.append(f"({' OR '.join(object_clauses)})")
 
         if created_after is not None:
             clauses.append("created_at >= ?")

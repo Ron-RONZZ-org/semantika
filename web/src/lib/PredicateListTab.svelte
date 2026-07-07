@@ -10,8 +10,13 @@
   } from "./listTabShared.svelte.js";
   import { getLocale } from "./userConfig.svelte.js";
 
-  let { data = {} } = $props();
-  let predicates = $derived(data?.predicates || data?.data || []);
+  let { data = [] } = $props();
+  let predicates = $derived(
+    Array.isArray(data) ? data
+    : Array.isArray(data?.predicates) ? data.predicates
+    : Array.isArray(data?.data) ? data.data
+    : []
+  );
   let showSearch = $state(false);
   let searchQuery = $state("");
   let searchTimeout;
@@ -25,12 +30,21 @@
 
   async function fetchPredicates(query) {
     try {
-      const params = new URLSearchParams({ limit: "100" });
-      if (query && query.length >= 2) params.set("q", query);
-      const resp = await fetch(`/api/v1/graph/predicates?${params}`);
-      if (!resp.ok) return;
-      const result = await resp.json();
-      tabStore.update(tabStore.active.id, { predicates: result, data: result });
+      let items;
+      if (query && query.length >= 2) {
+        const params = new URLSearchParams({ q: query, limit: "100" });
+        const resp = await fetch(`/api/v1/graph/predicates/search?${params}`);
+        if (!resp.ok) return;
+        const result = await resp.json();
+        items = result.results || result.data || result;
+      } else {
+        const params = new URLSearchParams({ limit: "100" });
+        const resp = await fetch(`/api/v1/graph/predicates?${params}`);
+        if (!resp.ok) return;
+        const result = await resp.json();
+        items = result.predicates || result.results || result.data || result;
+      }
+      tabStore.update(tabStore.active.id, { predicates: items, data: items });
     } catch { /* silent */ }
   }
 
