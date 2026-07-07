@@ -69,6 +69,18 @@
 
     // ── Prompt commands (/ prefix) → show in conversation, not popup ───
     if (trimmed.startsWith("/")) {
+      // Prompt commands always need an LLM — show setup modal if not configured
+      if (llmAvailable === null) {
+        await checkLlmAvailable();
+      }
+      if (llmAvailable === false) {
+        pendingMessage = trimmed;
+        messages = messages.slice(0, -1);
+        showLlmSetup = true;
+        isLoadingLlm = false;
+        return;
+      }
+
       isLoadingLlm = true;
       const msgIdx = messages.length;
       messages = [...messages, { role: "assistant", html: "", text: "", actions: [], _streaming: true }];
