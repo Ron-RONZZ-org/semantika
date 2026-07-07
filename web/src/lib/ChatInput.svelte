@@ -37,7 +37,7 @@
 
   function checkCommandMode() {
     isCommandMode = value.startsWith("!");
-    isPromptCommand = value.startsWith("/*");
+    isPromptCommand = value.startsWith("/") && !value.startsWith("//");
     if (!isCommandMode && !isPromptCommand) {
       suggestions = [];
       hints = [];
@@ -96,7 +96,7 @@
   function handleInput() {
     autoResize();
     checkCommandMode();
-    if (isCommandMode) updateSuggestions();
+    if (isCommandMode || isPromptCommand) updateSuggestions();
   }
 
   function getDataValue(dc) {

@@ -94,24 +94,15 @@ function findNodeIndex(tokens) {
 }
 
 /**
- * Get autocomplete completions for prompt commands (/* prefix).
+ * Get autocomplete completions for prompt commands (/ prefix).
  */
 export function getPromptCompletions(input) {
   const parsed = parsePromptCommand(input);
-  if (!parsed) {
-    const trimmed = input.trim();
-    if (trimmed.startsWith("/") && !trimmed.startsWith("/*")) {
-      return {
-        completions: promptCommands.map((c) => `/*${c.name}`),
-        hints: promptCommands.map((c) => c.description || ""),
-      };
-    }
-    return { completions: [], hints: [] };
-  }
+  if (!parsed) return { completions: [], hints: [] };
   const prefix = parsed.name.toLowerCase();
   if (!prefix) {
     return {
-      completions: promptCommands.map((c) => `/*${c.name}`),
+      completions: promptCommands.map((c) => `/${c.name}`),
       hints: promptCommands.map((c) => c.description || ""),
     };
   }
@@ -119,7 +110,7 @@ export function getPromptCompletions(input) {
     c.name.toLowerCase().startsWith(prefix),
   );
   return {
-    completions: matches.map((c) => `/*${c.name}`),
+    completions: matches.map((c) => `/${c.name}`),
     hints: matches.map((c) => c.description || ""),
   };
 }

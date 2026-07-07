@@ -4,14 +4,14 @@
  * The authoritative tree lives in the backend and is served via
  * ``GET /api/v1/command/tree``.
  *
- * ``/*`` prompt commands are also fetched from the backend and appended as
+ * ``/`` prompt commands are also fetched from the backend and appended as
  * a virtual root node. See :func:`initPromptCommands`.
  */
 
 export let commandTree = [];
 
 /**
- * List of prompt commands (/* prefix) — flat array of {name, description}.
+ * List of prompt commands (/ prefix) — flat array of {name, description}.
  * Populated by :func:`initPromptCommands`.
  * @type {{name:string, description:string}[]}
  */
@@ -26,7 +26,7 @@ export async function initCommandTree() {
 
 /**
  * Fetch prompt commands from the backend and populate the ``promptCommands``
- * list. Also appends a virtual ``/*`` node to ``commandTree`` for autocomplete.
+ * list. Also appends a virtual ``/`` node to ``commandTree`` for autocomplete.
  */
 export async function initPromptCommands() {
   try {
@@ -34,12 +34,12 @@ export async function initPromptCommands() {
     if (resp.ok) {
       const cmds = await resp.json();
       promptCommands = cmds;
-      // Append virtual /* root node
+      // Append virtual / root node
       if (cmds.length > 0) {
-        const existing = commandTree.find((n) => n.name === "/*");
+        const existing = commandTree.find((n) => n.name === "/");
         if (!existing) {
           commandTree.push({
-            name: "/*",
+            name: "/",
             description: "Prompt commands",
             children: cmds.map((c) => ({
               name: c.name,
