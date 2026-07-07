@@ -24,7 +24,8 @@ export async function execute(input) {
       });
       if (!resp.ok) {
         const detail = await resp.json().catch(() => ({}));
-        const msg = detail.detail?.error || detail.error || `HTTP ${resp.status}`;
+        const errDetail = detail.detail;
+        const msg = typeof errDetail === "string" ? errDetail : errDetail?.error || detail.error || `HTTP ${resp.status}`;
         return {
           type: "error",
           title: "Prompt Command Failed",
@@ -50,7 +51,8 @@ export async function execute(input) {
       });
       if (!resp.ok) {
         const detail = await resp.json().catch(() => ({}));
-        const msg = detail.detail?.error || detail.error || `HTTP ${resp.status}`;
+        const errDetail = detail.detail;
+        const msg = typeof errDetail === "string" ? errDetail : errDetail?.error || detail.error || `HTTP ${resp.status}`;
         return {
           type: "error",
           title: "Chat Failed",
