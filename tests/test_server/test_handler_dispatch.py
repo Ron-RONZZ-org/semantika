@@ -317,6 +317,31 @@ class TestCommandTree:
         names = [n["name"] for n in tree]
         assert len(names) == len(set(names)), "Duplicate top-level names in tree"
 
+    def test_tree_list_nodes_have_list_id_key(self):
+        """List commands expose ``listIdKey`` in the command tree."""
+        tree = get_command_tree()
+
+        def find_list_id_key(nodes: list, parent_path: str = "") -> list[tuple[str, str]]:
+            found = []
+            for n in nodes:
+                path = f"{parent_path}.{n['name']}" if parent_path else n["name"]
+                if n.get("children"):
+                    found.extend(find_list_id_key(n["children"], path))
+                elif n["name"] == "list":
+                    list_id = n.get("listIdKey")
+                    if list_id:
+                        found.append((path, list_id))
+            return found
+
+        list_keys = find_list_id_key(tree)
+        key_map = dict(list_keys)
+
+        # Core domains should have listIdKey
+        assert key_map.get("node.list") == "nodes"
+        assert key_map.get("predicate.list") == "predicates"
+        assert key_map.get("triple.list") == "triples"
+        assert key_map.get("unit.list") == "units"
+
 
 # ── Triple handler ambiguous resolution tests ─────────────────────────────
 # Note: These MUST run BEFORE TestRegistryReset since they depend on

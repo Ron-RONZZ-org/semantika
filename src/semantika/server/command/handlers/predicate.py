@@ -19,7 +19,8 @@ logger = logging.getLogger(__name__)
 
 
 @command("predicate.list", description="List all predicates",
-         permission_level=PermissionLevel.READ)
+         permission_level=PermissionLevel.READ,
+         list_id_key="predicates")
 def cmd_predicate_list(remaining: list[str], flags: dict[str, str]) -> dict:
     """List all predicates."""
     svc = get_services()

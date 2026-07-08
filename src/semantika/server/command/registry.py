@@ -197,6 +197,8 @@ def get_command_tree() -> list[dict[str, Any]]:
                         entry["flags"] = list(meta["flags"])
                     if meta.get("interactive"):
                         entry["interactive"] = True
+                    if meta.get("list_id_key"):
+                        entry["listIdKey"] = meta["list_id_key"]
                 else:
                     group_desc = _group_descriptions.get(".".join(parts[:idx + 1]), "")
                     entry["description"] = group_desc
@@ -237,6 +239,8 @@ def get_command_tree() -> list[dict[str, Any]]:
             result["flags"] = node["flags"]
         if node.get("interactive"):
             result["interactive"] = True
+        if node.get("listIdKey"):
+            result["listIdKey"] = node["listIdKey"]
         return result
 
     _command_tree_cache = sorted(

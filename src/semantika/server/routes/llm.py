@@ -12,7 +12,6 @@ WRITE-level tools gate behind user confirmation via ``/chat/resume``.
 
 from __future__ import annotations
 
-import json
 import logging
 
 from fastapi import APIRouter, HTTPException
@@ -25,6 +24,7 @@ from semantika.server.command.registry import (
     dispatch,
     get_command_definitions,
     get_command_level,
+    get_command_tree,
     get_handler_metadata,
 )
 from semantika.server.llm.provider import get_provider
@@ -274,80 +274,75 @@ async def confirm_command(req: ConfirmRequest) -> dict:
 # ── Stub fallback (when no LLM configured) ───────────────────────────────
 
 
-def stub_response(message: str) -> dict:
-    """Keyword-based stub responses when no LLM provider is configured."""
-    msg = message.strip().lower()
+_GREETINGS = {
+    "hi", "hello", "hey", "greetings", "howdy",
+    "good morning", "good afternoon", "good evening", "good day",
+}
 
-    if "stats" in msg or "count" in msg or "how many" in msg:
-        result = dispatch(["graph", "stats"], {})
-        stats = result.get("data", {})
-        return {
-            "reply": (
-                f"Your knowledge graph has **{stats.get('nodes', 0)}** nodes, "
-                f"**{stats.get('predicates', 0)}** predicates, and "
-                f"**{stats.get('triples', 0)}** triples."
-            )
-        }
 
-    if "search" in msg or "find" in msg or "look for" in msg:
-        for prefix in ["search for ", "search ", "find ", "look for "]:
-            if prefix in msg:
-                q = msg.split(prefix, 1)[1].strip()
-                break
-        else:
-            q = message.strip()
-        result = dispatch(["graph", "search"], {"q": q})
-        data = result.get("data", {})
-        nodes = data.get("nodes", [])
-        if nodes:
-            names = []
-            for n in nodes[:5]:
-                try:
-                    labels = json.loads(n["labels"]) if isinstance(n["labels"], str) else n["labels"]
-                    name = next(iter(labels.values())) if labels else n["node_id"]
-                except (json.JSONDecodeError, TypeError, StopIteration):
-                    name = n["node_id"]
-                names.append(f"- **{name}** (`{n['node_id'][:12]}...`)")
-            reply = f"I found {len(nodes)} matching nodes:\n" + "\n".join(names)
-            if len(nodes) > 5:
-                reply += f"\n…and {len(nodes) - 5} more."
-            return {"reply": reply}
-        return {"reply": f"I couldn't find anything matching '{q}'."}
-
-    if msg.startswith("help") or msg.startswith("what can you"):
-        return {
-            "reply": (
-                "I can help you explore your knowledge graph. Try:\n"
-                "- **!ask** \"how many nodes do I have?\"\n"
-                "- **!ask** \"search for something\"\n"
-                "- **!ask** \"show me everything about X\"\n"
-                "- Or type **!help** for all commands."
-            )
-        }
-
-    # Greetings and introductions
-    _greetings = {"hi", "hello", "hey", "greetings", "howdy",
-                  "good morning", "good afternoon", "good evening", "good day"}
-    if any(msg.startswith(g) for g in _greetings) or "who are you" in msg or "what are you" in msg:
-        return {
-            "reply": (
-                "Hi! I'm **Semantika AI**, your knowledge graph assistant. "
-                "I can help you build and explore structured knowledge as "
-                "**nodes** (concepts), **predicates** (relationships), and "
-                "**triples** (statements).\n\n"
-                "I'm not connected to an LLM provider yet, so I can only "
-                "respond to specific keywords. Here's what I can do:\n"
-                "- Ask about **stats** \u2014 \"how many nodes do I have?\"\n"
-                "- **Search** \u2014 \"find something\"\n"
-                "- **!help** \u2014 see all available commands\n"
-                "- **!llm configure** \u2014 connect an AI provider for full conversational chat"
-            )
-        }
-
+def _greeting_response() -> dict:
+    """Return a friendly greeting with setup instructions."""
     return {
         "reply": (
-            "I can help you explore your knowledge graph. "
-            "Try **stats**, **search**, or **!help** to get started, "
-            "or run **!llm configure** to connect an AI provider for full conversational chat."
+            "Hi! I'm **Semantika AI**, your knowledge graph assistant. "
+            "I help you build and explore structured knowledge as "
+            "**nodes** (concepts), **predicates** (relationships), and "
+            "**triples** (statements).\n\n"
+            "I'm not connected to an LLM provider yet. "
+            "Run **!llm configure** to connect an AI provider, "
+            "or type **!help** to see all available commands."
+        )
+    }
+
+
+def _help_response() -> dict:
+    """Return a help-oriented response."""
+    return {
+        "reply": (
+            "I can help you explore your knowledge graph. Try:\n"
+            "- **!ask** \"how many nodes do I have?\"\n"
+            "- **!ask** \"search for something\"\n"
+            "- **!ask** \"show me everything about X\"\n"
+            "- Or type **!help** for all commands."
+        )
+    }
+
+
+def _command_category_hint() -> str:
+    """Build a hint string from the current command tree top-level entries."""
+    try:
+        tree = get_command_tree()
+        names = [n["name"] for n in tree if n.get("description") and n.get("children")]
+        if names:
+            return ", ".join(names[:8])
+    except Exception:
+        pass
+    return "node, predicate, triple, graph"
+
+
+def stub_response(message: str) -> dict:
+    """Stub response when no LLM provider is configured.
+
+    Uses the live command tree to provide relevant hints, so the
+    response stays in sync as commands are added or removed.
+    """
+    msg = message.strip().lower()
+
+    # Greetings
+    if any(msg.startswith(g) for g in _GREETINGS) or "who are you" in msg or "what are you" in msg:
+        return _greeting_response()
+
+    # Help / what-can-you-do
+    if msg.startswith("help") or msg.startswith("what can you"):
+        return _help_response()
+
+    # Fallback: show available command categories
+    categories = _command_category_hint()
+    return {
+        "reply": (
+            f"I'm not connected to an LLM provider, so I can't answer "
+            f"freely. Available command areas: **{categories}**.\n\n"
+            f"Run **!llm configure** to connect an AI provider, "
+            f"or **!help** for all commands."
         )
     }

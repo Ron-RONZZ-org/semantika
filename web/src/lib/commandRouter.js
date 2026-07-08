@@ -104,12 +104,17 @@ function resolveListCommand(node, tokens) {
 }
 
 function resolveListIdKey(listTokens) {
-  const path = listTokens.join(" ");
-  if (/^node\s+list$/i.test(path)) return "nodes";
-  if (/^predicate\s+list$/i.test(path)) return "predicates";
-  if (/^triple\s+list$/i.test(path)) return "triples";
-  if (/^unit\s+list$/i.test(path)) return "units";
-  return null;
+  // Derive list key from the command domain (last token before "list").
+  // This avoids hardcoding every domain path — any domain ending in "list"
+  // gets a key of {domain}s (e.g., "node list" -> "nodes", "backup config list" -> "backups").
+  // For special plurals, override via node.listIdKey in the command tree metadata.
+  if (!listTokens || listTokens.length < 2) return null;
+  const domain = listTokens[listTokens.length - 2];
+  // Check if the list node has an explicit listIdKey in its metadata
+  const node = findNode(listTokens);
+  if (node?.listIdKey) return node.listIdKey;
+  // Default: simple English plural (append "s")
+  return domain ? domain + "s" : null;
 }
 
 function buildInitialData(node, leafName, paramTokens, flags) {
