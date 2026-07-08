@@ -202,7 +202,7 @@ semantika/
 │               ├── llm.py       # /api/v1/llm/* — chat, config, profiles, confirm
 │               ├── prompt_commands.py  # /api/v1/prompt-commands/* — list, expand, execute, SSE stream
 │               └── user_config.py      # /api/v1/user/config — locale, preferences
-├── tests/                       # pytest tests (817 tests)
+├── tests/                       # pytest tests (873 tests)
 │   ├── conftest.py
 │   ├── test_core/               # Backup, entry points, reset tests
 │   ├── test_graph/              # Service integration tests (nodes, predicates, triples, units, proofs)
