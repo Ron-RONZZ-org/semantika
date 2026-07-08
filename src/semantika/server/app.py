@@ -61,7 +61,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.warning("Backup scheduler shutdown failed (non-fatal)")
 
 
-def create_app() -> FastAPI:
+def create_app(no_hooks: bool = False) -> FastAPI:
+    """Create and return the Semantika FastAPI application.
+
+    Args:
+        no_hooks: If True, skip loading user-defined hooks from
+            ``~/.config/semantika/hooks.py``.  Useful for debugging
+            or when the hooks file is known to be problematic.
+    """
     app = FastAPI(title="Semantika", version="0.1.0", lifespan=lifespan)
 
     # CORS — restrict via SEMANTIKA_CORS_ORIGINS env var in production
@@ -76,7 +83,9 @@ def create_app() -> FastAPI:
 
     # API routes — import triggers @command decorators (system handlers register)
     from semantika.server.routes import command as cmd
-    from semantika.server.routes import files, graph, llm, prompt_commands, proof, query, review, unit
+    from semantika.server.routes import (
+        files, graph, llm, prompt_commands, proof, query, review, triple_templates, unit,
+    )
     from semantika.server.routes import user_config as ucfg
 
     app.include_router(graph.router, prefix="/api/v1/graph")
@@ -89,11 +98,15 @@ def create_app() -> FastAPI:
     app.include_router(files.router, prefix="/api/v1/files")
     app.include_router(prompt_commands.router)
     app.include_router(ucfg.router)
+    app.include_router(triple_templates.router)
 
-    # Freeze system handlers, then load user hooks
+    # Freeze system handlers, then load user hooks (unless --no-hooks)
     from semantika.server.command.registry import freeze_system_commands, load_user_hooks
     freeze_system_commands()
-    load_user_hooks()
+    if not no_hooks:
+        load_user_hooks()
+    else:
+        logger.info("User hooks disabled by --no-hooks flag")
 
     # Catch-all API 404 handler: unknown /api/* paths return JSON,
     # not index.html (which the static mount would otherwise serve).

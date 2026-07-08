@@ -12,6 +12,7 @@ All heavy logic is in ``prompt_commands_helpers.py``.
 
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 from pathlib import Path
@@ -225,7 +226,7 @@ async def execute_stream_endpoint(data: dict[str, Any]) -> StreamingResponse:
         try:
             messages = _build_prompt_messages(expanded)
             result = await provider.chat(messages, stream=True)
-            if hasattr(result, "__aiter__"):
+            if inspect.isasyncgen(result):
                 # Wrap in timeout to prevent hanging LLM connections
                 import asyncio
                 try:

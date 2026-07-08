@@ -168,3 +168,55 @@ def hooked_node_search(remaining, flags):
         )
         assert hooked_def is not None
         assert "[HOOKED]" in hooked_def.get("description", "")
+
+
+# ── Tests for the --no-hooks flag ──────────────────────────────────────────
+
+
+class TestNoHooksFlag:
+    """create_app(no_hooks=True) skips loading user hooks.
+
+    We use monkeypatching to verify that the ``load_user_hooks`` function
+    is or is not called depending on the flag, avoiding the need to
+    manage actual hooks.py files in the config dir.
+    """
+
+    def test_no_hooks_skips_load_user_hooks(self, monkeypatch: pytest.MonkeyPatch):
+        """With no_hooks=True, load_user_hooks is NOT called."""
+        calls = []
+
+        def _tracking_load():
+            calls.append(True)
+
+        monkeypatch.setattr(
+            "semantika.server.command.registry.load_user_hooks",
+            _tracking_load,
+        )
+
+        app = create_app(no_hooks=True)
+        assert len(calls) == 0, "load_user_hooks was called despite no_hooks=True"
+
+    def test_default_calls_load_user_hooks(self, monkeypatch: pytest.MonkeyPatch):
+        """Without no-hooks, load_user_hooks IS called (default)."""
+        calls = []
+
+        def _tracking_load():
+            calls.append(True)
+
+        monkeypatch.setattr(
+            "semantika.server.command.registry.load_user_hooks",
+            _tracking_load,
+        )
+
+        app = create_app()  # no_hooks defaults to False
+        assert len(calls) == 1, "load_user_hooks was not called by default"
+
+    def test_no_hooks_api_still_functions(self):
+        """The app returned by create_app(no_hooks=True) still serves API."""
+        app = create_app(no_hooks=True)
+        with TestClient(app) as client:
+            resp = client.get("/api/v1/command/tree")
+            assert resp.status_code == 200
+            tree = resp.json()
+            assert isinstance(tree, list)
+            assert len(tree) > 0

@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from semantika.graph.db import get_db_path, get_services
 
 MAX_RAW_RESULTS = 1000
+MAX_RAW_QUERY_LENGTH = 10_000  # prevent resource exhaustion from overly long/malicious queries
 
 router = APIRouter()
 
@@ -119,6 +120,8 @@ def raw_query(req: RawQuery):
     modifications are possible regardless of query content.  Only
     ``SELECT`` statements are accepted.
     """
+    if len(req.query) > MAX_RAW_QUERY_LENGTH:
+        raise HTTPException(400, f"Query exceeds maximum length of {MAX_RAW_QUERY_LENGTH} characters")
     stripped = _strip_sql_comments(req.query)
     if not stripped.upper().startswith("SELECT"):
         raise HTTPException(400, "Only SELECT queries are allowed")

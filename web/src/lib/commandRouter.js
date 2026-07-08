@@ -91,8 +91,11 @@ function resolveListCommand(node, tokens) {
   }
 
   if (node.interactive && tokens.length >= 2) {
-    const domain = tokens[0];
-    const listTokens = [domain, "list"];
+    // Use parent path instead of just the first token so that
+    // multi-word domains like "backup config add" resolve to
+    // "backup config list" rather than the incorrect "backup list".
+    const parentPath = tokens.slice(0, -1);
+    const listTokens = [...parentPath, "list"];
     const listNode = findNode(listTokens);
     if (listNode) return listTokens;
   }
