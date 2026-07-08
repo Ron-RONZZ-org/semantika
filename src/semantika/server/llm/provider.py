@@ -62,47 +62,13 @@ class LLMProvider(BaseLLMProvider):
         return defaults.get(self.config.provider_type, "gpt-4o")
 
     def _command_system_prompt(self, defs_text: str) -> str:
+        """Fallback prompt when tool definitions are unavailable."""
         return (
             "You are a command parser for the Semantika knowledge graph. "
-            "Translate the user's natural-language request into a structured "
-            "command from the list below.\n\n"
-            "CRITICAL RULE: You MUST ALWAYS pick a command. Never return {} "
-            "for questions about graph content (nodes, predicates, triples, "
-            "stats, content, domains, what exists, etc.). Even if the match "
-            "is imperfect, choose the closest available command.\n\n"
-            "RULES:\n"
-            "1. The command path MUST be an exact match from the available "
-            "commands. Do NOT invent new paths.\n"
-            "2. If the user asks about data (e.g. \"show/display/list X\", "
-            "\"what is/are X\", \"search/find X\", \"how many/count X\", "
-            "\"tell me about X\", \"what kind/type/domain of X\"), map to "
-            "the closest data-retrieval command. NEVER return {} for data "
-            "questions.\n"
-            "3. Respond with ONLY a valid JSON object — no markdown, no "
-            "explanation, no extra text. Schema:\n"
-            '{"tokens": ["exact", "path"], "flags": {"param": "value"}}\n\n'
-            "COMMON MAPPINGS (use these exact paths):\n"
-            '- "show/display/list all nodes" → {"tokens": ["node", "list"], "flags": {}}\n'
-            '- "search/find nodes about X" → {"tokens": ["node", "search"], "flags": {"q": "X"}}\n'
-            '- "add/create a node called/labeled X" → {"tokens": ["node", "add"], "flags": {"labels": "X"}}\n'
-            '- "delete/remove node X" → {"tokens": ["node", "delete"], "flags": {"id": "X"}}\n'
-            '- "show/display/list all predicates" → {"tokens": ["predicate", "list"], "flags": {}}\n'
-            '- "add/create a predicate called X" → {"tokens": ["predicate", "add"], "flags": {"predicate_id": "X"}}\n'
-            '- "show/display/list all triples" → {"tokens": ["triple", "list"], "flags": {}}\n'
-            '- "add a triple: X Y Z" → {"tokens": ["triple", "add"], "flags": {"subject_id": "X", "predicate_id": "Y", "object_value": "Z"}}\n'
-            '- "search/find triples about X" → {"tokens": ["triple", "search"], "flags": {"q": "X"}}\n'
-            '- "search/find X in the graph" → {"tokens": ["graph", "search"], "flags": {"q": "X"}}\n'
-            '- "stats/statistics/count/how many/what is the count of" → {"tokens": ["graph", "stats"], "flags": {}}\n'
-            '- "view/examine/show node X" → {"tokens": ["node", "view"], "flags": {"id": "X"}}\n'
-            '- "view/examine/show triple for X" → {"tokens": ["triple", "view"], "flags": {"id": "X"}}\n'
-            '- "export/download graph" → {"tokens": ["graph", "export"], "flags": {}}\n'
-            '- "import/load data" → {"tokens": ["graph", "import"], "flags": {}}\n'
-            '- "what domains/categories/types/topics/kinds of nodes" → {"tokens": ["node", "list"], "flags": {}}\n'
-            '- "what predicates/relationships/properties exist" → {"tokens": ["predicate", "list"], "flags": {}}\n'
-            '- "what triples/connections/links exist" → {"tokens": ["triple", "list"], "flags": {}}\n\n'
-            "NEVER return {} for questions about graph data. Always pick "
-            "the closest command.\n\n"
-            "Available commands (machine-readable):\n" + defs_text
+            "Translate the user's request into a structured command. "
+            "Respond with ONLY a valid JSON object:\n"
+            '{"tokens": ["exact", "path"], "flags": {"key": "value"}}\n\n'
+            "Available commands:\n" + defs_text
         )
 
     # ── Active config persistence ────────────────────────────────────────

@@ -718,3 +718,206 @@ class TestUnitService:
         # Verify it's listed
         ids = [u["node_id"] for u in us.list_units()]
         assert "unit:TESTUNIT" in ids
+
+
+class TestPredicateDeleteExact:
+    """Regression tests for predicate hard delete (exact match fix)."""
+
+    def test_hard_delete_by_exact_id(self, services: dict):
+        """Hard delete must not use LIKE prefix matching (bug fix)."""
+        ps = services["predicate"]
+        ps.create({"predicate_id": "ex:test"})
+        ps.create({"predicate_id": "ex:test_foo"})
+        ps.create({"predicate_id": "ex:test_something"})
+
+        assert ps.delete("ex:test", soft=False) is True
+        # Only ex:test should be deleted, not the prefix-matching ones
+        assert ps.get("ex:test_foo") is not None
+        assert ps.get("ex:test_something") is not None
+
+    def test_hard_delete_not_found(self, services: dict):
+        """Hard delete of nonexistent returns False."""
+        assert services["predicate"].delete("NONEXISTENT", soft=False) is False
+
+    def test_hard_delete_cascades_triples(self, services: dict):
+        """Hard delete removes triples referencing the predicate."""
+        ns = services["node"]
+        ps = services["predicate"]
+        ts = services["triple"]
+        ns.create({"node_id": "S", "labels": {"en": "S"}})
+        ns.create({"node_id": "O", "labels": {"en": "O"}})
+        ps.create({"predicate_id": "ex:del"})
+        ts.add("S", "ex:del", "O", object_type="uri")
+        assert ts.count() == 1
+
+        ps.delete("ex:del", soft=False)
+        assert ts.count() == 0
+
+
+class TestPredicateUpdateNplusOne:
+    """Regression tests for update_predicate_id collision detection (N+1 fix)."""
+
+    def test_rename_collision_detected(self, services: dict):
+        """Renaming predicate to collide with existing triples raises.
+
+        Creates triples with the new_id directly (without creating a predicate
+        with that ID) to reach the triple PK collision check.
+        """
+        ns = services["node"]
+        ps = services["predicate"]
+        ts = services["triple"]
+        ns.create({"node_id": "S", "labels": {"en": "S"}})
+        ns.create({"node_id": "O", "labels": {"en": "O"}})
+        ps.create({"predicate_id": "ex:old_p"})
+        ts.add("S", "ex:old_p", "O", object_type="uri")
+        # Insert a triple with the target predicate_id directly, disabling FK
+        from semantika.core.crud import now
+        services["triple"].db.execute("PRAGMA foreign_keys=OFF")
+        services["triple"].db.execute(
+            "INSERT OR IGNORE INTO triples (subject_id, predicate_id, object_value, object_type, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("S", "ex:new_p", "O", "uri", now()),
+        )
+        services["triple"].db.execute("PRAGMA foreign_keys=ON")
+
+        with pytest.raises(ValueError, match="collision"):
+            ps.update_predicate_id("ex:old_p", "ex:new_p")
+
+    def test_rename_no_collision_succeeds(self, services: dict):
+        """Renaming to a non-colliding predicate_id works."""
+        ps = services["predicate"]
+        ps.create({"predicate_id": "ex:old", "labels": {"en": "old"}})
+        result = ps.update_predicate_id("ex:old", "ex:new")
+        assert result["predicate_id"] == "ex:new"
+        assert ps.get("ex:old") is None
+
+    def test_rename_not_found(self, services: dict):
+        """Renaming nonexistent predicate raises."""
+        with pytest.raises(ValueError, match="not found"):
+            services["predicate"].update_predicate_id("NONEXISTENT", "new")
+
+    def test_rename_to_existing_raises(self, services: dict):
+        """Renaming to an existing predicate_id raises."""
+        ps = services["predicate"]
+        ps.create({"predicate_id": "ex:a"})
+        ps.create({"predicate_id": "ex:b"})
+        with pytest.raises(ValueError, match="already exists"):
+            ps.update_predicate_id("ex:a", "ex:b")
+
+
+class TestNodeHardDelete:
+    """Tests for node hard delete with TOCTOU fix."""
+
+    def test_hard_delete_removes_node(self, services: dict):
+        """Hard delete removes the node entirely."""
+        ns = services["node"]
+        ns.create({"node_id": "DELETE_ME", "labels": {"en": "Delete me"}})
+        assert ns.delete("DELETE_ME", soft=False) is True
+        assert ns.get("DELETE_ME") is None
+
+    def test_hard_delete_cascades_triples(self, services: dict):
+        """Hard delete removes triples referencing the node."""
+        ns = services["node"]
+        ts = services["triple"]
+        ns.create({"node_id": "SUBJ", "labels": {"en": "Subject"}})
+        ns.create({"node_id": "OBJ", "labels": {"en": "Object"}})
+        ps = services["predicate"]
+        ps.create({"predicate_id": "ex:p"})
+        ts.add("SUBJ", "ex:p", "OBJ", object_type="uri")
+        assert ts.count() >= 1
+
+        ns.delete("SUBJ", soft=False)
+        assert ts.count() == 0
+
+    def test_hard_delete_not_found(self, services: dict):
+        """Hard delete of nonexistent node returns False."""
+        assert services["node"].delete("NONEXISTENT", soft=False) is False
+
+
+class TestTurtleEdgeCases:
+    """Tests for Turtle import/export edge cases."""
+
+    def test_import_simple_turtle(self, services: dict):
+        """Import a minimal Turtle graph.
+
+        Note: import_turtle uses get_services() (global singleton),
+        so this test verifies it doesn't crash rather than data consistency.
+        """
+        from semantika.graph.triple_turtle import import_turtle
+
+        ttl = (
+            "@prefix ex: <http://example.org/> .\n"
+            "ex:Subject ex:predicate \"literal value\" .\n"
+        )
+        stats = import_turtle(ttl)
+        # The function uses get_services() global, so may be on a different DB.
+        # Assert at minimum it returns the expected dict structure.
+        assert isinstance(stats, dict)
+        assert "nodes_created" in stats
+        assert "triples_added" in stats
+
+    def test_export_basic(self, services: dict):
+        """Export Turtle includes triples."""
+        ns = services["node"]
+        ps = services["predicate"]
+        ts = services["triple"]
+        ns.create({"node_id": "TURTLE_SUB", "labels": {"en": "Turtle sub"}})
+        ps.create({"predicate_id": "ex:hasLabel"})
+        ts.add("TURTLE_SUB", "ex:hasLabel", "test label", object_type="literal")
+
+        ttl = ts.export_turtle()
+        assert "@prefix" in ttl
+        assert "TURTLE_SUB" in ttl or "turtle_sub" in ttl.lower()
+
+    def test_import_blank_nodes_handled(self, services: dict):
+        """Blank nodes in Turtle are handled without error."""
+        from semantika.graph.triple_turtle import import_turtle
+
+        ttl = (
+            "@prefix ex: <http://example.org/> .\n"
+            "[] ex:predicate \"blank subject\" .\n"
+            "ex:S ex:predicate [] .\n"
+        )
+        stats = import_turtle(ttl)
+        # Should not crash; blank nodes are handled as URIs
+        assert isinstance(stats, dict)
+
+
+class TestUserConfigDirect:
+    """Direct unit tests for user_config module (not through handlers)."""
+
+    def test_load_empty_config(self, tmp_path: Path):
+        """load_config returns empty dict when file missing."""
+        import os
+        os.environ["SEMANTIKA_DATA_DIR"] = str(tmp_path)
+        # Reimport with fresh env
+        import importlib
+        import semantika.server.user_config as ucfg
+        importlib.reload(ucfg)
+        assert ucfg.load_config() == {}
+
+    def test_save_and_load_roundtrip(self, tmp_path: Path):
+        """save_config followed by load_config returns same data."""
+        import os
+        os.environ["SEMANTIKA_DATA_DIR"] = str(tmp_path)
+        import importlib
+        import semantika.server.user_config as ucfg
+        importlib.reload(ucfg)
+
+        cfg = {"locale": "fr", "theme": "dark"}
+        ucfg.save_config(cfg)
+        loaded = ucfg.load_config()
+        assert loaded == cfg
+
+    def test_set_locale(self, tmp_path: Path):
+        """set_locale updates and persists locale."""
+        import os
+        os.environ["SEMANTIKA_DATA_DIR"] = str(tmp_path)
+        import importlib
+        import semantika.server.user_config as ucfg
+        importlib.reload(ucfg)
+
+        ucfg.set_locale("de")
+        assert ucfg.get_locale() == "de"
+        loaded = ucfg.load_config()
+        assert loaded.get("locale") == "de"

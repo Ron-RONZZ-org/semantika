@@ -69,7 +69,7 @@ def reset_to_fresh_state(
 
     # 4. Clear keyring credentials
     try:
-        import keyring as _kr  # noqa: N812
+        import keyring as _kr
     except ImportError:
         logger.debug("keyring not available — skipping credential cleanup")
     else:

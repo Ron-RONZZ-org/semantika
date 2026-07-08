@@ -1,10 +1,11 @@
 """Command handlers for predicate and predicate-group management."""
 
 from __future__ import annotations
-from lightercore.permissions import PermissionLevel
 
 import json
 import logging
+
+from lightercore.permissions import PermissionLevel
 
 from semantika.graph.db import get_services
 from semantika.server.command.errors import CommandValidationError

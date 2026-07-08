@@ -203,7 +203,7 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
         updates["updated_at"] = ts
 
         set_parts = [f"{k} = ?" for k in updates]
-        params = list(updates.values()) + [node_id]
+        params = [*list(updates.values()), node_id]
         sql = f"UPDATE nodes SET {', '.join(set_parts)} WHERE node_id = ?"
 
         with self.db.transaction() as conn:
@@ -256,14 +256,13 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
         if soft and self._trash_table:
             self._move_to_trash(node_id)
         else:
-            saved_rowid = None
-            row = self.db.execute_one(
-                f"SELECT rowid FROM {self.table} WHERE node_id = ?", (node_id,)
-            )
-            if row:
-                saved_rowid = row["rowid"]
-
             with self.db.transaction() as conn:
+                # Fetch rowid inside transaction to avoid TOCTOU
+                row = conn.execute(
+                    f"SELECT rowid FROM {self.table} WHERE node_id = ?", (node_id,)
+                ).fetchone()
+                saved_rowid = row[0] if row else None
+
                 # Remove referencing triples first to avoid orphaned rows
                 conn.execute(
                     "DELETE FROM triples WHERE subject_id = ? "
@@ -280,8 +279,8 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
                     f"DELETE FROM {self.table} WHERE node_id = ?", (node_id,)
                 )
 
-            if saved_rowid is not None:
-                self._remove_fts_by_rowid(node_id, saved_rowid)
+                if saved_rowid is not None:
+                    self._remove_fts_by_rowid(node_id, saved_rowid)
 
         self._post_delete(node_id, old_data)
         return True
@@ -350,7 +349,7 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
 
     def get_trash_older_than(self, days: int, limit: int = 1000) -> list[dict]:
         """Get trash entries older than *days*."""
-        cutoff = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=days)
+        cutoff = _dt.datetime.now(_dt.UTC) - _dt.timedelta(days=days)
         return self.db.execute(
             "SELECT * FROM nodes_trash WHERE deleted_at < ? LIMIT ?",
             (cutoff.isoformat(), limit),

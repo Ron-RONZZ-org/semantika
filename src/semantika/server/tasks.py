@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 logger = logging.getLogger(__name__)
 
@@ -64,12 +64,11 @@ class BackupScheduler:
             logger.info("[backup] Backup scheduler stopped")
 
     def _run(self) -> None:
-        """Main loop: immediate check, then periodic checks."""
+        """Main loop: periodic checks every CHECK_INTERVAL seconds."""
         logger.info("[backup] Worker loop started")
 
-        # On startup, run an immediate check for overdue strategies
-        self._check_and_backup_if_due()
-
+        # Wait first interval, then check — avoids duplicate immediate check.
+        # The first check will run after the initial wait.
         while not self._stop_event.is_set():
             try:
                 self._check_and_backup_if_due()
@@ -94,7 +93,7 @@ class BackupScheduler:
 
             cfg = load_config()
             strategies = cfg.get("strategies", [])
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             triggered: list[str] = []
 
             for s in strategies:

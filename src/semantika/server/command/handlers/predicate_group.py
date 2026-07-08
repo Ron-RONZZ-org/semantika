@@ -4,9 +4,10 @@ Extracted from predicate.py to follow "one concern, one root command" principle.
 """
 
 from __future__ import annotations
-from lightercore.permissions import PermissionLevel
 
 import logging
+
+from lightercore.permissions import PermissionLevel
 
 from semantika.graph.db import get_services
 from semantika.server.command.errors import CommandValidationError

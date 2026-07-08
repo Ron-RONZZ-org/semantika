@@ -5,8 +5,8 @@ Vendored from A-core's ``A.data.search.FTSConfig``.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 
 @dataclass

@@ -6,7 +6,8 @@ Ported from A-semantika's ``_unit_builder.py`` with EO→EN migration.
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from semantika.core.crud import now
 from semantika.graph.unit_errors import UnitNotFoundError

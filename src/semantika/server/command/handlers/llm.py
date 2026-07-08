@@ -1,9 +1,10 @@
 """Command handlers for LLM configuration commands."""
 
 from __future__ import annotations
-from lightercore.permissions import PermissionLevel
 
 from typing import Any
+
+from lightercore.permissions import PermissionLevel
 
 from semantika.server.command.errors import CommandValidationError
 from semantika.server.command.registry import command, group_command

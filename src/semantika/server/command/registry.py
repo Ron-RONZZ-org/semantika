@@ -11,7 +11,8 @@ The command tree for frontend autocomplete is auto-generated from registrations.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from lightercore.permissions import PermissionLevel
 
@@ -436,7 +437,7 @@ def load_user_hooks() -> None:
     :func:`freeze_system_commands` has been called.
     """
     import importlib.util
-    from pathlib import Path
+
     from lightercore.paths import config_dir
 
     hooks_path = config_dir() / "hooks.py"
