@@ -350,3 +350,91 @@ def dispatch_path(path: str, flags: dict[str, str]) -> dict:
     """
     tokens = path.split(".")
     return dispatch(tokens, flags)
+
+
+# ── User hooks support ──────────────────────────────────────────────────────
+
+_system_commands: dict[str, tuple[Callable, dict[str, Any]]] = {}
+"""Snapshot of system commands taken before user hooks are loaded.
+Used by :func:`call_system_command` for delegation."""
+
+
+def freeze_system_commands() -> None:
+    """Snapshot all currently registered commands as the "system" baseline.
+
+    Called **before** loading user hooks from the config directory so
+    that user-defined command handlers can delegate to the original
+    system implementation via :func:`call_system_command`.
+    """
+    _system_commands.clear()
+    _system_commands.update(_commands)
+
+
+def call_system_command(
+    path: str,
+    remaining: list[str] | None = None,
+    flags: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Call the original system handler for *path*, bypassing user overrides.
+
+    Useful inside user-defined hook handlers that want to extend rather
+    than fully replace a system command::
+
+        from semantika.server.command.registry import (
+            command, call_system_command,
+        )
+
+        @command("node.add", ...)
+        def my_node_add(remaining, flags):
+            # custom logic, then delegate
+            return call_system_command("node.add", remaining, flags)
+
+    Args:
+        path: Dot-separated command path (e.g. ``"node.add"``).
+        remaining: Positional tokens to forward.
+        flags: Flags dict to forward.
+
+    Returns:
+        The result dict from the original handler.
+
+    Raises:
+        CommandNotFound: If *path* is not a registered system command.
+    """
+    entry = _system_commands.get(path)
+    if entry is None:
+        raise CommandNotFound(path.split("."))
+    handler_fn, metadata = entry
+    return handler_fn(remaining or [], flags or {})
+
+
+def load_user_hooks() -> None:
+    """Load and register user-defined command hooks from the config dir.
+
+    Scans ``~/.config/semantika/hooks.py`` (or ``SEMANTIKA_CONFIG_DIR``)
+    and imports it.  Any ``@command`` / ``@group_command`` decorators in
+    that file will register (or override) handlers in the command registry.
+
+    This function should be called **once** during application startup,
+    **after** all system handlers are registered and
+    :func:`freeze_system_commands` has been called.
+    """
+    import importlib.util
+    from pathlib import Path
+    from lightercore.paths import config_dir
+
+    hooks_path = config_dir() / "hooks.py"
+    if not hooks_path.exists():
+        return
+
+    spec = importlib.util.spec_from_file_location(
+        "semantika_user_hooks", hooks_path,
+    )
+    if spec is None or spec.loader is None:
+        logger = __import__("logging").getLogger(__name__)
+        logger.warning("Could not load user hooks from %s", hooks_path)
+        return
+
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    logger = __import__("logging").getLogger(__name__)
+    logger.info("Loaded user hooks from %s", hooks_path)

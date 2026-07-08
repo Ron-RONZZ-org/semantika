@@ -62,6 +62,7 @@ FastAPI web server: application factory, API routes, middleware, command engine,
   3. Command dispatched and result summarised by LLM
   4. If no command matched, respond as plain chat
   5. `POST /api/v1/llm/confirm` — execute a destructive command after user approval
+- **User hooks**: ``~/.config/semantika/hooks.py`` is loaded at startup (after system commands register). Any ``@command`` decorator in that file registers (or overrides) a handler. Overridden commands can delegate to the original via ``call_system_command()``. See ``registry.py:freeze_system_commands`` / ``call_system_command`` / ``load_user_hooks``.
 - **Permission gate**: The LLM chat route checks command `permission_level` before dispatch. Commands with level >= DESTRUCTIVE return `{"type": "confirm", ...}` instead of executing immediately. Permission levels come from `@command(permission_level=...)` metadata; unset defaults to `WRITE`.
 - **LLM provider architecture**: Uses `lightercore.llm` for ProviderConfig, keyring persistence, ProfileManager, and shared chat/command-generation infrastructure. The `LLMProvider` class is a singleton managed by `get_provider()` / `reset_provider()` — always use these instead of `LLMProvider()` directly.
 - **Prompt command files**: Live at `~/.config/semantika/commands/*.md`. First line must start with `# ` (description). Positional args: `$1`, `$2`, …, `$9` and `$ARGUMENTS` catch-all. Parsed by `lightercore.prompt_commands`.
