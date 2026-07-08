@@ -1141,6 +1141,45 @@ async function run() {
   });
 
   // ═══════════════════════════════════════════
+  //  CONFIRM_TOOL RESUME ENDPOINTS
+  // ═══════════════════════════════════════════
+  console.log("\n═══ CONFIRM_TOOL RESUME ═══");
+
+  await test("API: /chat/resume with invalid session returns 404", async () => {
+    const r = await page.evaluate(() =>
+      fetch("/api/v1/llm/chat/resume", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: "nonexistent", confirmed: true }),
+      }).then(async (r) => r.status),
+    );
+    assert.equal(r, 404, `Expected 404, got ${r}`);
+  });
+
+  await test("API: /execute/resume with invalid session returns 404", async () => {
+    const r = await page.evaluate(() =>
+      fetch("/api/v1/prompt-commands/execute/resume", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: "nonexistent", confirmed: true }),
+      }).then(async (r) => r.status),
+    );
+    assert.equal(r, 404, `Expected 404, got ${r}`);
+  });
+
+  await test("API: /confirm dispatches command", async () => {
+    const r = await page.evaluate(() =>
+      fetch("/api/v1/llm/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tokens: ["graph", "stats"], flags: {} }),
+      }).then(async (r) => ({ status: r.status, data: await r.json() })),
+    );
+    assert.equal(r.status, 200);
+    assert.equal(r.data.type, "status", `Expected status, got ${JSON.stringify(r.data)}`);
+  });
+
+  // ═══════════════════════════════════════════
   //  SUMMARY
   // ═══════════════════════════════════════════
   console.log(`\n${"=".repeat(50)}`);

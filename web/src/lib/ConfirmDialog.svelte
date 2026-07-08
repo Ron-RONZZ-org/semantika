@@ -3,6 +3,7 @@
 
   let {
     message = "Confirm?",
+    batch = [],
     onConfirm = () => {},
     onDismiss = () => {},
     onFeedback = null,
@@ -69,6 +70,19 @@
       </div>
     {:else}
       <p>{message}</p>
+      {#if batch.length > 0}
+        <div class="batch-list">
+          {#each batch as item, i}
+            <div class="batch-item">
+              <span class="batch-idx">{i + 1}.</span>
+              <code class="batch-cmd">!{item.tokens?.join(" ") || ""}</code>
+              {#if item.description}
+                <span class="batch-desc">{item.description}</span>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      {/if}
       <div class="actions">
         <button class="btn danger" onclick={onConfirm} bind:this={confirmBtn}>Confirm</button>
         <button class="btn" onclick={handleDismiss}>
@@ -100,6 +114,47 @@
   .btn.primary { background: #2a4a5a; color: #e0e0e0; border-color: #3a6a7a; }
   .btn.primary:hover { background: #3a5a6a; }
   .btn:disabled { opacity: 0.4; cursor: default; }
+
+  .batch-list {
+    max-height: 200px;
+    overflow-y: auto;
+    margin-bottom: 0.75rem;
+    text-align: left;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 0.25rem 0;
+  }
+  .batch-item {
+    display: flex;
+    gap: 0.5rem;
+    align-items: baseline;
+    padding: 0.25rem 0.6rem;
+    font-size: 0.82rem;
+    color: #ccc;
+  }
+  .batch-item:nth-child(odd) {
+    background: rgba(255,255,255,0.03);
+  }
+  .batch-idx {
+    color: #888;
+    min-width: 1.5rem;
+    text-align: right;
+    flex-shrink: 0;
+  }
+  .batch-cmd {
+    background: #2a2a3e;
+    padding: 0.1rem 0.35rem;
+    border-radius: 3px;
+    font-size: 0.8rem;
+    color: #b8b8d8;
+    flex-shrink: 0;
+  }
+  .batch-desc {
+    color: #999;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 
   .feedback-heading {
     font-size: 0.9rem;
