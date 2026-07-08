@@ -53,7 +53,11 @@ class TestCallSystemCommand:
     """call_system_command invokes the original system handler."""
 
     @pytest.fixture(autouse=True)
-    def _freeze(self):
+    def _setup(self):
+        """Reset services cache and freeze system commands before each test."""
+        from semantika.graph.db import reset_services, close_db
+        close_db()
+        reset_services()
         freeze_system_commands()
 
     def test_calls_system_handler(self):

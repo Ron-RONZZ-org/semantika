@@ -5,7 +5,6 @@ Ported from A-semantika's ``_predicate_service.py`` with EO→EN migration.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import logging
 import sqlite3
@@ -13,6 +12,7 @@ from typing import Any
 
 from semantika.core import SemantikaDB
 from semantika.core.crud import CRUDService, now
+from semantika.core.fts import FTS5Manager
 from semantika.graph.constants import FTS5_KEYWORDS
 from semantika.graph.helpers import escape_like
 
@@ -26,6 +26,20 @@ class PredicateService(CRUDService):
         super().__init__(db=db, table="predicates", pk_column="predicate_id",
                          trash_table="predicates_trash")
         self._fts_initialized: bool = False
+        self._fts_mgr_cache: FTS5Manager | None = None
+
+    @property
+    def _fts_mgr(self) -> FTS5Manager:
+        """Lazy-initialised shared FTS5 manager for predicates."""
+        if self._fts_mgr_cache is None:
+            self._fts_mgr_cache = FTS5Manager(
+                db=self.db,
+                fts_table="predicates_fts",
+                content_table="predicates",
+                pk_column="predicate_id",
+                fts_columns=["labels", "descriptions", "aliases"],
+            )
+        return self._fts_mgr_cache
 
     # ── Delete / Trash ──────────────────────────────────────────────────
 
@@ -100,7 +114,7 @@ class PredicateService(CRUDService):
             self.db.execute("DELETE FROM predicates_trash")
         return count
 
-    # ── FTS5 Management ──────────────────────────────────────────────
+    # ── FTS5 Management (delegated to FTS5Manager) ────────────────────
 
     def _ensure_fts(self) -> bool:
         """Ensure predicates_fts exists and is populated. Returns True if usable.
@@ -116,41 +130,24 @@ class PredicateService(CRUDService):
         )
         if not vt:
             try:
-                self.db.execute(
-                    "CREATE VIRTUAL TABLE predicates_fts USING fts5("
-                    "  predicate_id UNINDEXED, labels, descriptions, aliases,"
-                    "  content=predicates, content_rowid=rowid, tokenize='unicode61'"
-                    ")"
-                )
+                self._fts_mgr.ensure()
             except sqlite3.DatabaseError:
                 return False
-
-        count = self.db.execute_one("SELECT COUNT(*) AS cnt FROM predicates_fts")
-        if count and count["cnt"] == 0:
-            self._populate_fts()
-
+        else:
+            # Table exists — populate if empty
+            count = self.db.execute_one("SELECT COUNT(*) AS cnt FROM predicates_fts")
+            if count and count["cnt"] == 0:
+                self._fts_mgr.populate()
         self._fts_initialized = True
         return True
 
     def _populate_fts(self) -> None:
         """Populate predicates_fts from content table."""
-        try:
-            self.db.execute(
-                "INSERT INTO predicates_fts (rowid, predicate_id, labels, descriptions, aliases)"
-                " SELECT rowid, predicate_id, labels, descriptions, aliases FROM predicates"
-            )
-        except sqlite3.DatabaseError:
-            logger.warning("Predicate FTS population failed — LIKE fallback will work")
+        self._fts_mgr.populate()
 
     def _rebuild_fts(self) -> None:
         """Rebuild the predicates FTS index from all content."""
-        try:
-            self.db.execute(
-                "INSERT INTO predicates_fts(predicates_fts) VALUES('rebuild')"
-            )
-        except sqlite3.DatabaseError:
-            self.db.execute("DROP TABLE IF EXISTS predicates_fts")
-            self._ensure_fts()
+        self._fts_mgr.rebuild()
 
     def _index_fts(self, predicate_id: str,
                    conn: sqlite3.Connection) -> None:
@@ -162,20 +159,7 @@ class PredicateService(CRUDService):
             predicate_id: The predicate ID to index.
             conn: Active database connection (required).
         """
-        row = conn.execute(
-            "SELECT rowid, predicate_id, labels, descriptions, aliases"
-            " FROM predicates WHERE predicate_id = ?",
-            (predicate_id,),
-        ).fetchone()
-        if not row:
-            return
-        with contextlib.suppress(sqlite3.DatabaseError):
-            conn.execute(
-                "INSERT INTO predicates_fts(rowid, predicate_id, labels, descriptions, aliases)"
-                " VALUES(?, ?, ?, ?, ?)",
-                (row[0], predicate_id,
-                 row[2] or "", row[3] or "", row[4] or ""),
-            )
+        self._fts_mgr.index(predicate_id, conn=conn)
 
     def _remove_from_fts(self, predicate_id: str,
                          conn: sqlite3.Connection,
@@ -189,17 +173,7 @@ class PredicateService(CRUDService):
             conn: Active database connection (required).
             rowid: Pre-fetched rowid (avoids a SELECT if known).
         """
-        if rowid is None:
-            row = conn.execute(
-                "SELECT rowid FROM predicates WHERE predicate_id = ?",
-                (predicate_id,),
-            ).fetchone()
-            if not row:
-                return False
-            rowid_val = row[0]
-        else:
-            rowid_val = rowid
-        return self._remove_fts_by_rowid(predicate_id, rowid_val, conn)
+        return self._fts_mgr.remove(predicate_id, conn=conn, rowid=rowid)
 
     def _remove_fts_by_rowid(self, predicate_id: str, rowid: int,
                              conn: sqlite3.Connection) -> bool:
@@ -212,31 +186,11 @@ class PredicateService(CRUDService):
             rowid: Rowid of the predicate to remove from FTS.
             conn: Active database connection (required).
         """
-        try:
-            conn.execute(
-                "INSERT INTO predicates_fts(predicates_fts, rowid) VALUES('delete', ?)",
-                (rowid,),
-            )
-            return True
-        except sqlite3.DatabaseError as exc:
-            logger.warning("FTS 'delete' failed for %s (rowid=%s): %s", predicate_id, rowid, exc)
-            return False
+        return self._fts_mgr.remove_by_rowid(predicate_id, rowid, conn=conn)
 
     def _sanitize_fts_query(self, query: str) -> str:
         """Sanitize a user query string for FTS5 MATCH."""
-        if not query or "_" in query or "%" in query:
-            return ""
-        safe_tokens = []
-        for word in query.strip().split():
-            cleaned = "".join(c for c in word if c.isalnum())
-            if not cleaned:
-                continue
-            if cleaned.upper() in FTS5_KEYWORDS:
-                cleaned = cleaned.lower()
-            safe_tokens.append(f"{cleaned}*")
-        if not safe_tokens:
-            return ""
-        return " OR ".join(safe_tokens)
+        return FTS5Manager.sanitize_query(query)
 
     # ── Create / Update / Search with FTS5 support ────────────────────
 

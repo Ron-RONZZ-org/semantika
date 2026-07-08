@@ -119,16 +119,65 @@ def _find_triple(
     return triple
 
 
+# ── Batch triple deletion helper ──────────────────────────────────────────
+
+
+def _batch_delete_triples(svc: dict, triples: list[dict]) -> int:
+    """Delete multiple triples with proof cascade.
+
+    Iterates over *triples*, cascade-deleting proofs then removing each
+    triple.  Returns the number of triples deleted.
+    """
+    count = 0
+    for t in triples:
+        svc["proof"].cascade_delete_proofs(
+            t["subject_id"], t["predicate_id"], t["object_value"],
+        )
+        svc["triple"].remove(
+            subject_id=t["subject_id"],
+            predicate_id=t["predicate_id"],
+            object_value=t["object_value"],
+            object_type=t.get("object_type", "uri"),
+        )
+        count += 1
+    return count
+
+
 # ── Triple commands ───────────────────────────────────────────────────────
 
 
 @command("triple.list", description="List all triples",
-         permission_level=PermissionLevel.READ)
+         permission_level=PermissionLevel.READ,
+         flags=[{"name": "limit", "type": "number", "help": "Max results (default 100)"},
+                {"name": "offset", "type": "number", "help": "Result offset for pagination (default 0)"}])
 def cmd_triple_list(remaining: list[str], flags: dict[str, str]) -> dict:
-    """List triples, optionally filtered by subject."""
+    """List triples with optional pagination (--limit, --offset)."""
     svc = get_services()
-    triples = svc["triple"].db.execute("SELECT * FROM triples ORDER BY subject_id, predicate_id LIMIT ?", (100,))
-    return {"type": "triple-list", "data": triples}
+    raw_limit = flags.get("limit", "100")
+    raw_offset = flags.get("offset", "0")
+    try:
+        limit = int(raw_limit)
+        offset = int(raw_offset)
+    except ValueError:
+        raise CommandValidationError("--limit and --offset must be integers")
+    if limit < 1:
+        raise CommandValidationError("--limit must be >= 1")
+    if offset < 0:
+        raise CommandValidationError("--offset must be >= 0")
+
+    triples = svc["triple"].db.execute(
+        "SELECT * FROM triples ORDER BY subject_id, predicate_id LIMIT ? OFFSET ?",
+        (limit, offset),
+    )
+    count_row = svc["triple"].db.execute_one("SELECT COUNT(*) AS cnt FROM triples")
+    total = count_row["cnt"] if count_row else 0
+    return {
+        "type": "triple-list",
+        "data": triples,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @command("triple.search", description="Search triples by subject/predicate/object",
@@ -201,7 +250,7 @@ def cmd_triple_search(remaining: list[str], flags: dict[str, str]) -> dict:
     where = " OR ".join(clauses)
     rows = svc["triple"].db.execute(
         f"SELECT DISTINCT * FROM triples WHERE {where} ORDER BY subject_id, predicate_id LIMIT ?",
-        params + [limit],
+        [*params, limit],
     )
     return {"type": "triple-list", "data": rows, "label": f"Triples matching '{q}'"}
 
@@ -305,21 +354,11 @@ def cmd_triple_delete(remaining: list[str], flags: dict[str, str]) -> dict:
         return {"type": "status", "data": {"message": "Triple deleted"}}
     elif predicate:
         triples = svc["triple"].get_by_sp(subject, predicate)
-        count = 0
-        for t in triples:
-            svc["proof"].cascade_delete_proofs(t["subject_id"], t["predicate_id"], t["object_value"])
-            svc["triple"].remove(subject_id=t["subject_id"], predicate_id=t["predicate_id"],
-                                 object_value=t["object_value"], object_type=t.get("object_type", "uri"))
-            count += 1
+        count = _batch_delete_triples(svc, triples)
         return {"type": "status", "data": {"message": f"Deleted {count} triple(s)"}}
     else:
         triples = svc["triple"].get_by_subject(subject)
-        count = 0
-        for t in triples:
-            svc["proof"].cascade_delete_proofs(t["subject_id"], t["predicate_id"], t["object_value"])
-            svc["triple"].remove(subject_id=t["subject_id"], predicate_id=t["predicate_id"],
-                                 object_value=t["object_value"], object_type=t.get("object_type", "uri"))
-            count += 1
+        count = _batch_delete_triples(svc, triples)
         return {"type": "status", "data": {"message": f"Deleted {count} triple(s)"}}
 
 

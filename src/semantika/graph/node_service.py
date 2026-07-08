@@ -338,6 +338,135 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
             tuple(node_ids),
         )
 
+    def batch_delete(self, node_ids: list[str], soft: bool = True) -> tuple[int, list[str]]:
+        """Delete multiple nodes in a single transaction.
+
+        Performs all deletions (FTS removal, triple cleanup, proof cascade,
+        trash insertion, and source deletion) inside one transaction for
+        efficiency compared to calling :meth:`delete` in a loop.
+
+        Args:
+            node_ids: List of node IDs to delete.
+            soft: If True (default), moves to trash; if False, permanent delete.
+
+        Returns:
+            Tuple of ``(deleted_count, error_messages)``.
+        """
+        if not node_ids:
+            return (0, [])
+
+        # Pre-fetch all entries to validate existence
+        all_placeholders = ", ".join(["?"] * len(node_ids))
+        existing = self.db.execute(
+            f"SELECT node_id, rowid, labels, label_text, definitions, "
+            f"definition_text, created_at, updated_at "
+            f"FROM {self.table} WHERE node_id IN ({all_placeholders})",
+            tuple(node_ids),
+        )
+        existing_map = {r["node_id"]: dict(r) for r in existing}
+        valid_ids = [nid for nid in node_ids if nid in existing_map]
+        if not valid_ids:
+            return (0, [f"Node not found: {nid}" for nid in node_ids if nid not in existing_map])
+
+        # Recompute placeholders based on valid_ids (fewer than node_ids if some were missing)
+        vp = ", ".join(["?"] * len(valid_ids))
+        valid_tuple = tuple(valid_ids)
+
+        ts = now()
+        errors: list[str] = []
+
+        if soft and self._trash_table:
+            # Batch soft-delete: move to trash + cascade
+            trash_columns = ["node_id", "labels", "label_text", "definitions",
+                             "definition_text", "created_at", "updated_at", "deleted_at"]
+            trash_ph = ", ".join(["?"] * len(trash_columns))
+
+            with self.db.transaction() as conn:
+                for entry in existing_map.values():
+                    # Remove from FTS
+                    row = conn.execute(
+                        f"SELECT rowid FROM {self.table} WHERE node_id = ?",
+                        (entry["node_id"],),
+                    ).fetchone()
+                    saved_rowid = row[0] if row else None
+                    if saved_rowid is not None:
+                        self._fts_mgr.remove_by_rowid(entry["node_id"], saved_rowid, conn=conn)
+
+                # Delete triples where node is subject or URI object
+                conn.execute(
+                    f"DELETE FROM triples WHERE subject_id IN ({vp})",
+                    valid_tuple,
+                )
+                conn.execute(
+                    f"DELETE FROM triples WHERE object_type = 'uri' AND object_value IN ({vp})",
+                    valid_tuple,
+                )
+                # Cascade-delete proofs
+                conn.execute(
+                    f"DELETE FROM proofs WHERE subject_id IN ({vp})",
+                    valid_tuple,
+                )
+                conn.execute(
+                    f"DELETE FROM proofs WHERE object_type = 'uri' AND object_value IN ({vp})",
+                    valid_tuple,
+                )
+                # Insert trash
+                for entry in existing_map.values():
+                    trash_row = {k: entry.get(k) for k in trash_columns if k in entry}
+                    trash_row["deleted_at"] = ts
+                    trash_row.setdefault("updated_at", ts)
+                    trash_vals = [trash_row.get(k, "") for k in trash_columns]
+                    conn.execute(
+                        f"INSERT OR REPLACE INTO {self._trash_table} "
+                        f"({', '.join(trash_columns)}) VALUES ({trash_ph})",
+                        trash_vals,
+                    )
+                # Delete from source table
+                conn.execute(
+                    f"DELETE FROM {self.table} WHERE node_id IN ({vp})",
+                    valid_tuple,
+                )
+        else:
+            # Batch hard-delete
+            with self.db.transaction() as conn:
+                for entry in existing_map.values():
+                    row = conn.execute(
+                        f"SELECT rowid FROM {self.table} WHERE node_id = ?",
+                        (entry["node_id"],),
+                    ).fetchone()
+                    saved_rowid = row[0] if row else None
+                    if saved_rowid is not None:
+                        self._fts_mgr.remove_by_rowid(entry["node_id"], saved_rowid, conn=conn)
+
+                conn.execute(
+                    f"DELETE FROM triples WHERE subject_id IN ({vp})",
+                    valid_tuple,
+                )
+                conn.execute(
+                    f"DELETE FROM triples WHERE object_type = 'uri' AND object_value IN ({vp})",
+                    valid_tuple,
+                )
+                conn.execute(
+                    f"DELETE FROM proofs WHERE subject_id IN ({vp})",
+                    valid_tuple,
+                )
+                conn.execute(
+                    f"DELETE FROM proofs WHERE object_type = 'uri' AND object_value IN ({vp})",
+                    valid_tuple,
+                )
+                conn.execute(
+                    f"DELETE FROM {self.table} WHERE node_id IN ({vp})",
+                    valid_tuple,
+                )
+
+        # Call _post_delete for each deleted node (logging hooks etc.)
+        for nid in valid_ids:
+            self._post_delete(nid, existing_map[nid])
+
+        missing = [nid for nid in node_ids if nid not in existing_map]
+        errors.extend(f"Node not found: {nid}" for nid in missing)
+        return (len(valid_ids), errors)
+
     def empty_all_trash(self) -> int:
         """Permanently delete all trashed nodes. Returns count deleted."""
         with self.db.transaction():

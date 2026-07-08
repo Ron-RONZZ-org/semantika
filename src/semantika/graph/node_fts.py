@@ -1,7 +1,9 @@
 """FTS5 management mixin for NodeService.
 
 Provides full-text search, index maintenance, and corruption recovery
-for the ``nodes_fts`` virtual table.
+for the ``nodes_fts`` virtual table.  Defers the actual FTS5 operations
+to :class:`semantika.core.fts.FTS5Manager` to avoid code duplication with
+:class:`semantika.graph.predicate_service.PredicateService`.
 """
 
 from __future__ import annotations
@@ -9,6 +11,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 
+from semantika.core.fts import FTS5Manager
 from semantika.graph.constants import FTS5_KEYWORDS
 from semantika.graph.helpers import escape_like
 
@@ -20,6 +23,19 @@ class NodeFtsMixin:
 
     Requires ``self.db`` (SemantikaDB) to be available on the host class.
     """
+
+    @property
+    def _fts_mgr(self) -> FTS5Manager:
+        """Lazy-initialised shared FTS5 manager for nodes."""
+        if not hasattr(self, "_fts_mgr_cache"):
+            self._fts_mgr_cache = FTS5Manager(
+                db=self.db,
+                fts_table="nodes_fts",
+                content_table="nodes",
+                pk_column="node_id",
+                fts_columns=["label_text", "definition_text"],
+            )
+        return self._fts_mgr_cache
 
     # ── Search ──────────────────────────────────────────────────────────
 
@@ -57,7 +73,7 @@ class NodeFtsMixin:
         except sqlite3.DatabaseError:
             logger.warning("FTS search failed — rebuilding and retrying")
             try:
-                self._rebuild_fts()
+                self._fts_mgr.rebuild()
                 results = self.db.execute(fts_sql, (fts_query, limit))
             except sqlite3.DatabaseError:
                 logger.error("FTS rebuild failed — using LIKE fallback")
@@ -73,73 +89,27 @@ class NodeFtsMixin:
             (f"%{escaped}%", limit),
         )
 
-    # ── FTS lifecycle ───────────────────────────────────────────────────
+    # ── FTS lifecycle (delegated to FTS5Manager) ─────────────────────────
 
     def _ensure_fts(self) -> None:
         """Ensure FTS5 virtual table exists and is populated."""
-        self.db.execute(
-            "CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5("
-            "  node_id UNINDEXED,"
-            "  label_text,"
-            "  definition_text,"
-            "  content=nodes,"
-            "  content_rowid=rowid,"
-            "  tokenize='unicode61'"
-            ")"
-        )
-        count = self.db.execute_one("SELECT COUNT(*) AS cnt FROM nodes_fts")
-        if count and count["cnt"] == 0:
-            self._populate_fts()
+        self._fts_mgr.ensure()
 
     def _populate_fts(self) -> None:
         """Populate FTS from content table."""
-        try:
-            self.db.execute(
-                "INSERT INTO nodes_fts (rowid, node_id, label_text, definition_text)"
-                " SELECT rowid, node_id, label_text, definition_text FROM nodes"
-            )
-        except sqlite3.DatabaseError:
-            logger.warning("FTS population failed — using LIKE fallback")
+        self._fts_mgr.populate()
 
     def _index_fts(self, node_id: str) -> None:
         """Index a single node in FTS5."""
-        entry = self.db.execute_one(
-            "SELECT rowid, node_id, label_text, definition_text "
-            "FROM nodes WHERE node_id = ?",
-            (node_id,),
-        )
-        if not entry:
-            return
-        try:
-            self.db.execute(
-                "INSERT INTO nodes_fts (rowid, node_id, label_text, definition_text) "
-                "VALUES (?, ?, ?, ?)",
-                (entry["rowid"], node_id, entry["label_text"] or "", entry["definition_text"] or ""),
-            )
-        except sqlite3.DatabaseError as exc:
-            logger.warning("FTS index insert failed for node %s: %s", node_id, exc)
+        self._fts_mgr.index(node_id)
 
     def _remove_from_fts(self, node_id: str) -> None:
         """Remove a node from FTS index."""
-        row = self.db.execute_one(
-            "SELECT rowid FROM nodes WHERE node_id = ?", (node_id,)
-        )
-        if not row or row.get("rowid") is None:
-            return
-        self._remove_fts_by_rowid(node_id, row["rowid"])
+        self._fts_mgr.remove(node_id)
 
     def _remove_fts_by_rowid(self, node_id: str, rowid: int) -> None:
         """Remove a rowid from the FTS index after node deletion."""
-        try:
-            self.db.execute(
-                "INSERT INTO nodes_fts(nodes_fts, rowid) VALUES('delete', ?)",
-                (rowid,),
-            )
-        except sqlite3.DatabaseError as exc:
-            logger.warning(
-                "FTS 'delete' failed for %s (rowid=%s): %s",
-                node_id, rowid, exc,
-            )
+        self._fts_mgr.remove_by_rowid(node_id, rowid)
 
     def optimize_fts(self) -> None:
         """Optimize the FTS5 index — merges b-tree segments.
@@ -148,12 +118,7 @@ class NodeFtsMixin:
         prevent search-performance degradation from accumulated incremental
         updates. Non-critical — failures are silently logged.
         """
-        try:
-            self.db.execute(
-                "INSERT INTO nodes_fts(nodes_fts) VALUES('optimize')"
-            )
-        except sqlite3.DatabaseError as exc:
-            logger.debug("FTS5 optimize failed (non-critical): %s", exc)
+        self._fts_mgr.optimize()
 
     def _rebuild_fts(self) -> None:
         """Rebuild the nodes FTS index from the content table.
@@ -161,20 +126,4 @@ class NodeFtsMixin:
         Handles corruption by dropping and recreating the FTS table
         if the FTS5 'rebuild' command fails.
         """
-        try:
-            self.db.execute(
-                "INSERT INTO nodes_fts(nodes_fts) VALUES('rebuild')"
-            )
-        except sqlite3.DatabaseError:
-            logger.warning("Nodes FTS rebuild failed — recreating table")
-            for suffix in ("_data", "_idx", "_docsize", "_config", "_content"):
-                try:
-                    self.db.execute(f"DROP TABLE IF EXISTS nodes_fts{suffix}")
-                except sqlite3.DatabaseError:
-                    pass
-            try:
-                self.db.execute("DROP TABLE IF EXISTS nodes_fts")
-            except sqlite3.DatabaseError:
-                pass
-            self._ensure_fts()
-            self._populate_fts()
+        self._fts_mgr.rebuild()

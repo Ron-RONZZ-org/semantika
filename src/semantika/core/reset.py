@@ -15,8 +15,43 @@ from semantika.core.backup import _db_path
 logger = logging.getLogger(__name__)
 
 
-# When adding a new keyring service name, add it here so reset clears it.
-_KNOWN_CREDENTIAL_SERVICES: tuple[str, ...] = ("semantika-llm", "semantika-key")
+# Mutable set of known credential service names.  Other modules can
+# register additional services via :func:`register_credential_service`.
+_KNOWN_CREDENTIAL_SERVICES: set[str] = {"semantika-llm", "semantika-key"}
+
+
+def register_credential_service(service_name: str) -> None:
+    """Register a credential service name so ``!reset`` clears it.
+
+    Call this from any module that stores credentials in the system
+    keyring under a ``semantika-*`` service name.
+    """
+    _KNOWN_CREDENTIAL_SERVICES.add(service_name)
+
+
+def _discover_semantika_credentials() -> set[str]:
+    """Attempt to discover ``semantika-*`` credential services dynamically.
+
+    Uses the active keyring backend's ``list_credential_services()`` method
+    if available (some backends support this).  Falls back to the statically
+    registered service names otherwise.
+    """
+    discovered: set[str] = set()
+    try:
+        import keyring as _kr
+        backend = _kr.get_keyring()
+        # Some backends (e.g. SecretService DBus) support listing
+        list_method = getattr(backend, "list_credential_services", None)
+        if list_method is not None:
+            try:
+                for svc in list_method():
+                    if isinstance(svc, str) and svc.startswith("semantika-"):
+                        discovered.add(svc)
+            except Exception:
+                logger.debug("Keyring list_credential_services failed", exc_info=True)
+    except Exception:
+        logger.debug("Could not access keyring for credential discovery", exc_info=True)
+    return discovered
 
 
 def reset_to_fresh_state(
@@ -67,15 +102,14 @@ def reset_to_fresh_state(
         except OSError as exc:
             logger.warning("Could not remove files dir %s: %s", files_dir, exc)
 
-    # 4. Clear keyring credentials
+    # 4. Clear keyring credentials — dynamically discovered + known list
+    services_to_clear = _KNOWN_CREDENTIAL_SERVICES | _discover_semantika_credentials()
     try:
         import keyring as _kr
     except ImportError:
         logger.debug("keyring not available — skipping credential cleanup")
     else:
-        # Central list of known credential services.  When adding a new
-        # service name, add it here so ``reset`` clears it too.
-        for service in _KNOWN_CREDENTIAL_SERVICES:
+        for service in services_to_clear:
             try:
                 _kr.delete_password(service, "api_key")
                 result["credentials_cleared"] += 1
