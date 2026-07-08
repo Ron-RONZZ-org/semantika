@@ -1,10 +1,37 @@
-"""Development CLI — starts an isolated server with optional seed data."""
+"""Development CLI — starts an isolated server with optional seed data.
+
+Uses ``lightercore.dev_helpers`` for shared dev-server infrastructure
+(``--data-dir``, ``--seed``, ``--prod``, temp dir management, cleanup).
+
+Usage::
+
+    # Start with seed data from .dev (prompt commands + LLM config)
+    uv run semantika-dev --seed
+
+    # Start with seed data from .prod (your real LLM key)
+    uv run semantika-dev --prod
+
+    # Start with persistent data directory
+    uv run semantika-dev --data-dir ~/semantika-data --seed
+
+    # Start without seed data, skip user hooks
+    uv run semantika-dev --no-hooks
+"""
 
 from __future__ import annotations
 
-import argparse
+import os
+from pathlib import Path
 
-import uvicorn
+from lightercore.dev_helpers import (
+    cleanup_data_dir,
+    find_dot_dev,
+    find_dot_prod,
+    is_seeded,
+    setup_data_dir,
+    standard_dev_parser,
+    validate_seed_sources,
+)
 
 
 def _seed_prompt_commands() -> None:
@@ -67,23 +94,153 @@ def _seed_prompt_commands() -> None:
         )
 
 
+def _auto_configure_llm(creds: dict[str, str]) -> None:
+    """Configure the LLM provider from credentials if not already set."""
+    api_key = creds.get("DEEPSEEK_API_KEY", "") or creds.get("TEST_DEEPSEEK_APIKEY", "")
+    if not api_key:
+        return
+
+    from lightercore.llm.config import get_active_config, save_active_config
+    from lightercore.llm.config import ProviderConfig
+
+    existing = get_active_config()
+    if existing is not None:
+        return  # already configured
+
+    config = ProviderConfig(
+        provider_type="openai",
+        api_key=api_key,
+        base_url="https://api.deepseek.com",
+        model="deepseek-chat",
+        temperature=0.7,
+        max_tokens=4096,
+    )
+    save_active_config(config)
+
+
 def dev_main() -> None:
-    parser = argparse.ArgumentParser(description="Semantika dev server")
-    parser.add_argument("--port", type=int, default=6015, help="Port to bind (lighterbird uses 8000)")
-    parser.add_argument("--seed", action="store_true", help="Seed a demo prompt command file")
+    """Run an isolated Semantika dev server.
+
+    By default creates a temporary data directory (``/tmp/semantika-dev-*``)
+    and optionally seeds it with test data before starting the server.
+
+    Use ``--data-dir PATH`` to keep data persistent across restarts.
+    Seeding only runs when the data directory is empty.
+    """
+    parser = standard_dev_parser(
+        "Run an isolated Semantika development server.",
+        default_port=6015,
+    )
     parser.add_argument("--no-hooks", action="store_true",
                         help="Skip loading user-defined hooks from ~/.config/semantika/hooks.py")
     args = parser.parse_args()
 
-    if args.seed:
-        _seed_prompt_commands()
-        print("  Seeded demo prompt command, /template command, and sample book template.")
+    validate_seed_sources(args)
 
-    print(f"Starting Semantika dev server on http://127.0.0.1:{args.port}")
+    LOG_PREFIX = "[semantika-dev]"
+
+    def _log(msg: str) -> None:
+        if not args.quiet:
+            print(f"{LOG_PREFIX} {msg}")
+
+    # Resolve port: CLI arg > SEMANTIKA_PORT env var > 6015
+    port = args.port or int(os.environ.get("SEMANTIKA_PORT", 6015))
+
+    # ── Setup data directory ──────────────────────────────────────────────
+    root_dir, data_dir, config_dir, is_temp = setup_data_dir(
+        args.data_dir, app_name="semantika",
+    )
+
+    _log(f"Data dir: {data_dir}")
+    _log(f"Config dir: {config_dir}")
+
+    already_seeded = is_seeded(data_dir)
+
+    # ── Seed from .dev ───────────────────────────────────────────────────
+    if args.seed is not None:
+        if already_seeded:
+            _log("Data dir already has content — skipping seed.")
+        else:
+            if args.seed == "auto":
+                dot_dev = find_dot_dev(__file__)
+                if dot_dev is None:
+                    print(f"{LOG_PREFIX} WARNING: No .dev file found. Seeding skipped.")
+                    dot_dev = None
+                else:
+                    _log(f"Using .dev file: {dot_dev}")
+            else:
+                dot_dev = Path(args.seed)
+                if not dot_dev.exists():
+                    print(f"{LOG_PREFIX} ERROR: .dev file not found: {dot_dev}")
+                    raise SystemExit(1)
+                _log(f"Using .dev file: {dot_dev}")
+
+            if dot_dev:
+                creds = _parse_dot_dev(dot_dev)
+                _seed_prompt_commands()
+                _auto_configure_llm(creds)
+                _log("Seeded prompt commands, templates, and LLM config.")
+
+    # ── Seed from .prod ──────────────────────────────────────────────────
+    elif args.prod is not None:
+        if already_seeded:
+            _log("Data dir already has content — skipping prod-seed.")
+        else:
+            if args.prod == "auto":
+                dot_prod = find_dot_prod(__file__)
+                if dot_prod is None:
+                    print(f"{LOG_PREFIX} WARNING: No .prod file found. Seeding skipped.")
+                    dot_prod = None
+                else:
+                    _log(f"Using .prod file: {dot_prod}")
+            else:
+                dot_prod = Path(args.prod)
+                if not dot_prod.exists():
+                    print(f"{LOG_PREFIX} ERROR: .prod file not found: {dot_prod}")
+                    raise SystemExit(1)
+                _log(f"Using .prod file: {dot_prod}")
+
+            if dot_prod:
+                creds = _parse_dot_dev(dot_prod)
+                _seed_prompt_commands()
+                _auto_configure_llm(creds)
+                _log("Seeded prompt commands, templates, and LLM config from .prod.")
+
+    # ── Start server ─────────────────────────────────────────────────────
+    _log(f"Starting server on http://127.0.0.1:{port}")
+    _log("Press Ctrl+C to stop.")
+
     from semantika.server.app import create_app
 
+    import uvicorn
+
     app = create_app(no_hooks=args.no_hooks)
-    uvicorn.run(app, host="127.0.0.1", port=args.port)
+    try:
+        uvicorn.run(app, host="127.0.0.1", port=port)
+    finally:
+        cleanup_data_dir(
+            root_dir, is_temp, args.keep_data,
+            quiet=args.quiet, log_prefix=LOG_PREFIX,
+        )
+
+
+def _parse_dot_dev(dot_dev_path: str | Path | None) -> dict[str, str]:
+    """Parse a ``.dev`` or ``.prod`` file into a dict of key→value."""
+    result: dict[str, str] = {}
+    if dot_dev_path is None:
+        return result
+    path = Path(dot_dev_path)
+    if not path.exists():
+        return result
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        key, val = line.split("=", 1)
+        result[key.strip()] = val.strip().strip('"').strip("'")
+    return result
 
 
 if __name__ == "__main__":

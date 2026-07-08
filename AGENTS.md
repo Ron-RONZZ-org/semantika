@@ -83,12 +83,44 @@ This project uses **uv** for development:
 | Install dev deps | `uv pip install -e ".[dev]"` |
 | Run tests | `uv run pytest tests/` |
 | Run isolated dev server | `uv run semantika-dev --seed` |
+| Run dev server with persistent data | `uv run semantika-dev --data-dir ~/semantika-data --seed` |
+| Run dev server with real credentials | `uv run semantika-dev --data-dir ~/semantika-data --prod` |
 | Add dependency | `uv add <pkg>` |
 | Add dev dependency | `uv pip install <pkg>` |
 
 ---
 
 ## Development Server
+
+### Dev server CLI (`semantika-dev`)
+
+The `semantika-dev` CLI starts an isolated server with optional seed data.
+It uses `lightercore.dev_helpers` for shared dev-server infrastructure.
+
+```bash
+# Ephemeral server with seed data from .dev (LLM config + prompt commands)
+uv run semantika-dev --seed
+
+# Persistent server (data survives restarts)
+uv run semantika-dev --data-dir ~/semantika-data --seed
+
+# Persistent server with .prod credentials
+uv run semantika-dev --data-dir ~/semantika-data --prod
+
+# No seed, skip user hooks
+uv run semantika-dev --no-hooks
+```
+
+Flags beyond the standard set (`--seed`, `--prod`, `--seed-from`, `--data-dir`,
+`--port`, `--keep-data`, `--quiet`):
+
+| Flag | Description |
+|------|-------------|
+| `--no-hooks` | Skip loading user-defined hooks from `~/.config/semantika/hooks.py` |
+
+When ``--data-dir`` is used, the data directory persists across restarts and
+seeding only runs when the directory is empty (safe to restart without losing
+data).
 
 ### Port synchronization (dev only)
 
@@ -101,8 +133,7 @@ set the `SEMANTIKA_PORT` env var before starting the frontend:
 
 ```bash
 # Terminal 1: backend on custom port
-SEMANTIKA_DATA_DIR=/tmp/semantika-dev uv run uvicorn \
-  semantika.server.app:create_app --factory --port 8765
+uv run semantika-dev --port 8765
 
 # Terminal 2: Vite proxies to that port
 SEMANTIKA_PORT=8765 npm run dev
@@ -120,8 +151,11 @@ When running user-simulation tests against the backend, **always use a dynamical
 # Find a free TCP port (never kill a foreign process on the default port)
 PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()")
 
-# Start isolated seeded server on that port
+# Start isolated seeded server on that port (ephemeral)
 setsid uv run semantika-dev --seed --port $PORT > /tmp/semantika-dev.log 2>&1 &
+
+# Or start with persistent data (survives restarts)
+setsid uv run semantika-dev --data-dir ~/semantika-dev-data --seed --port $PORT > /tmp/semantika-dev.log 2>&1 &
 
 # Wait for server to accept connections
 for i in $(seq 1 30); do
@@ -146,6 +180,7 @@ semantika/
 ├── pyproject.toml
 ├── .gitignore
 ├── .dev                         # Local dev secrets (gitignored) — API keys for --seed mode
+├── .prod                        # Your real credentials (gitignored) — API keys for --prod mode
 ├── src/
 │   └── semantika/               # Main Python package
 │       ├── __init__.py
@@ -165,7 +200,7 @@ semantika/
 │       │   └── services/__init__.py
 │       ├── scripts/             # CLI entry points
 │       │   ├── __init__.py
-│       │   └── dev_cli.py       # semantika-dev CLI: temp DB, --seed prompt commands
+│       │   └── dev_cli.py       # semantika-dev CLI: --data-dir, --seed, --prod, --no-hooks
 │       └── server/              # FastAPI web server
 │           ├── __init__.py
 │           ├── app.py           # Application factory

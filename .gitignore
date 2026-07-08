@@ -35,4 +35,5 @@ coverage_html/
 *.bak
 /dev-data/
 .dev
+/.prod
 *.7z
