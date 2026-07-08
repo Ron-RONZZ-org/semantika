@@ -238,6 +238,82 @@ class TestNodeService:
         ns._ensure_fts()
 
 
+    # ── Proof cascade tests ──────────────────────────────────────────
+
+    def _setup_triple_with_proof(self, services: dict) -> dict:
+        """Helper: create node A→ex:p→B with a proof and return services."""
+        ns = services["node"]
+        ps = services["predicate"]
+        ts = services["triple"]
+        prs = services["proof"]
+
+        ns.create({"node_id": "A", "labels": {"en": "A"}})
+        ns.create({"node_id": "B", "labels": {"en": "B"}})
+        ps.create({"predicate_id": "ex:p", "labels": {"en": "p"}})
+        ts.add("A", "ex:p", "B", object_type="uri")
+
+        proof = prs.create({
+            "subject_id": "A", "predicate_id": "ex:p",
+            "object_value": "B", "proof_type": "observation",
+        })
+        return {"proof_uuid": proof["uuid"], "services": services}
+
+    def test_soft_delete_node_cascades_proofs(self, services: dict):
+        """Soft-deleting a node deletes proofs attached to its triples."""
+        setup = self._setup_triple_with_proof(services)
+        ns = services["node"]
+        prs = services["proof"]
+
+        ns.delete("A", soft=True)
+        remaining = prs.get_by_subject("A")
+        assert remaining == [], "Proofs should be cascade-deleted with node"
+
+    def test_hard_delete_node_cascades_proofs(self, services: dict):
+        """Hard-deleting a node deletes proofs attached to its triples."""
+        setup = self._setup_triple_with_proof(services)
+        ns = services["node"]
+        prs = services["proof"]
+
+        ns.delete("A", soft=False)
+        remaining = prs.get_by_subject("A")
+        assert remaining == [], "Proofs should be cascade-deleted with node"
+
+    def test_soft_delete_node_as_object_cascades_proofs(self, services: dict):
+        """Deleting a node that is the URI object of a triple cascades proofs."""
+        ns = services["node"]
+        ps = services["predicate"]
+        ts = services["triple"]
+        prs = services["proof"]
+
+        ns.create({"node_id": "S", "labels": {"en": "S"}})
+        ns.create({"node_id": "OBJ", "labels": {"en": "Object"}})
+        ps.create({"predicate_id": "ex:rel", "labels": {"en": "rel"}})
+        ts.add("S", "ex:rel", "OBJ", object_type="uri")
+
+        proof = prs.create({
+            "subject_id": "S", "predicate_id": "ex:rel",
+            "object_value": "OBJ", "proof_type": "observation",
+        })
+
+        ns.delete("OBJ", soft=True)
+        remaining = prs.get_by_triple("S", "ex:rel", "OBJ")
+        assert remaining == [], "Proofs should cascade when URI-object node is deleted"
+
+    def test_proofs_not_affected_by_unrelated_node_delete(self, services: dict):
+        """Deleting an unrelated node does not cascade away proofs."""
+        ns = services["node"]
+        prs = services["proof"]
+        services["triple"]
+        services["predicate"]
+
+        setup = self._setup_triple_with_proof(services)
+        ns.create({"node_id": "UNRELATED", "labels": {"en": "Unrelated"}})
+        ns.delete("UNRELATED", soft=True)
+
+        remaining = prs.get_by_subject("A")
+        assert len(remaining) == 1, "Unrelated node delete should not affect proofs"
+
+
 class TestPredicateService:
     def test_create_and_get(self, services: dict):
         ps = services["predicate"]
@@ -249,6 +325,77 @@ class TestPredicateService:
         ps.create({"predicate_id": "ex:test", "labels": {"en": "test predicate"}})
         results = ps.search("test")
         assert len(results) >= 1
+
+    # ── Proof cascade tests ──────────────────────────────────────────
+
+    def test_soft_delete_predicate_cascades_proofs(self, services: dict):
+        """Soft-deleting a predicate deletes proofs attached to its triples."""
+        ns = services["node"]
+        ps = services["predicate"]
+        ts = services["triple"]
+        prs = services["proof"]
+
+        ns.create({"node_id": "A", "labels": {"en": "A"}})
+        ns.create({"node_id": "B", "labels": {"en": "B"}})
+        ps.create({"predicate_id": "ex:test_p", "labels": {"en": "test p"}})
+        ts.add("A", "ex:test_p", "B", object_type="uri")
+
+        prs.create({
+            "subject_id": "A", "predicate_id": "ex:test_p",
+            "object_value": "B", "proof_type": "observation",
+        })
+
+        ps.delete("ex:test_p", soft=True)
+        remaining = prs.get_by_triple("A", "ex:test_p", "B")
+        assert remaining == [], "Proofs should be cascade-deleted with predicate"
+
+    def test_hard_delete_predicate_cascades_triples_and_proofs(self, services: dict):
+        """Hard-deleting a predicate cascades to triples and proofs."""
+        ns = services["node"]
+        ps = services["predicate"]
+        ts = services["triple"]
+        prs = services["proof"]
+
+        ns.create({"node_id": "A", "labels": {"en": "A"}})
+        ns.create({"node_id": "B", "labels": {"en": "B"}})
+        ps.create({"predicate_id": "ex:hard_p", "labels": {"en": "hard p"}})
+        ts.add("A", "ex:hard_p", "B", object_type="uri")
+
+        prs.create({
+            "subject_id": "A", "predicate_id": "ex:hard_p",
+            "object_value": "B", "proof_type": "observation",
+        })
+
+        assert ts.count() == 1
+        assert len(prs.get_by_triple("A", "ex:hard_p", "B")) == 1
+
+        ps.delete("ex:hard_p", soft=False)
+
+        assert ts.count() == 0, "Triples should be cascade-deleted with predicate"
+        remaining = prs.get_by_triple("A", "ex:hard_p", "B")
+        assert remaining == [], "Proofs should be cascade-deleted with predicate"
+
+    def test_proofs_not_affected_by_unrelated_predicate_delete(self, services: dict):
+        """Deleting an unrelated predicate does not cascade away proofs."""
+        ns = services["node"]
+        ps = services["predicate"]
+        ts = services["triple"]
+        prs = services["proof"]
+
+        ns.create({"node_id": "A", "labels": {"en": "A"}})
+        ns.create({"node_id": "B", "labels": {"en": "B"}})
+        ps.create({"predicate_id": "ex:p_target", "labels": {"en": "target"}})
+        ps.create({"predicate_id": "ex:p_unrelated", "labels": {"en": "unrelated"}})
+        ts.add("A", "ex:p_target", "B", object_type="uri")
+
+        proof = prs.create({
+            "subject_id": "A", "predicate_id": "ex:p_target",
+            "object_value": "B", "proof_type": "observation",
+        })
+
+        ps.delete("ex:p_unrelated", soft=True)
+        remaining = prs.get_by_triple("A", "ex:p_target", "B")
+        assert len(remaining) == 1, "Unrelated predicate delete should not affect proofs"
 
 
 class TestPredicateGroupService:

@@ -109,10 +109,11 @@ def _find_triple(
         triple = svc["triple"].get_one(subject, predicate, object_val, object_type="uri")
     if not triple:
         try:
-            resolved = _resolve_object_node(svc, object_val)
-        except CommandValidationError:
-            resolved = None
-        if resolved:
+            obj_node = svc["node"].resolve_node_id_prefix(object_val)
+        except AmbiguousIDError:
+            raise
+        if obj_node:
+            resolved = obj_node["node_id"]
             triple = svc["triple"].get_one(subject, predicate, resolved, object_type="uri")
     return triple
 

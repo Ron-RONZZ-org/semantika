@@ -270,6 +270,12 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
                     "OR (object_type = 'uri' AND object_value = ?)",
                     (node_id, node_id),
                 )
+                # Cascade-delete proofs attached to the deleted triples
+                conn.execute(
+                    "DELETE FROM proofs WHERE subject_id = ? "
+                    "OR (object_value = ? AND object_type = 'uri')",
+                    (node_id, node_id),
+                )
                 conn.execute(
                     f"DELETE FROM {self.table} WHERE node_id = ?", (node_id,)
                 )
@@ -302,6 +308,12 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
             self._remove_from_fts(node_id)
             conn.execute(
                 "DELETE FROM triples WHERE subject_id = ? OR (object_type = 'uri' AND object_value = ?)",
+                (node_id, node_id),
+            )
+            # Cascade-delete proofs attached to the deleted triples
+            conn.execute(
+                "DELETE FROM proofs WHERE subject_id = ? "
+                "OR (object_value = ? AND object_type = 'uri')",
                 (node_id, node_id),
             )
             conn.execute(

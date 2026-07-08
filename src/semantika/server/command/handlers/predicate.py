@@ -108,7 +108,7 @@ def cmd_predicate_add(remaining: list[str], flags: dict[str, str]) -> dict:
         raise CommandValidationError(str(e))
 
 
-@command("predicate.update", description="Update a predicate",
+@command("predicate.update", description="Update a predicate", interactive=True,
          params=[{"name": "predicate_id", "type": "string", "required": True}],
          flags=[{"name": "labels", "type": "string", "help": "Labels as LANG::TEXT"},
                 {"name": "descriptions", "type": "string", "help": "Descriptions"},
@@ -157,7 +157,7 @@ def cmd_predicate_update(remaining: list[str], flags: dict[str, str]) -> dict:
         raise CommandValidationError(str(e))
 
 
-@command("predicate.rename", description="Rename a predicate",
+@command("predicate.rename", description="Rename a predicate", interactive=True,
          params=[{"name": "predicate_id", "type": "string", "required": True},
                  {"name": "new_id", "type": "string", "required": True}])
 def cmd_predicate_rename(remaining: list[str], flags: dict[str, str]) -> dict:

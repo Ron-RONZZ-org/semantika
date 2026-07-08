@@ -148,6 +148,23 @@ def clear_command_cache() -> None:
     _command_defs_cache = None
 
 
+def reset_registry() -> None:
+    """Reset the command registry, clearing all registered handlers and caches.
+
+    Removes all system and user-registered commands, group descriptions,
+    interactive forms, and clears cached data.  Also resets the system
+    commands snapshot.
+
+    Useful in tests for clean isolation between test suites, and when
+    reloading user hooks during development.
+    """
+    _commands.clear()
+    _group_descriptions.clear()
+    _interactive_forms.clear()
+    _system_commands.clear()
+    _invalidate_cache()
+
+
 # ── Auto-generated command tree ──────────────────────────────────────────
 
 

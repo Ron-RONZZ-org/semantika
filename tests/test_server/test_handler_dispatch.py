@@ -316,3 +316,121 @@ class TestCommandTree:
         tree = get_command_tree()
         names = [n["name"] for n in tree]
         assert len(names) == len(set(names)), "Duplicate top-level names in tree"
+
+
+# ── Triple handler ambiguous resolution tests ─────────────────────────────
+# Note: These MUST run BEFORE TestRegistryReset since they depend on
+# handlers being registered. Test order is class definition order.
+
+
+class TestTripleHandlerAmbiguousResolution:
+    """Test that ambiguous node references in triple commands propagate errors."""
+
+    def test_triple_delete_ambiguous_object_raises(self, services: dict):
+        """Deleting a triple with an ambiguous object reference raises."""
+        ns = services["node"]
+        ps = services["predicate"]
+
+        # Create two nodes sharing the same prefix
+        ns.create({"node_id": "HELLO_WORLD", "labels": {"en": "Hello World"}})
+        ns.create({"node_id": "HELLO_THERE", "labels": {"en": "Hello There"}})
+        ps.create({"predicate_id": "ex:knows", "labels": {"en": "knows"}})
+
+        # When _find_triple attempts ambiguous resolution, it should raise
+        with pytest.raises(Exception, match="ambiguous"):
+            dispatch(["triple", "delete", "HELLO_WORLD", "ex:knows", "HELLO"], {})
+
+    def test_triple_modify_ambiguous_object_raises(self, services: dict):
+        """Modifying a triple with an ambiguous object reference raises."""
+        ns = services["node"]
+        ps = services["predicate"]
+        ts = services["triple"]
+
+        ns.create({"node_id": "ALPHA_ONE", "labels": {"en": "Alpha One"}})
+        ns.create({"node_id": "ALPHA_TWO", "labels": {"en": "Alpha Two"}})
+        ps.create({"predicate_id": "ex:rel", "labels": {"en": "rel"}})
+        ts.add("ALPHA_ONE", "ex:rel", "ALPHA_TWO", object_type="uri")
+
+        # Modify with ambiguous object should raise, not silently return "not found"
+        with pytest.raises(Exception, match="ambiguous"):
+            dispatch(["triple", "modify", "ALPHA_ONE", "ex:rel", "ALPHA"], {})
+
+
+# ── Registry reset tests ─────────────────────────────────────────────────
+
+
+class TestRegistryReset:
+    """Tests for registry.reset_registry().
+
+    These tests save and restore the global registry state to avoid
+    polluting subsequent tests in the same process.
+    """
+
+    @pytest.fixture(autouse=True)
+    def auto_save_restore(self, request: pytest.FixtureRequest) -> None:
+        """Save and restore global registry state around each test."""
+        import semantika.server.command.registry as reg
+
+        saved = {
+            "_commands": dict(reg._commands),
+            "_group_descriptions": dict(reg._group_descriptions),
+            "_interactive_forms": dict(reg._interactive_forms),
+            "_system_commands": dict(reg._system_commands),
+            "_command_tree_cache": reg._command_tree_cache,
+            "_command_defs_cache": reg._command_defs_cache,
+        }
+
+        def _restore() -> None:
+            reg._commands.clear()
+            reg._commands.update(saved["_commands"])
+            reg._group_descriptions.clear()
+            reg._group_descriptions.update(saved["_group_descriptions"])
+            reg._interactive_forms.clear()
+            reg._interactive_forms.update(saved["_interactive_forms"])
+            reg._system_commands.clear()
+            reg._system_commands.update(saved["_system_commands"])
+            reg._command_tree_cache = saved["_command_tree_cache"]
+            reg._command_defs_cache = saved["_command_defs_cache"]
+
+        request.addfinalizer(_restore)
+
+    def test_reset_registry_clears_commands(self):
+        """reset_registry() removes all registered commands."""
+        import semantika.server.command.registry as reg
+
+        assert len(reg._commands) > 0, "Commands should be registered"
+        tree_before = reg.get_command_tree()
+        assert len(tree_before) > 0
+
+        reg.reset_registry()
+
+        assert len(reg._commands) == 0, "All commands should be cleared"
+        assert len(reg._interactive_forms) == 0, "Interactive forms should be cleared"
+        tree_after = reg.get_command_tree()
+        assert len(tree_after) == 0, "Command tree should be empty after reset"
+
+    def test_reset_registry_clears_system_commands(self):
+        """reset_registry() also clears _system_commands snapshot."""
+        import semantika.server.command.registry as reg
+
+        reg.reset_registry()
+        assert len(reg._system_commands) == 0
+
+    def test_reset_registry_clears_cache(self):
+        """reset_registry() invalidates cached tree.
+
+        Warms the caches first, then verifies reset clears them.
+        Note: _command_tree_cache is set by get_command_tree();
+              _command_defs_cache is set by get_command_definitions().
+        """
+        import semantika.server.command.registry as reg
+
+        # Warm both caches
+        _ = reg.get_command_tree()
+        assert reg._command_tree_cache is not None, "Tree cache should be populated after get_command_tree()"
+        _ = reg.get_command_definitions()
+        assert reg._command_defs_cache is not None, "Defs cache should be populated after get_command_definitions()"
+
+        reg.reset_registry()
+        assert reg._command_tree_cache is None, "Tree cache should be cleared"
+        assert reg._command_defs_cache is None, "Defs cache should be cleared"
