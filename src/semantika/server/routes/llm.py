@@ -218,8 +218,23 @@ async def chat(req: ChatRequest):
     if reply:
         return {"reply": reply}
 
-    # Fallback to plain chat if tool loop produced nothing
-    return {"reply": "I'm not sure how to help with that. Try using !commands directly."}
+    # Tool loop produced nothing (error, empty response, or exhaustion).
+    # Retry as a plain chat (no tool definitions) to distinguish between
+    # an API error and the LLM simply declining to use tools.
+    logger.warning("Tool loop returned empty for message=%r — retrying as plain chat", req.message)
+    try:
+        fallback = await provider.chat([
+            {"role": "system", "content": _SEMANTIKA_SYSTEM_PROMPT},
+            {"role": "user", "content": req.message},
+        ])
+        if isinstance(fallback, str) and fallback.strip():
+            return {"reply": fallback}
+    except Exception as exc:
+        logger.error("Plain chat fallback also failed: %s", exc)
+        return {"reply": f"I'm having trouble reaching the LLM provider: {exc}"}
+
+    # Both paths failed — unlikely, but be friendly
+    return {"reply": "I wasn't able to process that right now. Try using !help to see available commands."}
 
 
 @router.post("/chat/resume")
@@ -342,9 +357,29 @@ def stub_response(message: str) -> dict:
             )
         }
 
+    # Greetings and introductions
+    _greetings = {"hi", "hello", "hey", "greetings", "howdy",
+                  "good morning", "good afternoon", "good evening", "good day"}
+    if any(g in msg for g in _greetings) or "who are you" in msg or "what are you" in msg:
+        return {
+            "reply": (
+                "Hi! I'm **Semantika AI**, your knowledge graph assistant. "
+                "I can help you build and explore structured knowledge as "
+                "**nodes** (concepts), **predicates** (relationships), and "
+                "**triples** (statements).\n\n"
+                "I'm not connected to an LLM provider yet, so I can only "
+                "respond to specific keywords. Here's what I can do:\n"
+                "- Ask about **stats** \u2014 \"how many nodes do I have?\"\n"
+                "- **Search** \u2014 \"find something\"\n"
+                "- **!help** \u2014 see all available commands\n"
+                "- **!llm configure** \u2014 connect an AI provider for full conversational chat"
+            )
+        }
+
     return {
         "reply": (
-            "I'm not connected to an LLM provider yet. "
-            "Try keywords like \"stats\", \"search\", or \"help\"."
+            "I can help you explore your knowledge graph. "
+            "Try **stats**, **search**, or **!help** to get started, "
+            "or run **!llm configure** to connect an AI provider for full conversational chat."
         )
     }
