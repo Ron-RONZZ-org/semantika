@@ -5,6 +5,12 @@ Covers:
 - call_system_command delegation
 - User hook file loading and command override
 - User hook delegating back to system handler
+
+**Registry isolation**: This module registers test-only ``@command`` decorators
+at module scope (``hooked_node_list``, ``hooked_node_search``).  The
+``_cleanup_registry`` autouse fixture resets the global registry after the
+module's tests complete so that downstream test modules (or future additions)
+are not polluted.
 """
 
 from __future__ import annotations
@@ -27,7 +33,51 @@ from semantika.server.command.registry import (
     freeze_system_commands,
     get_handler_metadata,
     load_user_hooks,
+    reset_registry,
 )
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _cleanup_registry_after():
+    """Reset the registry after this module to remove test-only registrations.
+
+    The module-level ``@command`` decorators on ``hooked_node_list`` and
+    ``hooked_node_search`` bake test handlers into the global registry at
+    import time.  This fixture reimports the real handlers afterward so
+    subsequent test files are not polluted.
+    """
+    yield
+    reset_registry()
+    # Reimport handler modules to restore system commands in the registry
+    import importlib
+    import semantika.server.command.handlers.node as _node_h
+    import semantika.server.command.handlers.graph as _graph_h
+    import semantika.server.command.handlers.predicate as _pred_h
+    import semantika.server.command.handlers.predicate_group as _pg_h
+    import semantika.server.command.handlers.predicate_trash as _pt_h
+    import semantika.server.command.handlers.triple as _triple_h
+    import semantika.server.command.handlers.review as _review_h
+    import semantika.server.command.handlers.backup as _backup_h
+    import semantika.server.command.handlers.reset as _reset_h
+    import semantika.server.command.handlers.llm as _llm_h
+    import semantika.server.command.handlers.trash as _trash_h
+    import semantika.server.command.handlers.unit as _unit_h
+    import semantika.server.command.handlers.user_config as _ucfg_h
+    importlib.reload(_node_h)
+    importlib.reload(_graph_h)
+    importlib.reload(_pred_h)
+    importlib.reload(_pg_h)
+    importlib.reload(_pt_h)
+    importlib.reload(_triple_h)
+    importlib.reload(_review_h)
+    importlib.reload(_backup_h)
+    importlib.reload(_reset_h)
+    importlib.reload(_llm_h)
+    importlib.reload(_trash_h)
+    importlib.reload(_unit_h)
+    importlib.reload(_ucfg_h)
+    # Re-freeze so _system_commands is populated for any remaining tests
+    freeze_system_commands()
 
 
 # ── Unit tests for core hook infrastructure ────────────────────────────────

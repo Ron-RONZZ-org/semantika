@@ -180,11 +180,18 @@ def cmd_node_add(remaining: list[str], flags: dict[str, str]) -> dict:
                 ]
                 create_arc_triples(svc, node_id_val, [(o, p) for _, p, o in file_arcs])
                 msg_parts.append("with file attachment")
-    except CommandValidationError:
+    except Exception:
         # Roll back node creation if any post-creation step fails.
-        # The schema has REFERENCES without ON DELETE CASCADE, so
-        # hard-deleting the node removes orphan triples too.
-        svc["node"].delete(node_id_val, soft=False)
+        # Hard-deleting the node cascades to referencing triples,
+        # preventing orphan data.
+        logger.warning("Rolling back node %s after post-creation failure", node_id_val)
+        try:
+            svc["node"].delete(node_id_val, soft=False)
+        except Exception as rb_err:
+            logger.error(
+                "Rollback delete of node %s also failed: %s",
+                node_id_val, rb_err,
+            )
         raise
 
     result: dict = {"message": ". ".join(msg_parts), "node": node}

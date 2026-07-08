@@ -77,7 +77,6 @@ def create_app() -> FastAPI:
     from semantika.server.routes import command as cmd
     from semantika.server.routes import files, graph, llm, prompt_commands, proof, query, review, unit
     from semantika.server.routes import user_config as ucfg
-    from semantika.server.routes import triple_templates as tpl
 
     app.include_router(graph.router, prefix="/api/v1/graph")
     app.include_router(query.router, prefix="/api/v1/query")
@@ -89,7 +88,6 @@ def create_app() -> FastAPI:
     app.include_router(files.router, prefix="/api/v1/files")
     app.include_router(prompt_commands.router)
     app.include_router(ucfg.router)
-    app.include_router(tpl.router)
 
     # Freeze system handlers, then load user hooks
     from semantika.server.command.registry import freeze_system_commands, load_user_hooks
