@@ -92,8 +92,8 @@ This project uses **uv** for development:
 
 ### Port synchronization (dev only)
 
-The Svelte dev server (Vite, port 5173) proxies `/api/*` requests to the Python backend.
-The proxy target defaults to port **8001**. In production the built SPA is served on the
+The Svelte dev server (Vite, port 6016) proxies `/api/*` requests to the Python backend.
+The proxy target defaults to port **6015**. In production the built SPA is served on the
 same port as the API — no proxy needed.
 
 If the backend is on a different port (conflict, `--port 0`, or custom setup),
@@ -108,7 +108,31 @@ SEMANTIKA_DATA_DIR=/tmp/semantika-dev uv run uvicorn \
 SEMANTIKA_PORT=8765 npm run dev
 ```
 
-The default fallback is `SEMANTIKA_PORT || 8001` in ``vite.config.js``.
+The default fallback is `SEMANTIKA_PORT || 6015` in ``vite.config.js``.
+
+---
+
+## User-Simulation Testing
+
+When running user-simulation tests against the backend, **always use a dynamically-allocated free port**. Never kill a process on the default port (6015) — it may belong to the user's manual dev instance.
+
+```bash
+# Find a free TCP port (never kill a foreign process on the default port)
+PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()")
+
+# Start isolated seeded server on that port
+setsid uv run semantika-dev --seed --port $PORT > /tmp/semantika-dev.log 2>&1 &
+
+# Wait for server to accept connections
+for i in $(seq 1 30); do
+  curl -sf -o /dev/null http://127.0.0.1:$PORT/ && break
+  sleep 1
+done
+
+# Run tests or queries against http://127.0.0.1:$PORT
+```
+
+Always use `http://127.0.0.1:<port>` (IPv4) when connecting to a local dev server.
 
 ---
 
