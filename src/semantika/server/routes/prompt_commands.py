@@ -402,13 +402,34 @@ async def _run_tool_loop(
             # Text response — final answer
             return result.content
 
+        # ── Append the assistant message with tool_calls ──────────────
+        # Required by the OpenAI/DeepSeek protocol: every ``role: "tool"``
+        # message must be preceded by a ``role: "assistant"`` message
+        # whose ``tool_calls`` array contains a matching ``id``.
+        assistant_msg: dict[str, Any] = {
+            "role": "assistant",
+            "content": result.content,
+        }
+        if result.tool_calls:
+            assistant_msg["tool_calls"] = [
+                {
+                    "id": tc.id,
+                    "type": tc.type,
+                    "function": {
+                        "name": tc.function.get("name", ""),
+                        "arguments": tc.function.get("arguments", "{}"),
+                    },
+                }
+                for tc in result.tool_calls
+            ]
+        messages.append(assistant_msg)
+
         # Process tool calls in this batch
         for idx, tc in enumerate(result.tool_calls):
             path, flags = _tc_path(tc)
 
-            # Check permission — gate write+destructive commands behind human
-            # approval.  READ-level commands (search, list, view, stats) pass
-            # through without confirmation.
+            # Check permission — gate write+destructive behind human
+            # approval.  READ-level commands pass through.
             level = get_command_level(path) if _is_registered(path) else None
             if level is not None and level >= PermissionLevel.WRITE:
                 session_id = str(uuid.uuid4())
