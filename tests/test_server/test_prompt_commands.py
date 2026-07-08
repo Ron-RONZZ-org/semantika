@@ -156,11 +156,11 @@ class TestToolCalling:
 
 
 class TestConfirmationGate:
-    """Destructive tool calls are gated behind user confirmation.
+    """Write and destructive tool calls are gated behind user confirmation.
 
-    Only DESTRUCTIVE-level commands (delete, merge, reset) trigger the
-    confirmation gate.  WRITE-level commands (add, update) execute freely
-    since the user explicitly chose to run the prompt command.
+    READ-level commands (search, list, view, stats) pass through without
+    confirmation.  WRITE-level (add, update) and DESTRUCTIVE-level (delete,
+    merge, reset) commands trigger the confirmation gate.
     """
 
     MERGE_TEMPLATE = "# Merge nodes\nMerge $1 into $2.\n"
@@ -200,6 +200,27 @@ class TestConfirmationGate:
         assert "session_id" in data
         assert data["tokens"] == ["node", "merge"]
         assert "Approve" in data["message"]
+
+    def test_write_triggers_confirm(self, client: TestClient, monkeypatch: pytest.MonkeyPatch):
+        """LLM calling !node.add (WRITE-level) returns confirm_tool."""
+        _mock_chat_with_tools(monkeypatch, [
+            ChatResult(tool_calls=[
+                ToolCall(
+                    id="call_w1",
+                    function={"name": "node_add", "arguments": '{"labels": "WriteTest"}'},
+                ),
+            ]),
+        ])
+
+        resp = client.post(
+            "/api/v1/prompt-commands/execute",
+            json={"name": "merge-nodes", "args": ["WriteTest"]},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "confirm_tool"
+        assert "session_id" in data
+        assert data["tokens"] == ["node", "add"]
 
     def test_confirm_and_resume(self, client: TestClient, monkeypatch: pytest.MonkeyPatch):
         """After user approves, the destructive tool executes."""

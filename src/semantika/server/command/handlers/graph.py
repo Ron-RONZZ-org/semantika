@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from lightercore.permissions import PermissionLevel
+
 from semantika.graph.db import get_services
 from semantika.server.command.errors import CommandValidationError
 from semantika.server.command.registry import command, group_command
@@ -25,7 +27,8 @@ def cmd_graph_root(remaining: list[str], flags: dict[str, str]) -> dict:
 # ── Stats ─────────────────────────────────────────────────────────────────
 
 
-@command("graph.stats", description="Graph statistics")
+@command("graph.stats", description="Graph statistics",
+         permission_level=PermissionLevel.READ)
 def cmd_stats(remaining: list[str], flags: dict[str, str]) -> dict:
     """Show graph statistics."""
     svc = get_services()
@@ -36,6 +39,7 @@ def cmd_stats(remaining: list[str], flags: dict[str, str]) -> dict:
 
 
 @command("graph.export", description="Export as Turtle",
+         permission_level=PermissionLevel.READ,
          flags=[{"name": "output", "type": "string", "help": "Output file path"},
                 {"name": "base_uri", "type": "string", "help": "Base URI"}])
 def cmd_export(remaining: list[str], flags: dict[str, str]) -> dict:
@@ -107,6 +111,7 @@ def _annotate_triples_with_proofs(
 
 
 @command("graph.search", description="Full-text search",
+         permission_level=PermissionLevel.READ,
          params=[{"name": "q", "type": "string", "required": True}],
          flags=[{"name": "date_from", "type": "string", "help": "Start date"},
                 {"name": "date_to", "type": "string", "help": "End date"},
@@ -142,6 +147,7 @@ def cmd_search(remaining: list[str], flags: dict[str, str]) -> dict:
 
 
 @command("graph.view", description="View all triples for a node",
+         permission_level=PermissionLevel.READ,
          params=[{"name": "id", "type": "string", "required": True}])
 def cmd_view(remaining: list[str], flags: dict[str, str]) -> dict:
     """View a node, predicate, or triple by ID."""

@@ -9,7 +9,8 @@ from semantika.server.command.errors import CommandValidationError
 from semantika.server.command.registry import command
 
 
-@command("node.trash.list", description="List trashed nodes")
+@command("node.trash.list", description="List trashed nodes",
+         permission_level=PermissionLevel.READ)
 def cmd_trash_list(remaining: list[str], flags: dict[str, str]) -> dict:
     """List all trashed nodes."""
     svc = get_services()

@@ -1,6 +1,7 @@
 """Command handlers for LLM configuration commands."""
 
 from __future__ import annotations
+from lightercore.permissions import PermissionLevel
 
 from typing import Any
 
@@ -15,7 +16,8 @@ def cmd_llm_root(remaining: list[str], flags: dict[str, str]) -> dict:
         "_summary": "Available !llm commands:\n  !llm show — Show current config\n  !llm new <protocol> — Create config\n  !llm set [flags] — Modify settings\n  !llm clear — Clear config\n  !llm profiles — List profiles\n  !llm profile list — List profiles\n  !llm profile show — Show active profile\n  !llm profile load <name> — Load profile\n  !llm profile delete <name> — Delete profile"}}
 
 
-@command("llm.show", description="Show current LLM configuration")
+@command("llm.show", description="Show current LLM configuration",
+         permission_level=PermissionLevel.READ)
 def cmd_llm_show(remaining: list[str], flags: dict[str, str]) -> dict:
     p = get_provider()
     cfg = p.config
@@ -79,21 +81,24 @@ def cmd_llm_clear(remaining: list[str], flags: dict[str, str]) -> dict:
     return {"type": "status", "title": "LLM Cleared", "data": {"_summary": "done"}}
 
 
-@command("llm.profiles", description="List saved LLM profiles")
+@command("llm.profiles", description="List saved LLM profiles",
+         permission_level=PermissionLevel.READ)
 def cmd_llm_profiles(remaining: list[str], flags: dict[str, str]) -> dict:
     p = get_provider()
     profiles = p.list_profiles()
     return {"type": "status", "title": "LLM Profiles", "data": {"profiles": profiles, "active_profile": p.active_profile_name}}
 
 
-@command("llm.profile.list", description="List saved LLM profiles")
+@command("llm.profile.list", description="List saved LLM profiles",
+         permission_level=PermissionLevel.READ)
 def cmd_llm_profile_list(remaining: list[str], flags: dict[str, str]) -> dict:
     p = get_provider()
     profiles = p.list_profiles()
     return {"type": "status", "title": "LLM Profiles", "data": {"profiles": profiles, "active_profile": p.active_profile_name}}
 
 
-@command("llm.profile.show", description="Show active LLM profile")
+@command("llm.profile.show", description="Show active LLM profile",
+         permission_level=PermissionLevel.READ)
 def cmd_llm_profile_show(remaining: list[str], flags: dict[str, str]) -> dict:
     p = get_provider()
     cfg = p.config

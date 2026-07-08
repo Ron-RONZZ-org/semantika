@@ -4,6 +4,7 @@ Extracted from predicate.py to follow "one concern, one root command" principle.
 """
 
 from __future__ import annotations
+from lightercore.permissions import PermissionLevel
 
 import logging
 
@@ -18,7 +19,8 @@ logger = logging.getLogger(__name__)
 # ── Predicate Group commands ──────────────────────────────────────────────
 
 
-@command("predicate.group.list", description="List all predicate groups")
+@command("predicate.group.list", description="List all predicate groups",
+         permission_level=PermissionLevel.READ)
 def cmd_predicate_group_list(remaining: list[str], flags: dict[str, str]) -> dict:
     """List all predicate groups."""
     svc = get_services()
@@ -27,6 +29,7 @@ def cmd_predicate_group_list(remaining: list[str], flags: dict[str, str]) -> dic
 
 
 @command("predicate.group.view", description="View a predicate group and its members",
+         permission_level=PermissionLevel.READ,
          params=[{"name": "name", "type": "string", "required": True}])
 def cmd_predicate_group_view(remaining: list[str], flags: dict[str, str]) -> dict:
     """View a predicate group and its members."""
@@ -92,6 +95,7 @@ def cmd_predicate_group_delete(remaining: list[str], flags: dict[str, str]) -> d
 
 
 @command("predicate.group.search", description="Search predicate groups",
+         permission_level=PermissionLevel.READ,
          params=[{"name": "q", "type": "string", "required": True}])
 def cmd_predicate_group_search(remaining: list[str], flags: dict[str, str]) -> dict:
     """Search predicate groups by name."""

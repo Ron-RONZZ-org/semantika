@@ -1,6 +1,7 @@
 """Command handlers for backup and restore commands."""
 
 from __future__ import annotations
+from lightercore.permissions import PermissionLevel
 
 from typing import Any
 
@@ -37,6 +38,7 @@ def cmd_backup_now(remaining: list[str], flags: dict[str, str]) -> dict:
 
 
 @command("backup.list", description="List available backups",
+         permission_level=PermissionLevel.READ,
          flags=[{"name": "stem", "type": "string", "help": "Filter by stem"},
                 {"name": "strategy", "type": "string", "help": "Filter by strategy"}])
 def cmd_backup_list(remaining: list[str], flags: dict[str, str]) -> dict:
@@ -103,7 +105,8 @@ def cmd_backup_config(remaining: list[str], flags: dict[str, str]) -> dict:
     return {"type": "status", "title": "Backup Config", "data": {"_summary": summary}}
 
 
-@command("backup.config.list", description="List backup strategies")
+@command("backup.config.list", description="List backup strategies",
+         permission_level=PermissionLevel.READ)
 def cmd_backup_config_list(remaining: list[str], flags: dict[str, str]) -> dict:
     from semantika.core.backup import list_strategies, resolve_target_path
     strategies = list_strategies()

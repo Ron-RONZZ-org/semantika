@@ -113,10 +113,10 @@ async def execute_endpoint(data: dict[str, Any]) -> dict[str, Any]:
     predicates, add triples, etc.), get real results, and iterate until
     it produces a final text answer.
 
-    Destructive tool calls (delete, merge, reset) are gated behind user
-    confirmation via ``/execute/resume`` (human-in-the-loop).  Write-level
-    operations (add, update) are allowed because the user explicitly chose
-    to run this prompt command.
+    Write and destructive tool calls (add, update, delete, merge, reset) are
+    gated behind user confirmation via ``/execute/resume`` (human-in-the-loop).
+    READ-level commands (search, list, view, stats) pass through without
+    confirmation.
 
     Special case ``/template`` has its own two-turn flow.
     """
@@ -406,11 +406,11 @@ async def _run_tool_loop(
         for idx, tc in enumerate(result.tool_calls):
             path, flags = _tc_path(tc)
 
-            # Check permission — gate destructive commands behind human approval.
-            # Write-level operations (add, update, search) are allowed because
-            # the user explicitly chose to run this prompt command.
+            # Check permission — gate write+destructive commands behind human
+            # approval.  READ-level commands (search, list, view, stats) pass
+            # through without confirmation.
             level = get_command_level(path) if _is_registered(path) else None
-            if level is not None and level >= PermissionLevel.DESTRUCTIVE:
+            if level is not None and level >= PermissionLevel.WRITE:
                 session_id = str(uuid.uuid4())
                 desc = _resolve_command_desc(path)
                 tokens = path.split(".")
@@ -507,7 +507,7 @@ async def resume_execution(data: dict[str, Any]) -> dict[str, Any]:
         r_path, r_flags = _tc_path(remaining_tc)
         r_level = get_command_level(r_path) if _is_registered(r_path) else None
 
-        if r_level is not None and r_level >= PermissionLevel.DESTRUCTIVE:
+        if r_level is not None and r_level >= PermissionLevel.WRITE:
             # Another confirmation needed before we can continue
             new_session_id = str(uuid.uuid4())
             desc = _resolve_command_desc(r_path)

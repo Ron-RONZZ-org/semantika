@@ -9,7 +9,8 @@ from semantika.server.command.errors import CommandValidationError
 from semantika.server.command.registry import command
 
 
-@command("predicate.trash.list", description="List trashed predicates")
+@command("predicate.trash.list", description="List trashed predicates",
+         permission_level=PermissionLevel.READ)
 def cmd_predicate_trash_list(remaining: list[str], flags: dict[str, str]) -> dict:
     """List all trashed predicates."""
     svc = get_services()

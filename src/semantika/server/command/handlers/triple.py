@@ -1,6 +1,7 @@
 """Command handlers for triple management: list, view, add, delete, modify."""
 
 from __future__ import annotations
+from lightercore.permissions import PermissionLevel
 
 import logging
 from pathlib import Path
@@ -119,7 +120,8 @@ def _find_triple(
 # ── Triple commands ───────────────────────────────────────────────────────
 
 
-@command("triple.list", description="List all triples")
+@command("triple.list", description="List all triples",
+         permission_level=PermissionLevel.READ)
 def cmd_triple_list(remaining: list[str], flags: dict[str, str]) -> dict:
     """List triples, optionally filtered by subject."""
     svc = get_services()
@@ -128,6 +130,7 @@ def cmd_triple_list(remaining: list[str], flags: dict[str, str]) -> dict:
 
 
 @command("triple.search", description="Search triples by subject/predicate/object",
+         permission_level=PermissionLevel.READ,
          params=[{"name": "q", "type": "string", "required": True}],
          flags=[{"name": "limit", "type": "number", "help": "Max results"}])
 def cmd_triple_search(remaining: list[str], flags: dict[str, str]) -> dict:
@@ -202,6 +205,7 @@ def cmd_triple_search(remaining: list[str], flags: dict[str, str]) -> dict:
 
 
 @command("triple.view", description="View triples for a node",
+         permission_level=PermissionLevel.READ,
          params=[{"name": "id", "type": "string", "required": True}])
 def cmd_triple_view(remaining: list[str], flags: dict[str, str]) -> dict:
     """View a single triple by ID."""

@@ -1,6 +1,7 @@
 """Command handlers for predicate and predicate-group management."""
 
 from __future__ import annotations
+from lightercore.permissions import PermissionLevel
 
 import json
 import logging
@@ -16,7 +17,8 @@ logger = logging.getLogger(__name__)
 # ── Predicate commands ──────────────────────────────────────────────────
 
 
-@command("predicate.list", description="List all predicates")
+@command("predicate.list", description="List all predicates",
+         permission_level=PermissionLevel.READ)
 def cmd_predicate_list(remaining: list[str], flags: dict[str, str]) -> dict:
     """List all predicates."""
     svc = get_services()
@@ -25,6 +27,7 @@ def cmd_predicate_list(remaining: list[str], flags: dict[str, str]) -> dict:
 
 
 @command("predicate.search", description="Search predicates",
+         permission_level=PermissionLevel.READ,
          params=[{"name": "q", "type": "string", "required": True}],
          flags=[{"name": "wikidata", "type": "flag", "help": "Also search Wikidata"}])
 def cmd_predicate_search(remaining: list[str], flags: dict[str, str]) -> dict:
@@ -47,6 +50,7 @@ def cmd_predicate_search(remaining: list[str], flags: dict[str, str]) -> dict:
 
 
 @command("predicate.view", description="View predicate details",
+         permission_level=PermissionLevel.READ,
          params=[{"name": "predicate_id", "type": "string", "required": True}])
 def cmd_predicate_view(remaining: list[str], flags: dict[str, str]) -> dict:
     """View a single predicate by ID, including triples that use it."""

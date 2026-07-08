@@ -1,13 +1,15 @@
 """Command handlers for unit ontology commands."""
 
 from __future__ import annotations
+from lightercore.permissions import PermissionLevel
 
 from semantika.graph.db import get_services
 from semantika.server.command.errors import CommandValidationError
 from semantika.server.command.registry import command
 
 
-@command("unit.list", description="List all units")
+@command("unit.list", description="List all units",
+         permission_level=PermissionLevel.READ)
 def cmd_unit_list(remaining: list[str], flags: dict[str, str]) -> dict:
     """List all units in the ontology."""
     svc = get_services()
@@ -18,6 +20,7 @@ def cmd_unit_list(remaining: list[str], flags: dict[str, str]) -> dict:
 
 
 @command("unit.view", description="View unit info",
+         permission_level=PermissionLevel.READ,
          params=[{"name": "id", "type": "string", "required": True}])
 def cmd_unit_view(remaining: list[str], flags: dict[str, str]) -> dict:
     """View detailed info for a unit by ID."""
@@ -32,6 +35,7 @@ def cmd_unit_view(remaining: list[str], flags: dict[str, str]) -> dict:
 
 
 @command("unit.resolve", description="Resolve a unit expression",
+         permission_level=PermissionLevel.READ,
          params=[{"name": "expr", "type": "string", "required": True}])
 def cmd_unit_resolve(remaining: list[str], flags: dict[str, str]) -> dict:
     """Resolve a unit expression (e.g. 'm/s^2') to a unit node."""

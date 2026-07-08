@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from lightercore.permissions import PermissionLevel
+
 from semantika.graph.db import get_services
 from semantika.server.command.errors import CommandValidationError
 from semantika.server.command.registry import command
@@ -33,7 +35,8 @@ def cmd_review_start(remaining: list[str], flags: dict[str, str]) -> dict:
     return {"type": "status", "data": session}
 
 
-@command("review.sessions", description="List review sessions")
+@command("review.sessions", description="List review sessions",
+         permission_level=PermissionLevel.READ)
 def cmd_review_sessions(remaining: list[str], flags: dict[str, str]) -> dict:
     """List all review sessions."""
     svc = get_services()
@@ -42,6 +45,7 @@ def cmd_review_sessions(remaining: list[str], flags: dict[str, str]) -> dict:
 
 
 @command("review.view", description="View a review session",
+         permission_level=PermissionLevel.READ,
          params=[{"name": "uuid", "type": "string", "required": True}])
 def cmd_review_view(remaining: list[str], flags: dict[str, str]) -> dict:
     """View a review session by ID."""
@@ -99,6 +103,7 @@ def cmd_proof_add(remaining: list[str], flags: dict[str, str]) -> dict:
 
 
 @command("proof.view", description="View proofs for a triple",
+         permission_level=PermissionLevel.READ,
          params=[{"name": "subject_id", "type": "string", "required": True},
                  {"name": "predicate_id", "type": "string", "required": True},
                  {"name": "object_value", "type": "string", "required": True}])

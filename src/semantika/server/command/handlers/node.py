@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 @command("node.list", description="List all nodes",
+         permission_level=PermissionLevel.READ,
          params=[{"name": "limit", "type": "number", "default": 100}])
 def cmd_node_list(remaining: list[str], flags: dict[str, str]) -> dict:
     """List all non-trashed nodes."""
@@ -35,6 +36,7 @@ def cmd_node_list(remaining: list[str], flags: dict[str, str]) -> dict:
 
 
 @command("node.search", description="Search nodes by label",
+         permission_level=PermissionLevel.READ,
          params=[{"name": "q", "type": "string", "required": True}])
 def cmd_node_search(remaining: list[str], flags: dict[str, str]) -> dict:
     """Search nodes by label or definition text."""
@@ -47,6 +49,7 @@ def cmd_node_search(remaining: list[str], flags: dict[str, str]) -> dict:
 
 
 @command("node.view", description="View a node and its triples",
+         permission_level=PermissionLevel.READ,
          params=[{"name": "id", "type": "string", "required": True}])
 def cmd_node_view(remaining: list[str], flags: dict[str, str]) -> dict:
     """View a single node by ID or prefix."""
