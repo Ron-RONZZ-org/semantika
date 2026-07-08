@@ -145,9 +145,9 @@ async def execute_endpoint(data: dict[str, Any]) -> dict[str, Any]:
 
     expanded = expand_prompt_template(cmd.template, args)
 
-    # Parse tool domain declaration from template (``# +tools: node, predicate``)
-    # so the LLM only sees relevant tools instead of all 91.
-    allowed_domains = _parse_tool_domains(cmd.template)
+    # Parse tool domain declaration from YAML frontmatter first,
+    # then fall back to ``# +tools:`` comment in template body.
+    allowed_domains = _parse_tool_domains(cmd.template, frontmatter_tools=cmd.tools)
 
     provider = get_provider()
     if not provider.available:
@@ -806,17 +806,24 @@ def _sanitize_tool_result(result: dict) -> dict:
     return _walk(result)
 
 
-def _parse_tool_domains(template: str) -> set[str] | None:
+def _parse_tool_domains(
+    template: str,
+    frontmatter_tools: list[str] | None = None,
+) -> set[str] | None:
     """Parse tool domain declaration from a prompt command template.
 
-    Looks for lines matching ``# +tools: domain1, domain2`` in the
-    template body.  The domains are the first segment of command paths
-    (e.g. ``node``, ``predicate``, ``triple``, ``graph``).
+    Priority:
+    1. ``frontmatter_tools`` (from YAML frontmatter, already parsed).
+    2. ``# +tools: domain1, domain2`` comment in the template body.
+    3. ``None`` — include all tools.
 
     Returns:
-        A set of domain strings, or ``None`` if no declaration is found
-        (meaning include all tools).
+        A set of domain strings, or ``None`` to include all tools.
     """
+    if frontmatter_tools:
+        domains = {d.strip().lower() for d in frontmatter_tools if d.strip()}
+        return domains if domains else None
+
     import re
     for line in template.split("\n"):
         stripped = line.strip()
