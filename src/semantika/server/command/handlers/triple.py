@@ -1,10 +1,11 @@
 """Command handlers for triple management: list, view, add, delete, modify."""
 
 from __future__ import annotations
-from lightercore.permissions import PermissionLevel
 
 import logging
 from pathlib import Path
+
+from lightercore.permissions import PermissionLevel
 
 from semantika.core.exceptions import AmbiguousIDError
 from semantika.graph.db import get_services
@@ -37,10 +38,10 @@ def _resolve_triple_type(
     int_flag = _is_flag_set("int", flags)
     float_flag = _is_flag_set("float", flags)
     bool_flag = _is_flag_set("bool", flags)
-    lang = flags.get("lang", None)
-    katex = flags.get("katex", None)
-    str_dosiero = flags.get("str_dosiero", None) or flags.get("str-dosiero", None)
-    kodlingvo = flags.get("kodlingvo", None)
+    lang = flags.get("lang")
+    katex = flags.get("katex")
+    str_dosiero = flags.get("str_dosiero") or flags.get("str-dosiero")
+    kodlingvo = flags.get("kodlingvo")
 
     object_value = raw_object
     object_type = "uri"
@@ -118,16 +119,65 @@ def _find_triple(
     return triple
 
 
+# ── Batch triple deletion helper ──────────────────────────────────────────
+
+
+def _batch_delete_triples(svc: dict, triples: list[dict]) -> int:
+    """Delete multiple triples with proof cascade.
+
+    Iterates over *triples*, cascade-deleting proofs then removing each
+    triple.  Returns the number of triples deleted.
+    """
+    count = 0
+    for t in triples:
+        svc["proof"].cascade_delete_proofs(
+            t["subject_id"], t["predicate_id"], t["object_value"],
+        )
+        svc["triple"].remove(
+            subject_id=t["subject_id"],
+            predicate_id=t["predicate_id"],
+            object_value=t["object_value"],
+            object_type=t.get("object_type", "uri"),
+        )
+        count += 1
+    return count
+
+
 # ── Triple commands ───────────────────────────────────────────────────────
 
 
 @command("triple.list", description="List all triples",
-         permission_level=PermissionLevel.READ)
+         permission_level=PermissionLevel.READ,
+         flags=[{"name": "limit", "type": "number", "help": "Max results (default 100)"},
+                {"name": "offset", "type": "number", "help": "Result offset for pagination (default 0)"}])
 def cmd_triple_list(remaining: list[str], flags: dict[str, str]) -> dict:
-    """List triples, optionally filtered by subject."""
+    """List triples with optional pagination (--limit, --offset)."""
     svc = get_services()
-    triples = svc["triple"].db.execute("SELECT * FROM triples ORDER BY subject_id, predicate_id LIMIT ?", (100,))
-    return {"type": "triple-list", "data": triples}
+    raw_limit = flags.get("limit", "100")
+    raw_offset = flags.get("offset", "0")
+    try:
+        limit = int(raw_limit)
+        offset = int(raw_offset)
+    except ValueError:
+        raise CommandValidationError("--limit and --offset must be integers")
+    if limit < 1:
+        raise CommandValidationError("--limit must be >= 1")
+    if offset < 0:
+        raise CommandValidationError("--offset must be >= 0")
+
+    triples = svc["triple"].db.execute(
+        "SELECT * FROM triples ORDER BY subject_id, predicate_id LIMIT ? OFFSET ?",
+        (limit, offset),
+    )
+    count_row = svc["triple"].db.execute_one("SELECT COUNT(*) AS cnt FROM triples")
+    total = count_row["cnt"] if count_row else 0
+    return {
+        "type": "triple-list",
+        "data": triples,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @command("triple.search", description="Search triples by subject/predicate/object",
@@ -200,7 +250,7 @@ def cmd_triple_search(remaining: list[str], flags: dict[str, str]) -> dict:
     where = " OR ".join(clauses)
     rows = svc["triple"].db.execute(
         f"SELECT DISTINCT * FROM triples WHERE {where} ORDER BY subject_id, predicate_id LIMIT ?",
-        params + [limit],
+        [*params, limit],
     )
     return {"type": "triple-list", "data": rows, "label": f"Triples matching '{q}'"}
 
@@ -252,7 +302,7 @@ def cmd_triple_add(remaining: list[str], flags: dict[str, str]) -> dict:
     object_value = flags.get("object_value") or (remaining[2] if len(remaining) > 2 else "") or ""
     if not subject_id or not predicate_id or not object_value:
         raise CommandValidationError("Specify subject_id, predicate_id, and object_value")
-    unit = flags.get("unit", None)
+    unit = flags.get("unit")
 
     object_value, object_type, object_datatype, object_lang = _resolve_triple_type(
         object_value, flags
@@ -304,21 +354,11 @@ def cmd_triple_delete(remaining: list[str], flags: dict[str, str]) -> dict:
         return {"type": "status", "data": {"message": "Triple deleted"}}
     elif predicate:
         triples = svc["triple"].get_by_sp(subject, predicate)
-        count = 0
-        for t in triples:
-            svc["proof"].cascade_delete_proofs(t["subject_id"], t["predicate_id"], t["object_value"])
-            svc["triple"].remove(subject_id=t["subject_id"], predicate_id=t["predicate_id"],
-                                 object_value=t["object_value"], object_type=t.get("object_type", "uri"))
-            count += 1
+        count = _batch_delete_triples(svc, triples)
         return {"type": "status", "data": {"message": f"Deleted {count} triple(s)"}}
     else:
         triples = svc["triple"].get_by_subject(subject)
-        count = 0
-        for t in triples:
-            svc["proof"].cascade_delete_proofs(t["subject_id"], t["predicate_id"], t["object_value"])
-            svc["triple"].remove(subject_id=t["subject_id"], predicate_id=t["predicate_id"],
-                                 object_value=t["object_value"], object_type=t.get("object_type", "uri"))
-            count += 1
+        count = _batch_delete_triples(svc, triples)
         return {"type": "status", "data": {"message": f"Deleted {count} triple(s)"}}
 
 
@@ -350,10 +390,10 @@ def cmd_triple_modify(remaining: list[str], flags: dict[str, str]) -> dict:
     if not triple:
         raise CommandValidationError("Triple not found")
 
-    new_subject = flags.get("new_subject", None) or flags.get("new-subject", None) or triple["subject_id"]
-    new_predicate = flags.get("new_predicate", None) or flags.get("new-predicate", None) or triple["predicate_id"]
-    new_object_raw = flags.get("new_object", None) or flags.get("new-object", None) or triple["object_value"]
-    unit = flags.get("unit", None)
+    new_subject = flags.get("new_subject") or flags.get("new-subject") or triple["subject_id"]
+    new_predicate = flags.get("new_predicate") or flags.get("new-predicate") or triple["predicate_id"]
+    new_object_raw = flags.get("new_object") or flags.get("new-object") or triple["object_value"]
+    unit = flags.get("unit")
 
     new_object, new_type, new_datatype, new_lang = _resolve_triple_type(new_object_raw, flags)
     # For modify, if no type flag was specified, preserve the original triple's type/datatype/lang
@@ -364,7 +404,7 @@ def cmd_triple_modify(remaining: list[str], flags: dict[str, str]) -> dict:
         new_lang = triple.get("object_lang", None)
     else:
         str_flag = _is_flag_set("str", flags)
-        new_lang = flags.get("lang", None) if str_flag else triple.get("object_lang", None)
+        new_lang = flags.get("lang") if str_flag else triple.get("object_lang", None)
 
     new_unit = unit or triple.get("object_unit", None)
     noop = (triple["subject_id"] == new_subject and triple["predicate_id"] == new_predicate

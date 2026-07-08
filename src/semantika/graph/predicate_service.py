@@ -12,6 +12,7 @@ from typing import Any
 
 from semantika.core import SemantikaDB
 from semantika.core.crud import CRUDService, now
+from semantika.core.fts import FTS5Manager
 from semantika.graph.constants import FTS5_KEYWORDS
 from semantika.graph.helpers import escape_like
 
@@ -24,6 +25,21 @@ class PredicateService(CRUDService):
     def __init__(self, db: SemantikaDB) -> None:
         super().__init__(db=db, table="predicates", pk_column="predicate_id",
                          trash_table="predicates_trash")
+        self._fts_initialized: bool = False
+        self._fts_mgr_cache: FTS5Manager | None = None
+
+    @property
+    def _fts_mgr(self) -> FTS5Manager:
+        """Lazy-initialised shared FTS5 manager for predicates."""
+        if self._fts_mgr_cache is None:
+            self._fts_mgr_cache = FTS5Manager(
+                db=self.db,
+                fts_table="predicates_fts",
+                content_table="predicates",
+                pk_column="predicate_id",
+                fts_columns=["labels", "descriptions", "aliases"],
+            )
+        return self._fts_mgr_cache
 
     # ── Delete / Trash ──────────────────────────────────────────────────
 
@@ -33,14 +49,14 @@ class PredicateService(CRUDService):
             return self._move_to_trash(pk)
         # Hard delete: cascade-delete triples and proofs first
         entry = self.db.execute_one(
-            "SELECT predicate_id FROM predicates WHERE predicate_id LIKE ?", (f"{pk}%",)
+            "SELECT predicate_id FROM predicates WHERE predicate_id = ?", (pk,)
         )
         if not entry:
             return False
         with self.db.transaction() as conn:
             conn.execute("DELETE FROM proofs WHERE predicate_id = ?", (entry["predicate_id"],))
             conn.execute("DELETE FROM triples WHERE predicate_id = ?", (entry["predicate_id"],))
-            conn.execute("DELETE FROM predicates WHERE predicate_id LIKE ?", (f"{pk}%",))
+            conn.execute("DELETE FROM predicates WHERE predicate_id = ?", (entry["predicate_id"],))
         return True
 
     def _move_to_trash(self, predicate_id: str) -> bool:
@@ -83,7 +99,7 @@ class PredicateService(CRUDService):
             self._remove_from_fts(predicate_id, conn=conn)
             conn.execute("DELETE FROM predicates_trash WHERE predicate_id = ?", (predicate_id,))
             restored["updated_at"] = now()
-            cols = [c for c in restored.keys() if c != "deleted_at"]
+            cols = [c for c in restored if c != "deleted_at"]
             vals = [restored[c] for c in cols]
             ph = ", ".join(["?"] * len(cols))
             conn.execute(f"INSERT OR REPLACE INTO predicates ({', '.join(cols)}) VALUES ({ph})", vals)
@@ -98,48 +114,41 @@ class PredicateService(CRUDService):
             self.db.execute("DELETE FROM predicates_trash")
         return count
 
-    # ── FTS5 Management ──────────────────────────────────────────────
+    # ── FTS5 Management (delegated to FTS5Manager) ────────────────────
 
     def _ensure_fts(self) -> bool:
-        """Ensure predicates_fts exists and is populated. Returns True if usable."""
+        """Ensure predicates_fts exists and is populated. Returns True if usable.
+
+        Uses a boolean flag to avoid repeated SQL queries on every search
+        after the FTS table has been confirmed to exist and be populated.
+        """
+        if self._fts_initialized:
+            return True
+
         vt = self.db.execute_one(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='predicates_fts'"
         )
         if not vt:
             try:
-                self.db.execute(
-                    "CREATE VIRTUAL TABLE predicates_fts USING fts5("
-                    "  predicate_id UNINDEXED, labels, descriptions, aliases,"
-                    "  content=predicates, content_rowid=rowid, tokenize='unicode61'"
-                    ")"
-                )
+                self._fts_mgr.ensure()
             except sqlite3.DatabaseError:
                 return False
+        else:
+            # Table exists — populate if empty
+            count = self.db.execute_one("SELECT COUNT(*) AS cnt FROM predicates_fts")
+            if count and count["cnt"] == 0:
+                self._fts_mgr.populate()
 
-        count = self.db.execute_one("SELECT COUNT(*) AS cnt FROM predicates_fts")
-        if count and count["cnt"] == 0:
-            self._populate_fts()
+        self._fts_initialized = True
         return True
 
     def _populate_fts(self) -> None:
         """Populate predicates_fts from content table."""
-        try:
-            self.db.execute(
-                "INSERT INTO predicates_fts (rowid, predicate_id, labels, descriptions, aliases)"
-                " SELECT rowid, predicate_id, labels, descriptions, aliases FROM predicates"
-            )
-        except sqlite3.DatabaseError:
-            logger.warning("Predicate FTS population failed — LIKE fallback will work")
+        self._fts_mgr.populate()
 
     def _rebuild_fts(self) -> None:
         """Rebuild the predicates FTS index from all content."""
-        try:
-            self.db.execute(
-                "INSERT INTO predicates_fts(predicates_fts) VALUES('rebuild')"
-            )
-        except sqlite3.DatabaseError:
-            self.db.execute("DROP TABLE IF EXISTS predicates_fts")
-            self._ensure_fts()
+        self._fts_mgr.rebuild()
 
     def _index_fts(self, predicate_id: str,
                    conn: sqlite3.Connection) -> None:
@@ -151,22 +160,7 @@ class PredicateService(CRUDService):
             predicate_id: The predicate ID to index.
             conn: Active database connection (required).
         """
-        row = conn.execute(
-            "SELECT rowid, predicate_id, labels, descriptions, aliases"
-            " FROM predicates WHERE predicate_id = ?",
-            (predicate_id,),
-        ).fetchone()
-        if not row:
-            return
-        try:
-            conn.execute(
-                "INSERT INTO predicates_fts(rowid, predicate_id, labels, descriptions, aliases)"
-                " VALUES(?, ?, ?, ?, ?)",
-                (row[0], predicate_id,
-                 row[2] or "", row[3] or "", row[4] or ""),
-            )
-        except sqlite3.DatabaseError:
-            pass
+        self._fts_mgr.index(predicate_id, conn=conn)
 
     def _remove_from_fts(self, predicate_id: str,
                          conn: sqlite3.Connection,
@@ -180,17 +174,7 @@ class PredicateService(CRUDService):
             conn: Active database connection (required).
             rowid: Pre-fetched rowid (avoids a SELECT if known).
         """
-        if rowid is None:
-            row = conn.execute(
-                "SELECT rowid FROM predicates WHERE predicate_id = ?",
-                (predicate_id,),
-            ).fetchone()
-            if not row:
-                return False
-            rowid_val = row[0]
-        else:
-            rowid_val = rowid
-        return self._remove_fts_by_rowid(predicate_id, rowid_val, conn)
+        return self._fts_mgr.remove(predicate_id, conn=conn, rowid=rowid)
 
     def _remove_fts_by_rowid(self, predicate_id: str, rowid: int,
                              conn: sqlite3.Connection) -> bool:
@@ -203,31 +187,11 @@ class PredicateService(CRUDService):
             rowid: Rowid of the predicate to remove from FTS.
             conn: Active database connection (required).
         """
-        try:
-            conn.execute(
-                "INSERT INTO predicates_fts(predicates_fts, rowid) VALUES('delete', ?)",
-                (rowid,),
-            )
-            return True
-        except sqlite3.DatabaseError as exc:
-            logger.warning("FTS 'delete' failed for %s (rowid=%s): %s", predicate_id, rowid, exc)
-            return False
+        return self._fts_mgr.remove_by_rowid(predicate_id, rowid, conn=conn)
 
     def _sanitize_fts_query(self, query: str) -> str:
         """Sanitize a user query string for FTS5 MATCH."""
-        if not query or "_" in query or "%" in query:
-            return ""
-        safe_tokens = []
-        for word in query.strip().split():
-            cleaned = "".join(c for c in word if c.isalnum())
-            if not cleaned:
-                continue
-            if cleaned.upper() in FTS5_KEYWORDS:
-                cleaned = cleaned.lower()
-            safe_tokens.append(f"{cleaned}*")
-        if not safe_tokens:
-            return ""
-        return " OR ".join(safe_tokens)
+        return FTS5Manager.sanitize_query(query)
 
     # ── Create / Update / Search with FTS5 support ────────────────────
 
@@ -288,7 +252,7 @@ class PredicateService(CRUDService):
         updates["updated_at"] = ts
 
         set_parts = [f"{k} = ?" for k in updates]
-        params = list(updates.values()) + [predicate_id]
+        params = [*list(updates.values()), predicate_id]
         sql = f"UPDATE predicates SET {', '.join(set_parts)} WHERE predicate_id = ?"
 
         with self.db.transaction() as conn:
@@ -358,38 +322,36 @@ class PredicateService(CRUDService):
         if existing:
             raise ValueError(f"New predicate ID '{new_id}' already exists")
 
-        # Check triple PK collision
-        old_triples = self.db.execute(
-            "SELECT subject_id, object_value, object_type FROM triples "
-            "WHERE predicate_id = ?", (old_id,),
+        # Check triple PK collision (single query instead of N+1 loop)
+        triple_coll = self.db.execute_one(
+            """SELECT 1 FROM triples t1
+               JOIN triples t2 ON t1.subject_id = t2.subject_id
+                  AND t1.object_value = t2.object_value
+                  AND t1.object_type = t2.object_type
+               WHERE t1.predicate_id = ? AND t2.predicate_id = ?
+               LIMIT 1""",
+            (new_id, old_id),
         )
-        for t in old_triples:
-            coll = self.db.execute_one(
-                "SELECT 1 FROM triples WHERE subject_id = ? AND predicate_id = ? "
-                "AND object_value = ? AND object_type = ?",
-                (t["subject_id"], new_id, t["object_value"], t["object_type"]),
+        if triple_coll:
+            raise ValueError(
+                f"Rename would cause triple PK collision "
+                f"with predicate_id '{new_id}'"
             )
-            if coll:
-                raise ValueError(
-                    f"Rename would cause triple PK collision: "
-                    f"({t['subject_id']}, {new_id}, {t['object_value']})"
-                )
 
-        # Check predicate group member collision
-        old_members = self.db.execute(
-            "SELECT group_uuid FROM predicate_group_members WHERE predicate_id = ?",
-            (old_id,),
+        # Check predicate group member collision (single query)
+        group_coll = self.db.execute_one(
+            """SELECT 1 FROM predicate_group_members pg1
+               JOIN predicate_group_members pg2
+                  ON pg1.group_uuid = pg2.group_uuid
+               WHERE pg1.predicate_id = ? AND pg2.predicate_id = ?
+               LIMIT 1""",
+            (new_id, old_id),
         )
-        for m in old_members:
-            coll = self.db.execute_one(
-                "SELECT 1 FROM predicate_group_members WHERE group_uuid = ? AND predicate_id = ?",
-                (m["group_uuid"], new_id),
+        if group_coll:
+            raise ValueError(
+                f"Rename would cause predicate group member collision: "
+                f"predicate '{new_id}' already in the same group"
             )
-            if coll:
-                raise ValueError(
-                    f"Rename would cause predicate group member collision: "
-                    f"group ({m['group_uuid']}, {new_id}) already exists"
-                )
 
         updates = dict(data or {})
         ts = now()
@@ -410,7 +372,7 @@ class PredicateService(CRUDService):
                 # FTS operations inside the transaction so rollback keeps them in sync
                 self._remove_from_fts(old_id, conn=conn)
                 set_parts = [f"{k} = ?" for k in updates]
-                params = list(updates.values()) + [old_id]
+                params = [*list(updates.values()), old_id]
                 conn.execute(
                     f"UPDATE predicates SET {', '.join(set_parts)} WHERE predicate_id = ?",
                     params,

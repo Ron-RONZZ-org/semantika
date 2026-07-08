@@ -103,3 +103,11 @@ class TestResetToFreshState:
         from semantika.core.reset import _KNOWN_CREDENTIAL_SERVICES
         assert "semantika-llm" in _KNOWN_CREDENTIAL_SERVICES
         assert "semantika-key" in _KNOWN_CREDENTIAL_SERVICES
+
+    def test_register_credential_service(self) -> None:
+        """register_credential_service adds to the known set."""
+        from semantika.core.reset import _KNOWN_CREDENTIAL_SERVICES, register_credential_service
+        register_credential_service("semantika-test-service")
+        assert "semantika-test-service" in _KNOWN_CREDENTIAL_SERVICES
+        # Must not replace the existing set
+        assert "semantika-llm" in _KNOWN_CREDENTIAL_SERVICES

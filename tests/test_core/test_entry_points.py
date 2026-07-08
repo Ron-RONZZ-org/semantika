@@ -44,14 +44,38 @@ class TestDevCli:
         """Argument parser accepts --port."""
         import argparse
         parser = argparse.ArgumentParser("test")
-        parser.add_argument("--port", type=int, default=8001)
+        parser.add_argument("--port", type=int, default=6015)
         args = parser.parse_args(["--port", "9000"])
         assert args.port == 9000
 
     def test_dev_main_default_port(self) -> None:
-        """Default port is 8001."""
+        """Default port is 6015."""
         import argparse
         parser = argparse.ArgumentParser("test")
-        parser.add_argument("--port", type=int, default=8001)
+        parser.add_argument("--port", type=int, default=6015)
         args = parser.parse_args([])
-        assert args.port == 8001
+        assert args.port == 6015
+
+
+class TestGraphDb:
+    """Tests for graph/db.py — DB singleton and service caching."""
+
+    def test_reset_services(self) -> None:
+        """reset_services clears the cache; next call creates fresh instances."""
+        from semantika.graph.db import get_services, reset_services, close_db
+        # Close any existing singleton first
+        close_db()
+        reset_services()
+
+        svc1 = get_services()
+        svc2 = get_services()
+        # Before reset, same cache returns same objects
+        assert svc1["node"] is svc2["node"]
+
+        reset_services()
+        svc3 = get_services()
+        # After reset, should be a new instance
+        assert svc1["node"] is not svc3["node"]
+
+        close_db()
+        reset_services()

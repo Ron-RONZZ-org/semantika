@@ -299,6 +299,14 @@ Prompt commands are served by `GET/POST /api/v1/prompt-commands/*`:
 
 The `--seed` flag on `semantika-dev` creates a demo prompt command for testing.
 
+## Service Caching
+
+`get_services()` in ``graph/db.py`` caches service instances (``NodeService``, ``PredicateService``, ``TripleService``, ``ProofService``, ``ReviewService``, ``PredicateGroupService``) after the first call.  This avoids re-instantiating the entire service layer on every command dispatch.
+
+- Call :func:`reset_services` to clear the cache after a database reset or restore.
+- When writing tests that share a global ``get_services()``, call ``reset_services()`` between test runs to avoid state leakage.
+- The ``FTS5Manager`` in ``core/fts.py`` provides shared FTS5 index operations to both ``NodeService`` and ``PredicateService``, replacing the duplicated ``_ensure_fts`` / ``_index_fts`` / ``_remove_from_fts`` / ``_rebuild_fts`` pattern.
+
 ## User Configuration
 
 Semantika supports persistent user preferences stored as JSON at `~/.local/share/semantika/user_config.json`:
@@ -368,6 +376,21 @@ DEEPSEEK_API_KEY="sk-..."
 
 The `--seed` flag (dev server) reads `.dev` to populate test data. Production deployments
 should use environment variables or system keyring exclusively.
+
+## Security: User Hooks
+
+Semantika supports user-defined hooks via ``~/.config/semantika/hooks.py``, which is loaded
+and executed using ``importlib`` at startup. **This is effectively arbitrary code execution
+from disk.** The following considerations apply:
+
+- The hooks file lives in the XDG config directory, which should be treated as a **trusted
+  location** by the user.
+- A malicious ``.dev`` file or a compromised config directory could inject arbitrary code.
+- There is no ``--no-hooks`` flag to skip loading user hooks during debugging.
+- **Recommendation**: If you share your config directory across machines, audit the hooks
+  file for unexpected content before running Semantika.
+
+---
 
 ## What to Avoid
 

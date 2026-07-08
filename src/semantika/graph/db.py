@@ -58,11 +58,23 @@ def close_db() -> None:
         _db_path = None
 
 
-def get_services() -> dict[str, Any]:
-    """Return a dict of all service singletons.
+_services_cache: dict[str, Any] | None = None
 
-    Lazily initializes the DB and all services.
+
+def get_services() -> dict[str, Any]:
+    """Return a dict of all service singletons (cached).
+
+    Lazily initializes the DB and all services once.  Subsequent calls
+    return the cached instances, avoiding repeated constructor overhead
+    on every command dispatch.
+
+    Call :func:`reset_services` to clear the cache (e.g. after a database
+    reset or restore).
     """
+    global _services_cache
+    if _services_cache is not None:
+        return _services_cache
+
     init_db()
     from semantika.graph.node_service import NodeService
     from semantika.graph.predicate_group_service import PredicateGroupService
@@ -72,7 +84,7 @@ def get_services() -> dict[str, Any]:
     from semantika.graph.triple_service import TripleService
 
     db = get_db()
-    return {
+    _services_cache = {
         "node": NodeService(db),
         "predicate": PredicateService(db),
         "predicate_group": PredicateGroupService(db),
@@ -80,6 +92,18 @@ def get_services() -> dict[str, Any]:
         "review": ReviewService(db),
         "proof": ProofService(db),
     }
+    return _services_cache
+
+
+def reset_services() -> None:
+    """Clear the services cache.
+
+    Call after a database reset or restore so that the next call to
+    :func:`get_services` creates fresh service instances tied to the
+    new database.
+    """
+    global _services_cache
+    _services_cache = None
 
 
 # ── Schema DDL ─────────────────────────────────────────────────────────

@@ -19,7 +19,14 @@ The authoritative source for shared infrastructure is **[lightercore](../lighter
 | `exceptions.py` | `lightercore.core.exceptions` | Base exception classes |
 | `crud.py` | `lightercore.core.crud` | `CRUDService` base class with standard CRUD + soft-delete pattern |
 | `backup.py` | `lightercore.core.backup` | Multi-strategy backup, restore, prune, export/import |
-| `fts.py` | `lightercore.core.fts` | `FTSConfig` for FTS5 virtual table setup |
+| `fts.py` | `lightercore.core.fts` | `FTSConfig` for FTS5 virtual table setup, plus local ``FTS5Manager`` |
+
+### Additional: `fts.py`
+- `FTS5Manager` — shared FTS5 lifecycle manager used by both `NodeService` and `PredicateService`
+- Eliminates duplicated `_ensure_fts` / `_populate_fts` / `_index_fts` / `_remove_from_fts` / `_rebuild_fts` / `optimize_fts` patterns
+- Connection-aware: all methods accept an optional `conn` parameter for use inside caller-managed transactions
+- Uses `DELETE FROM fts_table WHERE rowid = ?` syntax (not the older `INSERT...VALUES('delete',?)`) for FTS5 row removal
+- `sanitize_query()` static method provides safe keyword-aware query tokenization for FTS5 MATCH
 
 ### Additional: `reset.py`
 - Resets the knowledge graph to a fresh state (drops and recreates tables)

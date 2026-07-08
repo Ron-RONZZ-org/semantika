@@ -42,6 +42,7 @@ FastAPI web server: application factory, API routes, middleware, command engine,
 - All route handlers return Pydantic models or dicts (auto-JSON serialization)
 - Errors return structured `{"error": "...", "detail": "..."}` responses
 - The `!command` engine returns typed responses: `status`, `form-required`, `node-list`, `predicate-list`, `triple-list`, `graph`, `error`
+- List commands support pagination via `--limit` (default 100) and `--offset` (default 0) flags; responses include `total`, `limit`, and `offset` metadata keys
 - Prompt commands (`/` prefix) are served by `GET/POST /api/v1/prompt-commands/*`:
   - `GET /list` — autocomplete source
   - `POST /expand` — preview expanded prompt

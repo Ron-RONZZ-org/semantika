@@ -106,10 +106,7 @@ def cmd_node_add(remaining: list[str], flags: dict[str, str]) -> dict:
             labels_dict = json.loads(labels_raw) if labels_raw.startswith("{") else None
         except (json.JSONDecodeError, TypeError):
             labels_dict = None
-        if labels_dict:
-            payload = {"labels": labels_dict}
-        else:
-            payload = {"labels": {"en": labels_raw}}
+        payload = {"labels": labels_dict} if labels_dict else {"labels": {"en": labels_raw}}
     else:
         payload = {"labels": {}}
     if explicit_id:
@@ -248,7 +245,12 @@ def cmd_node_update(remaining: list[str], flags: dict[str, str]) -> dict:
          flags=[{"name": "prefix", "type": "string", "help": "Delete all nodes with this ID prefix"},
                 {"name": "force", "type": "string", "help": "Skip dependency warning and proceed"}])
 def cmd_node_delete(remaining: list[str], flags: dict[str, str]) -> dict:
-    """Delete (soft) a node, moving it to trash."""
+    """Delete (soft) one or more nodes, moving them to trash.
+
+    Accepts explicit IDs, numbered args (``_1``, ``_2``), or ``--prefix``
+    to match all nodes with a given ID prefix.  Uses batched operations
+    internally for efficiency.
+    """
     svc = get_services()
     ids: list[str] = []
     pos_id = flags.get("id") or ""
@@ -268,19 +270,25 @@ def cmd_node_delete(remaining: list[str], flags: dict[str, str]) -> dict:
     if not ids:
         raise CommandValidationError("Specify node ID(s) or use --prefix")
     force = flags.get("force", "").lower() in ("true", "1", "yes")
-    for nid in ids:
-        warning = svc["node"].get_delete_warning(nid)
-        if warning and not force:
-            raise CommandValidationError(warning)
-    deleted = 0
-    errors = []
-    for nid in ids:
-        try:
-            # _move_to_trash handles triple cleanup; no need to remove separately
-            svc["node"].delete(nid, soft=True)
-            deleted += 1
-        except Exception as e:
-            errors.append(f"{nid}: {e}")
+    # Batch warning check — single query instead of N individual lookups
+    placeholders = ", ".join(["?"] * len(ids))
+    rows = svc["node"].db.execute(
+        f"SELECT node_id, "
+        f"(SELECT COUNT(*) FROM triples WHERE subject_id = nodes.node_id) AS subject_cnt, "
+        f"(SELECT COUNT(*) FROM triples "
+        f" WHERE object_type = 'uri' AND object_value = nodes.node_id) AS object_cnt "
+        f"FROM nodes WHERE node_id IN ({placeholders})",
+        tuple(ids),
+    )
+    for r in rows:
+        total = (r["subject_cnt"] or 0) + (r["object_cnt"] or 0)
+        if total > 0 and not force:
+            raise CommandValidationError(
+                f"Deleting '{r['node_id']}' will also remove {total} triple(s). "
+                f"Use --force to confirm."
+            )
+
+    deleted, errors = svc["node"].batch_delete(ids, soft=True)
     msg = f"Deleted {deleted} node(s)"
     if errors:
         msg += f" ({len(errors)} error(s))"
