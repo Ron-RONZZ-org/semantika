@@ -67,7 +67,8 @@ def cmd_node_view(remaining: list[str], flags: dict[str, str]) -> dict:
 
 @command("node.add", description="Create a new node with optional arc shortcuts and file attachments",
          interactive=True,
-         params=[{"name": "labels", "type": "string"}],
+         params=[{"name": "labels", "type": "string",
+               "help": "Labels as LANG::TEXT or JSON"}],
          flags=[
              {"name": "copy", "type": "flag", "help": "Copy node ID to clipboard"},
              # Arc shortcuts

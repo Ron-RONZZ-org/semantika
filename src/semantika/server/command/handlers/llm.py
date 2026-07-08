@@ -29,8 +29,8 @@ def cmd_llm_show(remaining: list[str], flags: dict[str, str]) -> dict:
 
 @command("llm.new", description="Create new LLM configuration",
          params=[{"name": "provider_type", "type": "string", "required": True}],
-         flags=[{"name": "api_key", "type": "string"}, {"name": "base_url", "type": "string"},
-                {"name": "model", "type": "string"}, {"name": "alias", "type": "string"}])
+         flags=[{"name": "api_key", "type": "string", "help": "API key for the provider"}, {"name": "base_url", "type": "string", "help": "Custom API base URL"},
+                {"name": "model", "type": "string", "help": "Model name/slug"}, {"name": "alias", "type": "string", "help": "Display alias for this profile"}])
 def cmd_llm_new(remaining: list[str], flags: dict[str, str]) -> dict:
     p = get_provider()
     protocol = flags.get("provider_type") or (remaining[0] if remaining else "") or ""
@@ -51,8 +51,8 @@ def cmd_llm_new(remaining: list[str], flags: dict[str, str]) -> dict:
 
 
 @command("llm.set", description="Modify current LLM settings",
-         flags=[{"name": "api_key", "type": "string"}, {"name": "base_url", "type": "string"},
-                {"name": "model", "type": "string"}, {"name": "alias", "type": "string"}])
+         flags=[{"name": "api_key", "type": "string", "help": "API key for the provider"}, {"name": "base_url", "type": "string", "help": "Custom API base URL"},
+                {"name": "model", "type": "string", "help": "Model name/slug"}, {"name": "alias", "type": "string", "help": "Display alias for this profile"}])
 def cmd_llm_set(remaining: list[str], flags: dict[str, str]) -> dict:
     p = get_provider()
     if not flags:

@@ -1,8 +1,6 @@
 """Command handlers for backup and restore commands."""
 
 from __future__ import annotations
-from lightercore.permissions import PermissionLevel
-
 from typing import Any
 
 from lightercore.permissions import PermissionLevel
@@ -117,9 +115,11 @@ def cmd_backup_config_list(remaining: list[str], flags: dict[str, str]) -> dict:
 
 @command("backup.config.add", description="Add a backup strategy",
          flags=[{"name": "id", "type": "string", "required": True, "help": "Strategy ID"},
-                {"name": "label", "type": "string"}, {"name": "interval", "type": "number"},
-                {"name": "max_copies", "type": "number"}, {"name": "target", "type": "string"},
-                {"name": "enabled", "type": "flag"}])
+                {"name": "label", "type": "string", "help": "Human-readable label"}, {"name": "interval", "type": "number",
+               "help": "Interval in minutes (0 = manual only)"},
+                {"name": "max_copies", "type": "number",
+               "help": "Max backup copies to keep"}, {"name": "target", "type": "string", "help": "Target path or remote URI"},
+                {"name": "enabled", "type": "flag", "help": "Enable or disable this strategy"}])
 def cmd_backup_config_add(remaining: list[str], flags: dict[str, str]) -> dict:
     from semantika.core.backup import BackupStrategy, add_strategy
     sid = flags.get("id", "")
@@ -149,9 +149,11 @@ def cmd_backup_config_add(remaining: list[str], flags: dict[str, str]) -> dict:
 
 @command("backup.config.modify", description="Modify a backup strategy",
          params=[{"name": "id", "type": "string", "required": True}],
-         flags=[{"name": "label", "type": "string"}, {"name": "interval", "type": "number"},
-                {"name": "max_copies", "type": "number"}, {"name": "target", "type": "string"},
-                {"name": "enabled", "type": "flag"}])
+         flags=[{"name": "label", "type": "string", "help": "Human-readable label"}, {"name": "interval", "type": "number",
+               "help": "Interval in minutes (0 = manual only)"},
+                {"name": "max_copies", "type": "number",
+               "help": "Max backup copies to keep"}, {"name": "target", "type": "string", "help": "Target path or remote URI"},
+                {"name": "enabled", "type": "flag", "help": "Enable or disable this strategy"}])
 def cmd_backup_config_modify(remaining: list[str], flags: dict[str, str]) -> dict:
     from semantika.core.backup import get_strategy, update_strategy
     if not remaining:

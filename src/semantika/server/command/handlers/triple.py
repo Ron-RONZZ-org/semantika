@@ -325,11 +325,18 @@ def cmd_triple_delete(remaining: list[str], flags: dict[str, str]) -> dict:
          params=[{"name": "subject", "type": "string", "required": True},
                  {"name": "predicate", "type": "string"},
                  {"name": "object", "type": "string"}],
-         flags=[{"name": "new-subject", "type": "string"}, {"name": "new-predicate", "type": "string"},
-                {"name": "new-object", "type": "string"}, {"name": "str", "type": "flag"},
-                {"name": "int", "type": "flag"}, {"name": "float", "type": "flag"},
-                {"name": "bool", "type": "flag"}, {"name": "lang", "type": "string"},
-                {"name": "katex", "type": "string"}, {"name": "str-dosiero", "type": "string"}])
+         flags=[{"name": "new-subject", "type": "string", "help": "New subject node ID"}, {"name": "new-predicate", "type": "string", "help": "New predicate ID"},
+                {"name": "new-object", "type": "string", "help": "New object value"}, {"name": "str", "type": "flag",
+               "help": "Treat object as string literal"},
+                {"name": "int", "type": "flag",
+               "help": "Treat object as integer literal"}, {"name": "float", "type": "flag",
+               "help": "Treat object as float literal"},
+                {"name": "bool", "type": "flag",
+               "help": "Treat object as boolean literal"}, {"name": "lang", "type": "string",
+               "help": "Language tag (e.g. en, fr, eo)"},
+                {"name": "katex", "type": "string",
+               "help": "KaTeX math expression"}, {"name": "str-dosiero", "type": "string",
+               "help": "Read content from file"}])
 def cmd_triple_modify(remaining: list[str], flags: dict[str, str]) -> dict:
     """Modify a triple's predicate or object."""
     svc = get_services()
