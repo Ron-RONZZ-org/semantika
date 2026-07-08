@@ -31,7 +31,17 @@ class PredicateService(CRUDService):
         """Delete a predicate: soft (trash) or permanent."""
         if soft and self._trash_table:
             return self._move_to_trash(pk)
-        return super().delete(pk, soft=False)
+        # Hard delete: cascade-delete triples and proofs first
+        entry = self.db.execute_one(
+            "SELECT predicate_id FROM predicates WHERE predicate_id LIKE ?", (f"{pk}%",)
+        )
+        if not entry:
+            return False
+        with self.db.transaction() as conn:
+            conn.execute("DELETE FROM proofs WHERE predicate_id = ?", (entry["predicate_id"],))
+            conn.execute("DELETE FROM triples WHERE predicate_id = ?", (entry["predicate_id"],))
+            conn.execute("DELETE FROM predicates WHERE predicate_id LIKE ?", (f"{pk}%",))
+        return True
 
     def _move_to_trash(self, predicate_id: str) -> bool:
         """Move predicate to trash, cascading triple deletion."""
@@ -50,6 +60,8 @@ class PredicateService(CRUDService):
         with self.db.transaction() as conn:
             self._remove_from_fts(predicate_id, conn=conn)
             conn.execute("DELETE FROM triples WHERE predicate_id = ?", (predicate_id,))
+            # Cascade-delete proofs attached to the deleted triples
+            conn.execute("DELETE FROM proofs WHERE predicate_id = ?", (predicate_id,))
             conn.execute(f"INSERT OR REPLACE INTO predicates_trash ({', '.join(columns)}) VALUES ({ph})", values)
             conn.execute("DELETE FROM predicates WHERE predicate_id = ?", (predicate_id,))
         return True
