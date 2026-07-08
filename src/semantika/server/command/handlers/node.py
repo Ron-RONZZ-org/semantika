@@ -69,9 +69,10 @@ def cmd_node_view(remaining: list[str], flags: dict[str, str]) -> dict:
          interactive=True,
          params=[{"name": "labels", "type": "string",
                "help": "Labels as LANG::TEXT or JSON"}],
-         flags=[
-             {"name": "copy", "type": "flag", "help": "Copy node ID to clipboard"},
-             # Arc shortcuts
+          flags=[
+              {"name": "id", "type": "string", "help": "Explicit node ID (overrides auto-derivation from label)"},
+              {"name": "copy", "type": "flag", "help": "Copy node ID to clipboard"},
+              # Arc shortcuts
              {"name": "type", "type": "string", "help": "rdf:type target node ID"},
              {"name": "superclass", "type": "string", "help": "rdfs:subClassOf target node ID"},
              {"name": "disjoint", "type": "string", "help": "owl:disjointWith target node ID"},
@@ -96,6 +97,8 @@ def cmd_node_add(remaining: list[str], flags: dict[str, str]) -> dict:
     """
     svc = get_services()
     labels_raw = flags.get("labels") or (remaining[0] if remaining else "")
+    # Optional explicit node ID (overrides auto-derivation from eo label)
+    explicit_id = flags.get("id", "")
     if labels_raw:
         # Accept both JSON ({"eo": "...", "fr": "...", "en": "..."})
         # and simple string ("en::My Node" or "My Node").
@@ -109,6 +112,8 @@ def cmd_node_add(remaining: list[str], flags: dict[str, str]) -> dict:
             payload = {"labels": {"en": labels_raw}}
     else:
         payload = {"labels": {}}
+    if explicit_id:
+        payload["node_id"] = explicit_id
 
     # ── Resolve arc shortcuts ─────────────────────────────────────────
     arc_targets: list[tuple[str, str]] = []
