@@ -21,7 +21,7 @@ def _cors_config() -> tuple[list[str], bool]:
     """Return (origins, allow_credentials) from env var or dev defaults.
 
     Set ``SEMANTIKA_CORS_ORIGINS`` to a comma-separated list of origins,
-    e.g. ``https://app.semantika.local,http://localhost:5173``.
+    e.g. ``https://app.semantika.local,http://localhost:6016``.
     Defaults to localhost dev ports for safe development.
     """
     raw = os.environ.get("SEMANTIKA_CORS_ORIGINS", "").strip()
@@ -30,7 +30,7 @@ def _cors_config() -> tuple[list[str], bool]:
             "SEMANTIKA_CORS_ORIGINS not set — defaulting to localhost dev ports. "
             "Set this env var to your frontend origin(s) in production."
         )
-        return ["http://localhost:5173", "http://127.0.0.1:5173"], True
+        return ["http://localhost:6016", "http://127.0.0.1:6016"], True
     origins = [o.strip() for o in raw.split(",") if o.strip()]
     if origins == ["*"]:
         return ["*"], False
@@ -39,13 +39,19 @@ def _cors_config() -> tuple[list[str], bool]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Application lifespan: init DB + backup scheduler on start, shutdown on stop."""
+    """Application lifespan: init DB, backup scheduler, ensure template dir."""
     init_db()
     try:
         from semantika.server.tasks import init_backup_scheduler
         init_backup_scheduler()
     except Exception:
         logger.warning("Backup scheduler init failed (non-fatal)")
+    # Ensure templates directory exists
+    try:
+        from lightercore.paths import config_dir
+        (config_dir() / "templates").mkdir(parents=True, exist_ok=True)
+    except Exception:
+        logger.warning("Could not create templates dir (non-fatal)")
     yield
     try:
         from semantika.server.tasks import shutdown_backup_scheduler
@@ -67,10 +73,11 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # API routes
+    # API routes — import triggers @command decorators (system handlers register)
     from semantika.server.routes import command as cmd
     from semantika.server.routes import files, graph, llm, prompt_commands, proof, query, review, unit
     from semantika.server.routes import user_config as ucfg
+    from semantika.server.routes import triple_templates as tpl
 
     app.include_router(graph.router, prefix="/api/v1/graph")
     app.include_router(query.router, prefix="/api/v1/query")
@@ -82,6 +89,12 @@ def create_app() -> FastAPI:
     app.include_router(files.router, prefix="/api/v1/files")
     app.include_router(prompt_commands.router)
     app.include_router(ucfg.router)
+    app.include_router(tpl.router)
+
+    # Freeze system handlers, then load user hooks
+    from semantika.server.command.registry import freeze_system_commands, load_user_hooks
+    freeze_system_commands()
+    load_user_hooks()
 
     # Static files (Svelte SPA) — overridable via SEMANTIKA_STATIC_DIR
     static_dir = os.environ.get("SEMANTIKA_STATIC_DIR") or (
