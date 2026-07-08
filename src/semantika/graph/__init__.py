@@ -13,13 +13,13 @@ from semantika.graph.review_service import ReviewService
 from semantika.graph.triple_service import TripleService
 
 __all__ = [
-    "get_db",
-    "init_db",
-    "get_services",
     "NodeService",
-    "PredicateService",
     "PredicateGroupService",
-    "TripleService",
-    "ReviewService",
+    "PredicateService",
     "ProofService",
+    "ReviewService",
+    "TripleService",
+    "get_db",
+    "get_services",
+    "init_db",
 ]

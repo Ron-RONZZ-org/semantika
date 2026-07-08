@@ -8,8 +8,9 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from semantika.graph.db import init_db
@@ -93,6 +94,15 @@ def create_app() -> FastAPI:
     from semantika.server.command.registry import freeze_system_commands, load_user_hooks
     freeze_system_commands()
     load_user_hooks()
+
+    # Catch-all API 404 handler: unknown /api/* paths return JSON,
+    # not index.html (which the static mount would otherwise serve).
+    @app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+    async def catch_all_api_404(path: str, request: Request) -> JSONResponse:
+        return JSONResponse(
+            status_code=404,
+            content={"detail": f"Not Found: /api/{path}"},
+        )
 
     # Static files (Svelte SPA) — overridable via SEMANTIKA_STATIC_DIR
     static_dir = os.environ.get("SEMANTIKA_STATIC_DIR") or (

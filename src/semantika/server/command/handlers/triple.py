@@ -1,10 +1,11 @@
 """Command handlers for triple management: list, view, add, delete, modify."""
 
 from __future__ import annotations
-from lightercore.permissions import PermissionLevel
 
 import logging
 from pathlib import Path
+
+from lightercore.permissions import PermissionLevel
 
 from semantika.core.exceptions import AmbiguousIDError
 from semantika.graph.db import get_services
@@ -37,10 +38,10 @@ def _resolve_triple_type(
     int_flag = _is_flag_set("int", flags)
     float_flag = _is_flag_set("float", flags)
     bool_flag = _is_flag_set("bool", flags)
-    lang = flags.get("lang", None)
-    katex = flags.get("katex", None)
-    str_dosiero = flags.get("str_dosiero", None) or flags.get("str-dosiero", None)
-    kodlingvo = flags.get("kodlingvo", None)
+    lang = flags.get("lang")
+    katex = flags.get("katex")
+    str_dosiero = flags.get("str_dosiero") or flags.get("str-dosiero")
+    kodlingvo = flags.get("kodlingvo")
 
     object_value = raw_object
     object_type = "uri"
@@ -252,7 +253,7 @@ def cmd_triple_add(remaining: list[str], flags: dict[str, str]) -> dict:
     object_value = flags.get("object_value") or (remaining[2] if len(remaining) > 2 else "") or ""
     if not subject_id or not predicate_id or not object_value:
         raise CommandValidationError("Specify subject_id, predicate_id, and object_value")
-    unit = flags.get("unit", None)
+    unit = flags.get("unit")
 
     object_value, object_type, object_datatype, object_lang = _resolve_triple_type(
         object_value, flags
@@ -350,10 +351,10 @@ def cmd_triple_modify(remaining: list[str], flags: dict[str, str]) -> dict:
     if not triple:
         raise CommandValidationError("Triple not found")
 
-    new_subject = flags.get("new_subject", None) or flags.get("new-subject", None) or triple["subject_id"]
-    new_predicate = flags.get("new_predicate", None) or flags.get("new-predicate", None) or triple["predicate_id"]
-    new_object_raw = flags.get("new_object", None) or flags.get("new-object", None) or triple["object_value"]
-    unit = flags.get("unit", None)
+    new_subject = flags.get("new_subject") or flags.get("new-subject") or triple["subject_id"]
+    new_predicate = flags.get("new_predicate") or flags.get("new-predicate") or triple["predicate_id"]
+    new_object_raw = flags.get("new_object") or flags.get("new-object") or triple["object_value"]
+    unit = flags.get("unit")
 
     new_object, new_type, new_datatype, new_lang = _resolve_triple_type(new_object_raw, flags)
     # For modify, if no type flag was specified, preserve the original triple's type/datatype/lang
@@ -364,7 +365,7 @@ def cmd_triple_modify(remaining: list[str], flags: dict[str, str]) -> dict:
         new_lang = triple.get("object_lang", None)
     else:
         str_flag = _is_flag_set("str", flags)
-        new_lang = flags.get("lang", None) if str_flag else triple.get("object_lang", None)
+        new_lang = flags.get("lang") if str_flag else triple.get("object_lang", None)
 
     new_unit = unit or triple.get("object_unit", None)
     noop = (triple["subject_id"] == new_subject and triple["predicate_id"] == new_predicate

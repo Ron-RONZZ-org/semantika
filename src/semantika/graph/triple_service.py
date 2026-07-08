@@ -193,7 +193,7 @@ class TripleService:
         self,
         subject: str | None = None,
         predicate: str | None = None,
-        object: str | None = None,  # noqa: A002
+        object: str | None = None,
         limit: int = 100,
         created_after: str | None = None,
         created_before: str | None = None,

@@ -346,7 +346,7 @@ def stub_response(message: str) -> dict:
             return {"reply": reply}
         return {"reply": f"I couldn't find anything matching '{q}'."}
 
-    if "help" in msg or "what can you" in msg:
+    if msg.startswith("help") or msg.startswith("what can you"):
         return {
             "reply": (
                 "I can help you explore your knowledge graph. Try:\n"
@@ -360,7 +360,7 @@ def stub_response(message: str) -> dict:
     # Greetings and introductions
     _greetings = {"hi", "hello", "hey", "greetings", "howdy",
                   "good morning", "good afternoon", "good evening", "good day"}
-    if any(g in msg for g in _greetings) or "who are you" in msg or "what are you" in msg:
+    if any(msg.startswith(g) for g in _greetings) or "who are you" in msg or "what are you" in msg:
         return {
             "reply": (
                 "Hi! I'm **Semantika AI**, your knowledge graph assistant. "

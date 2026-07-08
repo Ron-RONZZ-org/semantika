@@ -22,8 +22,8 @@ def cmd_review_start(remaining: list[str], flags: dict[str, str]) -> dict:
     mode = flags.get("mode") or (remaining[0] if remaining else "") or "view"
     if mode not in ("view", "quiz"):
         raise CommandValidationError("Mode must be 'view' or 'quiz'")
-    date_from = flags.get("date_from", None)
-    date_to = flags.get("date_to", None)
+    date_from = flags.get("date_from")
+    date_to = flags.get("date_to")
     raw_limit = flags.get("limit", "10")
     try:
         limit = int(raw_limit)

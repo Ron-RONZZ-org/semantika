@@ -19,11 +19,11 @@ from lightercore.paths import config_dir, data_dir, ensure_dirs
 set_app_name("semantika")
 
 __all__ = [
+    "AmbiguousIDError",
+    "ProtectedPathError",
     "SemantikaDB",
+    "SemantikaError",
     "config_dir",
     "data_dir",
     "ensure_dirs",
-    "AmbiguousIDError",
-    "ProtectedPathError",
-    "SemantikaError",
 ]
