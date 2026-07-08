@@ -228,6 +228,54 @@ def get_command_tree() -> list[dict[str, Any]]:
     return list(_command_tree_cache)
 
 
+# ── Helpers for command definitions ──────────────────────────────────────────
+
+# Maps short param names to human-readable descriptions for tool definitions.
+_DERIVED_PARAM_DESC: dict[str, str] = {
+    "q": "Search query text",
+    "id": "Entity ID or prefix",
+    "ids": "Entity IDs",
+    "limit": "Maximum number of results",
+    "prefix": "Entity ID prefix to match",
+    "source": "Source node ID",
+    "target": "Target node ID",
+    "subject_id": "Subject node ID (the subject in a triple)",
+    "predicate_id": "Predicate ID (the relationship type)",
+    "object_value": "Object value (node ID or literal)",
+    "labels": "Labels as LANG::TEXT or JSON",
+    "definitions": "Definitions as LANG::TEXT or JSON",
+    "descriptions": "Descriptions as LANG::TEXT or JSON",
+    "name": "Entity or command name",
+    "new_id": "New ID for rename operation",
+    "group_name": "Group name",
+    "type": "Entity type filter",
+    "message": "Chat message text",
+    "key": "Configuration key",
+    "value": "Configuration value",
+    "locale": "Language locale code (e.g. en, fr, eo)",
+    "force": "Skip safety checks and proceed",
+}
+
+
+def _derive_param_description(p: dict, command_desc: str) -> str:
+    """Derive a human-readable description for a command parameter.
+
+    Priority: explicit ``description`` field > ``_DERIVED_PARAM_DESC`` map
+    > param name > command description snippet.
+    """
+    explicit = p.get("description", "")
+    if explicit:
+        return explicit
+    mapped = _DERIVED_PARAM_DESC.get(p["name"], "")
+    if mapped:
+        return mapped
+    # Fallback: describe as "<name> for <command>"
+    cmd_snippet = command_desc[:60].strip() if command_desc else ""
+    if cmd_snippet:
+        return f"{p['name']} — for {cmd_snippet.lower()}"
+    return p["name"]
+
+
 # Cache for flattened definitions (derived from tree cache)
 _command_defs_cache: list[dict] | None = None
 
@@ -245,19 +293,30 @@ def get_command_definitions(tree: list[dict] | None = None) -> list[dict]:
     def _walk(nodes: list[dict], prefix: list[str] | None = None) -> None:
         for node in nodes:
             path = (prefix or []) + [node["name"]]
+            desc = node.get("description", "")
             entry: dict[str, Any] = {
                 "path": path,
                 "canonical": f"!{' '.join(path)}",
-                "description": node.get("description", ""),
+                "description": desc,
             }
             if node.get("params"):
                 entry["params"] = [
-                    {"name": p["name"], "required": p.get("required", False), "type": p.get("type", "string")}
+                    {
+                        "name": p["name"],
+                        "description": _derive_param_description(p, desc),
+                        "required": p.get("required", False),
+                        "type": p.get("type", "string"),
+                    }
                     for p in node["params"]
                 ]
             if node.get("flags"):
                 entry["flags"] = [
-                    {"name": f["name"], "type": f.get("type", "string"), "required": f.get("required", False)}
+                    {
+                        "name": f["name"],
+                        "type": f.get("type", "string"),
+                        "required": f.get("required", False),
+                        "help": f.get("help", ""),
+                    }
                     for f in node["flags"]
                 ]
             definitions.append(entry)
@@ -277,3 +336,17 @@ def resolve_form_type(tokens: list[str]) -> str | None:
         if key in _interactive_forms:
             return _interactive_forms[key]
     return None
+
+
+def dispatch_path(path: str, flags: dict[str, str]) -> dict:
+    """Dispatch a command by its dot-separated path.
+
+    Unlike :func:`dispatch`, this takes a pre-split dot-separated path
+    directly (e.g. ``"node.search"``) — no token array needed.  Used
+    by the LLM tool-calling flow where tool names are already in
+    underscore form (``"node_search"`` → ``"node.search"``).
+
+    Returns the same result dict as :func:`dispatch`.
+    """
+    tokens = path.split(".")
+    return dispatch(tokens, flags)
