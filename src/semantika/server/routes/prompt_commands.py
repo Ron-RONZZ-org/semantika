@@ -647,46 +647,9 @@ _SEMANTIKA_SYSTEM_PROMPT = (
     "call tools to create, read, and update graph data.\n\n"
     "## What Semantika Is\n"
     "Semantika stores structured knowledge as:\n"
-    "- **Nodes** — entities or concepts (e.g. a book, a person, an idea)\n"
-    "- **Predicates** — relationship types between nodes (e.g. author, theme)\n"
-    "- **Triples** — subject-predicate-object statements\n\n"
-    "## Graph naming conventions (apply to ALL operations)\n"
-    "These rules apply whenever you create or update nodes and predicates:\n\n"
-    "### Node labels\n"
-    "- Always provide **all three languages**: ``{\"eo\": \"...\", "
-    "\"fr\": \"...\", \"en\": \"...\"}``\n"
-    "- ``eo``: Esperanto translation, nouns in singular form "
-    "(e.g. ``\"libro\"``, ``\"a\u016dtoro\"``, ``\"nostalgio\"``)\n"
-    "- ``fr``: French translation (e.g. ``\"livre\"``, ``\"auteur\"``, "
-    "\"\"nostalgie\"\")\n"
-    "- ``en``: English translation (e.g. ``\"book\"``, ``\"author\"``, "
-    "\"\"nostalgia\"\")\n\n"
-    "### Node ID\n"
-    "- Derived from the **Esperanto** label: uppercase, ASCII-normalised, "
-    "non-alphanumeric replaced with ``_``\n"
-    "- ASCII normalisation: NFKD-decompose the Esperanto word then drop "
-    "non-ASCII characters "
-    "(e.g. ``a\u016dtoro`` \u2192 ``autoro`` \u2192 ``AUTORO``)\n"
-    "- If the result exceeds 20 characters, abbreviate "
-    "(e.g. ``ISABELLE_LE_BOURGEOIS`` (22 chars) \u2192 ``I_LE_BOURGEOIS``)\n\n"
-    "### Predicate IDs\n"
-    "- Format: ``rs:xxx`` where **xxx is the ASCII-normalised Esperanto "
-    "word** (e.g. ``rs:autoro``, ``rs:temo``, ``rs:priskribas``)\n"
-    "- NEVER use French or English for the predicate ID\n\n"
-    "### Predicate labels\n"
-    "- Provide all three languages: ``{\"eo\": \"...\", "
-    "\"fr\": \"...\", \"en\": \"...\"}``\n"
-    "- The ``eo`` label can use the full Esperanto word with diacritics "
-    "(labels are Unicode, only IDs must be ASCII)\n\n"
-    "### Avoiding duplicates\n"
-    "- **Always search first** before creating. Search not just the exact "
-    "term but also synonyms and alternative languages.\n"
-    "- For a French term like ``nostalgie``, search for ``nostalgie``, "
-    "``nostalgia``, AND ``nostalgio`` \u2014 any of these might already exist.\n"
-    "- For a predicate, search by its Esperanto ID form AND by label "
-    "in all three languages.\n"
-    "- If an existing node/predicate matches the intended concept, "
-    "reuse it \u2014 do NOT create a duplicate.\n\n"
+    "- **Nodes** \u2014 entities or concepts (e.g. a book, a person, an idea)\n"
+    "- **Predicates** \u2014 relationship types between nodes (e.g. author, theme)\n"
+    "- **Triples** \u2014 subject-predicate-object statements\n\n"
     "## How to Use Tools\n"
     "- **Batch operations**: You can return MULTIPLE tool calls in a "
     "single response. If you need to create 3 nodes, call ``node_add`` "
@@ -704,6 +667,42 @@ _SEMANTIKA_SYSTEM_PROMPT = (
     "- When you have completed the user's request, output a plain text "
     "answer summarizing what you did. That signals the task is done."
 )
+
+# ── User AGENTS.md (additional context loaded from config) ──────────────────
+
+
+def _load_user_prompt() -> str:
+    """Load the user's ``~/.config/semantika/AGENTS.md`` file.
+
+    This file provides additional context / instructions that the user
+    wants injected into every prompt command.  It is **appended** to the
+    base ``_SEMANTIKA_SYSTEM_PROMPT``, so the user does not need to
+    duplicate the base prompt.
+
+    The file is auto-seeded on first run with a template explaining its
+    purpose.  The user can edit it freely.
+    """
+    from pathlib import Path
+    from lightercore.system_prompt import SystemPromptManager
+
+    default_agents = (
+        "# AGENTS.md \u2014 Additional context for Semantika AI\n\n"
+        "This file is loaded automatically and appended to the system prompt "
+        "for all prompt commands (``/``).  Use it to add your personal "
+        "naming conventions, style preferences, or workflow rules.\n\n"
+        "## Example\n"
+        "```\n"
+        "When creating nodes:\n"
+        "- Always provide labels in eo, fr, en\n"
+        "- Node ID from Esperanto label, uppercased, ASCII-normalised\n"
+        "- Predicate IDs: rs:xxx with Esperanto word\n"
+        "```\n"
+    )
+    mgr = SystemPromptManager(
+        Path(str(config_dir())),
+        filename="AGENTS.md",
+    )
+    return mgr.load(default_agents)
 
 
 # ── POST /execute/stream (SSE) ───────────────────────────────────────────────
@@ -838,11 +837,17 @@ def _render_markdown(text: str) -> str:
 def _build_prompt_messages(expanded: str) -> list[dict]:
     """Build messages with Semantika system context for prompt commands.
 
-    All ``/`` commands now inherit the same system context as the chat
-    endpoint, so the LLM understands what Semantika is and can
-    reference graph concepts correctly.
+    Combines the base system prompt with the user's ``AGENTS.md``
+    (if present), then appends the expanded prompt command template
+    as the user message.
     """
+    user_prompt = _load_user_prompt()
+    if user_prompt:
+        full_system = _SEMANTIKA_SYSTEM_PROMPT + "\n\n" + user_prompt
+    else:
+        full_system = _SEMANTIKA_SYSTEM_PROMPT
+
     return [
-        {"role": "system", "content": _SEMANTIKA_SYSTEM_PROMPT},
+        {"role": "system", "content": full_system},
         {"role": "user", "content": expanded},
     ]
