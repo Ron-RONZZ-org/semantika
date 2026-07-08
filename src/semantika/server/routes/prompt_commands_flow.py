@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 import uuid
 from typing import Any
 
@@ -43,11 +44,31 @@ from semantika.server.routes.prompt_commands_helpers import (
 logger = logging.getLogger(__name__)
 
 
-# ── In-memory store for paused executions ─────────────────────────────────
+# ── In-memory store for paused executions (TTL-based eviction) ─────────────
 
-# Keys are session UUIDs, values are the state dicts.
-# NOTE: lost on server restart — consider persisting to disk for production.
+# Keys are session UUIDs, values are state dicts with a ``created_at`` field.
+# Expired entries are cleaned up on every resume attempt or lookup (TTL).
+# Sessions are still lost on server restart; persist to disk for production.
+_PENDING_TTL_SECONDS: int = 600  # 10 minutes
 _pending_executions: dict[str, dict] = {}
+
+
+def _cleanup_expired_sessions() -> int:
+    """Remove expired sessions from the pending store.
+
+    Returns:
+        Number of removed sessions.
+    """
+    now = time.time()
+    expired = [
+        sid for sid, state in _pending_executions.items()
+        if now - state.get("created_at", 0) > _PENDING_TTL_SECONDS
+    ]
+    for sid in expired:
+        _pending_executions.pop(sid, None)
+    if expired:
+        logger.info("Cleaned up %d expired pending session(s)", len(expired))
+    return len(expired)
 
 
 # ── /template two-turn flow ────────────────────────────────────────────────
@@ -288,6 +309,7 @@ async def run_tool_loop(
                 "tools": tools,
                 "name": name,
                 "write_indices": {w["index"] for w in write_batch},
+                "created_at": time.time(),
             }
 
             first = write_batch[0]
@@ -371,6 +393,9 @@ async def resume_execution(data: dict[str, Any]) -> dict[str, Any]:
         Either a final ``{"type": "chat", ...}`` response, or another
         ``{"type": "confirm_tool", ...}`` if further tools need approval.
     """
+    # Prune expired sessions before looking up
+    _cleanup_expired_sessions()
+
     session_id = data.get("session_id", "")
 
     if session_id not in _pending_executions:
