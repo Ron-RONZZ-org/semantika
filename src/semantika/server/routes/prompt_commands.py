@@ -539,45 +539,24 @@ async def resume_execution(data: dict[str, Any]) -> dict[str, Any]:
                 "content": json.dumps(_sanitize_tool_result(cmd_result)),
     })
 
-    # Process any remaining tool calls from the same batch
+    # Process remaining tool calls from the same batch using the user's
+    # decision on the first tool.  This is a batch: one approve/reject
+    # applies to all tools the LLM planned in this round.
     for remaining_tc in tool_calls[current_index + 1:]:
         r_path, r_flags = _tc_path(remaining_tc)
-        r_level = get_command_level(r_path) if _is_registered(r_path) else None
 
-        if r_level is not None and r_level >= PermissionLevel.WRITE:
-            # Another confirmation needed before we can continue
-            new_session_id = str(uuid.uuid4())
-            desc = _resolve_command_desc(r_path)
-            r_tokens = r_path.split(".")
-
-            _pending_executions[new_session_id] = {
-                "messages": list(messages),
-                "tool_calls": tool_calls,
-                "current_index": tool_calls.index(remaining_tc),
-                "tools": tools,
-                "name": name,
-            }
-            return {
-                "type": "confirm_tool",
-                "session_id": new_session_id,
-                "tokens": r_tokens,
-                "flags": r_flags,
-                "message": (
-                    f"The LLM wants to run `!{' '.join(r_tokens)}`.\n\n"
-                    f"{desc}\n\n"
-                    "Approve this operation?"
-                ),
-            }
-
-        try:
-            cmd_result = dispatch_path(r_path, r_flags)
-        except CommandError as exc:
-            cmd_result = {"error": str(exc), "suggestion": getattr(exc, "suggestion", "")}
+        if confirmed:
+            try:
+                cmd_result = dispatch_path(r_path, r_flags)
+            except CommandError as exc:
+                cmd_result = {"error": str(exc), "suggestion": getattr(exc, "suggestion", "")}
+        else:
+            cmd_result = {"error": f"User rejected command !{'/'.join(r_path.split('.'))}"}
 
         messages.append({
             "role": "tool",
             "tool_call_id": remaining_tc.id,
-                    "content": json.dumps(_sanitize_tool_result(cmd_result)),
+            "content": json.dumps(_sanitize_tool_result(cmd_result)),
         })
 
     # Continue the loop with the updated messages
@@ -663,8 +642,11 @@ _SEMANTIKA_SYSTEM_PROMPT = (
     "- **Predicates** — relationship types between nodes (e.g. author, theme)\n"
     "- **Triples** — subject-predicate-object statements\n\n"
     "## How to Use Tools\n"
-    "- **Plan first**: Decide what you need before calling tools. Batch "
-    "multiple independent calls in a single round when possible.\n"
+    "- **Batch operations**: You can return MULTIPLE tool calls in a "
+    "single response. If you need to create 3 nodes, call ``node_add`` "
+    "three times in one response — do NOT create them one at a time.\n"
+    "- **Plan first**: Decide everything you need before calling tools, "
+    "then batch all independent calls in a single round.\n"
     "- **Prefer update over delete+recreate**: If a node needs a different "
     "label, use the update tool instead of deleting and re-creating.\n"
     "- **Stop when done**: Once you have created/fetched all the data the "
