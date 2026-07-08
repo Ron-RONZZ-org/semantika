@@ -138,7 +138,6 @@ class PredicateService(CRUDService):
             count = self.db.execute_one("SELECT COUNT(*) AS cnt FROM predicates_fts")
             if count and count["cnt"] == 0:
                 self._fts_mgr.populate()
-
         self._fts_initialized = True
         return True
 

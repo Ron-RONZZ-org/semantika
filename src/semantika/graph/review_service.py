@@ -67,7 +67,8 @@ class ReviewService:
             clauses.append("created_at <= ?")
             params.append(date_to)
 
-        fetch_limit = min(limit * 3, 10000)
+        _max_fetch = 10000  # prevent OOM on very large graphs
+        fetch_limit = min(limit * 3, _max_fetch)
         triples = self.db.execute(
             f"SELECT * FROM triples WHERE {' AND '.join(clauses)} "
             f"ORDER BY subject_id LIMIT ?",
@@ -149,7 +150,7 @@ class ReviewService:
                 result["object_type"],
                 count=3,
             )
-            options = [result["object_value"]] + distractors
+            options = [result["object_value"], *distractors]
             random.shuffle(options)
             question["options"] = options
 

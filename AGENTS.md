@@ -65,7 +65,7 @@ The backend is forked from proven code in [A-semantika](../A-semantika) (triple 
 | Frontend build | Vite + svelte-spa-router | Fast dev, static export possible |
 | Database | SQLite (WAL mode) | Embedded, zero-config, sufficient for single-user |
 | Credential storage | System keyring (via `keyring` library) | Never store API keys in DB |
-| AI providers | OpenAI-compatible API + Ollama | BYOK: bring your own model/key; **three-phase command generation** (LLM parses NL → structured JSON command → permission check → dispatch → summarize) with permission gate guarding destructive commands behind user confirmation |
+| AI providers | OpenAI-compatible API + Ollama | BYOK: bring your own model/key; **multi-round tool-calling** (LLM sees all ``!commands`` as native tools, calls them via ``chat_with_tools``, permission gate returns ``confirm_tool`` for write/destructive commands) |
 | TTL parsing | `rdflib` | Standard Turtle (.ttl) import |
 | HTTP client | `httpx` | Async HTTP for LLM provider calls |
 | Package manager | `uv` (development), `pip` (user install) | Fast, modern, reproducible |
@@ -202,7 +202,7 @@ semantika/
 │               ├── llm.py       # /api/v1/llm/* — chat, config, profiles, confirm
 │               ├── prompt_commands.py  # /api/v1/prompt-commands/* — list, expand, execute, SSE stream
 │               └── user_config.py      # /api/v1/user/config — locale, preferences
-├── tests/                       # pytest tests (873 tests)
+├── tests/                       # pytest tests (849 tests)
 │   ├── conftest.py
 │   ├── test_core/               # Backup, entry points, reset tests
 │   ├── test_graph/              # Service integration tests (nodes, predicates, triples, units, proofs)

@@ -20,7 +20,14 @@
   let convoEl = $state(null);
   let isLoadingLlm = $state(false);
 
-  /** @type {{ tokens: string[], flags: Record<string,string>, message: string } | null} */
+  /** @type {{
+   *   tokens?: string[],
+   *   flags?: Record<string,string>,
+   *   session_id?: string,
+   *   batch?: Array<{index:number, tokens:string[], flags:object, description:string}>,
+   *   resumeUrl?: string,
+   *   message: string
+   * } | null} */
   let confirmRequest = $state(null);
   let rejectFeedback = $state("");
   let saveDialogIndex = $state(-1);
@@ -96,13 +103,27 @@
               ? { ...m, html: `<p>${errMsg}</p>`, text: errMsg, _streaming: false }
               : m,
           );
+        } else if (result.type === "confirm_tool") {
+          // Batch confirmation for write-level tools
+          confirmRequest = {
+            session_id: result.session_id,
+            batch: result.batch || [],
+            resumeUrl: "/api/v1/prompt-commands/execute/resume",
+            message: result.message || "Confirm command?",
+          };
+          messages = messages.map((m, i) =>
+            i === msgIdx
+              ? { ...m, html: `<p><em>Waiting for confirmation…</em></p>`, _streaming: false }
+              : m,
+          );
         } else {
           const replyHtml =
             result.data?.html ||
             (result.data?.message ? renderMarkdown(result.data.message) : "") ||
             (result.data?.reply ? renderMarkdown(result.data.reply) : "") ||
-            JSON.stringify(result.data || result);
-          const replyText = result.data?.message || result.data?.reply || "";
+            (result.html ? renderMarkdown(result.html) : "") ||
+            (result.message ? renderMarkdown(result.message) : "");
+          const replyText = result.data?.message || result.data?.reply || result.message || "";
           messages = messages.map((m, i) =>
             i === msgIdx
               ? { ...m, html: replyHtml, text: replyText, _streaming: false }
@@ -222,6 +243,7 @@
       const data = await resp.json();
 
       if (data.type === "confirm") {
+        // Legacy single-command confirmation
         confirmRequest = {
           tokens: data.tokens, flags: data.flags || {}, message: data.message || "Confirm command?",
         };
@@ -234,7 +256,23 @@
         return;
       }
 
-      const reply = data.reply || data.data?.reply || JSON.stringify(data);
+      if (data.type === "confirm_tool") {
+        // Batch confirmation for write-level tools
+        confirmRequest = {
+          session_id: data.session_id,
+          batch: data.batch || [],
+          resumeUrl: "/api/v1/llm/chat/resume",
+          message: data.message || "Confirm command?",
+        };
+        messages = messages.map((m, i) =>
+          i === msgIdx ? { ...m, html: `<p><em>Waiting for confirmation…</em></p>`, _streaming: false } : m,
+        );
+        isLoadingLlm = false;
+        scrollToBottom();
+        return;
+      }
+
+      const reply = data.reply || data.data?.reply || (data.type === "chat" ? data.data?.html || "" : "");
       const html = renderMarkdown(reply);
       messages = messages.map((m, i) =>
         i === msgIdx ? { ...m, html, text: reply, _streaming: false, actions: [] } : m,
@@ -283,6 +321,68 @@
 
   async function handleConfirmCommand() {
     if (!confirmRequest) return;
+
+    // ── Batch confirmation (LLM multi-tool) ────────────────────────────
+    if (confirmRequest.session_id && confirmRequest.batch) {
+      const { session_id, batch, resumeUrl } = confirmRequest;
+      confirmRequest = null;
+
+      try {
+        const resp = await fetch(resumeUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_id,
+            decisions: Object.fromEntries(batch.map((b) => [b.index, true])),
+          }),
+        });
+
+        if (!resp.ok) {
+          const detail = await resp.json().catch(() => ({}));
+          const errMsg = detail.detail?.error || detail.detail || `HTTP ${resp.status}`;
+          popup.show("error", "Command Failed", { message: errMsg });
+          return;
+        }
+
+        const data = await resp.json();
+
+        // Handle nested confirm_tool (LLM issued more write commands)
+        if (data.type === "confirm_tool") {
+          confirmRequest = {
+            session_id: data.session_id,
+            batch: data.batch || [],
+            resumeUrl,
+            message: data.message || "Confirm command?",
+          };
+          return;
+        }
+
+        // Show result in conversation: remove "Waiting for confirmation" message
+        // and append the final answer as a new assistant message.
+        messages = messages.filter((m) => {
+          const html = m.html || "";
+          return !html.includes("Waiting for confirmation");
+        });
+
+        const replyHtml =
+          data.data?.html ||
+          (data.data?.message ? renderMarkdown(data.data.message) : "") ||
+          (data.reply ? renderMarkdown(data.reply) : "") ||
+          data.html ||
+          "";
+        const replyText = data.data?.message || data.reply || data.message || "";
+        messages = [
+          ...messages,
+          { role: "assistant", html: replyHtml, text: replyText, _streaming: false, actions: [] },
+        ];
+        scrollToBottom();
+      } catch (err) {
+        popup.show("error", "Connection Error", { message: `Confirm failed: ${err.message}` });
+      }
+      return;
+    }
+
+    // ── Legacy single-command confirmation ────────────────────────────
     const { tokens, flags } = confirmRequest;
     confirmRequest = null;
     try {
@@ -305,6 +405,69 @@
 
   async function handleRejectFeedback(feedback) {
     if (!confirmRequest) return;
+
+    // ── Batch rejection: call resume with confirmed=false ──────────────
+    if (confirmRequest.session_id && confirmRequest.batch) {
+      const { session_id, batch, resumeUrl } = confirmRequest;
+      confirmRequest = null;
+      rejectFeedback = "";
+      messages = messages.filter((m) => {
+        const html = m.html || "";
+        return !html.includes("Waiting for confirmation");
+      });
+
+      // Call resume with confirmed=false so the LLM sees the rejection and
+      // can suggest an alternative in the same tool loop.
+      try {
+        const resp = await fetch(resumeUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_id,
+            decisions: Object.fromEntries(batch.map((b) => [b.index, false])),
+          }),
+        });
+
+        if (!resp.ok) {
+          const detail = await resp.json().catch(() => ({}));
+          const errMsg = detail.detail?.error || detail.detail || `HTTP ${resp.status}`;
+          popup.show("error", "Command Failed", { message: errMsg });
+          return;
+        }
+
+        const data = await resp.json();
+
+        // Handle nested confirm_tool
+        if (data.type === "confirm_tool") {
+          confirmRequest = {
+            session_id: data.session_id,
+            batch: data.batch || [],
+            resumeUrl,
+            message: data.message || "Confirm command?",
+          };
+          return;
+        }
+
+        // Show result in conversation
+        const replyHtml =
+          data.data?.html ||
+          (data.data?.message ? renderMarkdown(data.data.message) : "") ||
+          (data.reply ? renderMarkdown(data.reply) : "") ||
+          data.html ||
+          "";
+        const replyText = data.data?.message || data.reply || data.message || "";
+        messages = [
+          ...messages,
+          { role: "assistant", html: replyHtml, text: replyText, _streaming: false, actions: [] },
+        ];
+        scrollToBottom();
+      } catch (err) {
+        popup.show("error", "Connection Error", { message: `Reject failed: ${err.message}` });
+      }
+      return;
+    }
+
+    // ── Legacy single-command rejection ────────────────────────────────
     const { tokens } = confirmRequest;
     confirmRequest = null;
     rejectFeedback = "";
@@ -330,7 +493,7 @@
         body: JSON.stringify({ message: contextMsg, context: cleanContext }),
       });
       const data = await resp.ok ? await resp.json() : { reply: "Sorry, something went wrong." };
-      const reply = data.reply || data.data?.reply || JSON.stringify(data);
+      const reply = data.reply || data.data?.reply || "";
       const html = renderMarkdown(reply);
       messages = messages.map((m, i) =>
         i === msgIdx ? { ...m, html, text: reply, _streaming: false, actions: [] } : m,
@@ -430,6 +593,7 @@
 {#if confirmRequest}
   <ConfirmDialog
     message={confirmRequest.message}
+    batch={confirmRequest.batch || []}
     onConfirm={handleConfirmCommand}
     onDismiss={() => { confirmRequest = null; }}
     onFeedback={handleRejectFeedback}

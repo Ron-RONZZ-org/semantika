@@ -251,7 +251,7 @@ def export_turtle(db: SemantikaDB, base_uri: str = "https://example.org/") -> st
     all_node_ids = set(n["node_id"] for n in nodes)
     orphan_ids = all_node_ids - seen_subjects - seen_objects
     for nid in sorted(orphan_ids):
-        if nid in label_map and label_map[nid]:
+        if label_map.get(nid):
             lines.append(f"{_format_turtle_uri(nid, {}, base_uri)}")
             labels = label_map[nid]
             label_lines = []

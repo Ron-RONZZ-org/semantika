@@ -114,9 +114,8 @@
     } else if (completion.startsWith("!") && value.startsWith("!")) {
       value = completion + " ";
     } else {
-      const parts = value.split(/\s+/);
-      parts[parts.length - 1] = completion;
-      value = parts.join(" ") + " ";
+      // Replace the last token using regex to handle edge cases (multiple spaces, trailing spaces)
+      value = value.replace(/\S+$/, completion) + " ";
     }
     suggestions = [];
     hints = [];
