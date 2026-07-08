@@ -145,6 +145,10 @@ async def execute_endpoint(data: dict[str, Any]) -> dict[str, Any]:
 
     expanded = expand_prompt_template(cmd.template, args)
 
+    # Parse tool domain declaration from template (``# +tools: node, predicate``)
+    # so the LLM only sees relevant tools instead of all 91.
+    allowed_domains = _parse_tool_domains(cmd.template)
+
     provider = get_provider()
     if not provider.available:
         return {
@@ -158,7 +162,7 @@ async def execute_endpoint(data: dict[str, Any]) -> dict[str, Any]:
             },
         }
 
-    result = await _execute_with_tools(expanded, name)
+    result = await _execute_with_tools(expanded, name, allowed_domains=allowed_domains)
 
     if isinstance(result, dict) and result.get("type") == "confirm_tool":
         return result
@@ -332,17 +336,22 @@ async def _execute_with_tools(
     expanded: str,
     name: str,
     max_rounds: int = 20,
+    allowed_domains: set[str] | None = None,
 ) -> str | dict | None:
     """Run the expanded prompt through a multi-round tool-calling loop.
 
     The LLM sees the expanded template plus tool definitions for all
-    registered ``!commands``.  It can call tools, get real results via
-    ``dispatch``, and iterate until it produces a final text answer.
+    registered ``!commands`` (or a subset filtered by *allowed_domains*).
+    It can call tools, get real results via ``dispatch``, and iterate
+    until it produces a final text answer.
 
     Args:
         expanded: The expanded prompt command template.
         name: The command name (for error messages).
         max_rounds: Maximum tool-calling iterations before giving up.
+        allowed_domains: If set, only include tools whose first path
+            segment is in this set (e.g. ``{"node", "predicate"}``).
+            ``None`` means include all tools.
 
     Returns:
         - A ``str`` with the final answer on success.
@@ -355,6 +364,17 @@ async def _execute_with_tools(
         return None
 
     defs = get_command_definitions()
+    if allowed_domains is not None:
+        # Only include tools from declared domains, excluding bare group nodes
+        # (no params, no flags, empty description — pure tree scaffolding).
+        defs = [
+            d for d in defs
+            if d["path"][0] in allowed_domains
+            and not (
+                not d.get("params") and not d.get("flags")
+                and not d.get("description", "").strip()
+            )
+        ]
     tools = defs_to_tools(defs) if defs else []
     messages = _build_prompt_messages(expanded)
 
@@ -462,19 +482,15 @@ async def _run_tool_loop(
             except CommandError as exc:
                 cmd_result = {"error": str(exc), "suggestion": getattr(exc, "suggestion", "")}
 
+            sanitized = _sanitize_tool_result(cmd_result)
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc.id,
-                "content": json.dumps(cmd_result),
+                "content": json.dumps(sanitized),
             })
 
     logger.warning("Tool-calling loop exhausted for /%s (max %d rounds)", name, max_rounds)
     return None
-
-
-def _is_registered(path: str) -> bool:
-    """Check whether a dot-separated command path is registered."""
-    return get_handler_metadata(path) is not None
 
 
 @router.post("/execute/resume", status_code=200)
@@ -520,7 +536,7 @@ async def resume_execution(data: dict[str, Any]) -> dict[str, Any]:
     messages.append({
         "role": "tool",
         "tool_call_id": tc.id,
-        "content": json.dumps(cmd_result),
+                "content": json.dumps(_sanitize_tool_result(cmd_result)),
     })
 
     # Process any remaining tool calls from the same batch
@@ -561,7 +577,7 @@ async def resume_execution(data: dict[str, Any]) -> dict[str, Any]:
         messages.append({
             "role": "tool",
             "tool_call_id": remaining_tc.id,
-            "content": json.dumps(cmd_result),
+                    "content": json.dumps(_sanitize_tool_result(cmd_result)),
         })
 
     # Continue the loop with the updated messages
@@ -640,24 +656,34 @@ def _resolve_command_desc(path: str) -> str:
 _SEMANTIKA_SYSTEM_PROMPT = (
     "You are Semantika AI, the built-in assistant of the **Semantika "
     "knowledge graph** application. You run INSIDE the app and can "
-    "execute commands to look up data the user asks about.\n\n"
+    "call tools to create, read, and update graph data.\n\n"
     "## What Semantika Is\n"
     "Semantika stores structured knowledge as:\n"
-    "- **Nodes** — entities or concepts\n"
-    "- **Predicates** — relationship types between nodes\n"
+    "- **Nodes** — entities or concepts (e.g. a book, a person, an idea)\n"
+    "- **Predicates** — relationship types between nodes (e.g. author, theme)\n"
     "- **Triples** — subject-predicate-object statements\n\n"
-    "## Available Commands\n"
-    "- `!node` — list, add, search, show, edit, delete, merge nodes\n"
-    "- `!predicate` — list, add, search, show, edit, delete predicates\n"
-    "- `!triple` — list, add, search, show, edit, delete triples\n"
-    "- `!search` — full-text search\n"
-    "- `!stats` — show graph statistics\n"
-    "- `!export` — export as Turtle (.ttl)\n"
-    "- `!unit` — manage units/ontology\n"
-    "- `!backup` — backup management\n"
+    "## How to Use Tools\n"
+    "- **Plan first**: Decide what you need before calling tools. Batch "
+    "multiple independent calls in a single round when possible.\n"
+    "- **Prefer update over delete+recreate**: If a node needs a different "
+    "label, use the update tool instead of deleting and re-creating.\n"
+    "- **Stop when done**: Once you have created/fetched all the data the "
+    "user asked for, produce a final text answer. Do NOT keep calling "
+    "tools after the task is complete — just write your response.\n"
+    "- **Idempotency**: Use search tools first. If a node or predicate "
+    "already exists, reuse it. Only create what is missing.\n\n"
+    "## Available tool domains\n"
+    "The tools available to you depend on the prompt command. Below is "
+    "the general Semantika command reference:\n"
+    "- `node.*` — search, add, view, update, list, delete nodes\n"
+    "- `predicate.*` — search, add, view, update, list predicates\n"
+    "- `triple.*` — add, search, view, list, delete triples\n"
+    "- `graph.*` — stats, search, view, export\n\n"
     "## How to Respond\n"
     "- Keep responses concise and helpful. Use Markdown formatting.\n"
-    "- Never invent data. If you truly have no data, say so clearly."
+    "- Never invent data. If you truly have no data, say so clearly.\n"
+    "- When you have completed the user's request, output a plain text "
+    "answer summarizing what you did. That signals the task is done."
 )
 
 
@@ -723,6 +749,64 @@ async def execute_stream_endpoint(data: dict[str, Any]) -> StreamingResponse:
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
+
+def _is_registered(path: str) -> bool:
+    """Check whether a dot-separated command path is registered."""
+    return get_handler_metadata(path) is not None
+
+
+def _sanitize_tool_result(result: dict) -> dict:
+    """Recursively parse JSON-encoded strings inside dispatch results.
+
+    The dispatch result often contains DB rows where JSON fields like
+    ``labels``, ``definitions``, ``descriptions``, ``aliases`` are stored
+    as JSON-encoded strings (e.g. ``'{"en": "Alice"}'``).  When the tool
+    loop sends this back to the LLM via ``json.dumps(result)``, the inner
+    JSON gets double-escaped and becomes unreadable.
+
+    This function walks the result dict and converts any parseable JSON
+    string values into their parsed form so the LLM sees clean objects.
+    """
+    import json as _json
+
+    def _walk(value):
+        if isinstance(value, dict):
+            return {k: _walk(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [_walk(v) for v in value]
+        if isinstance(value, str) and len(value) > 1:
+            stripped = value.strip()
+            if stripped.startswith(("{", "[")):
+                try:
+                    parsed = _json.loads(stripped)
+                    return _walk(parsed)
+                except (_json.JSONDecodeError, ValueError):
+                    pass
+        return value
+
+    return _walk(result)
+
+
+def _parse_tool_domains(template: str) -> set[str] | None:
+    """Parse tool domain declaration from a prompt command template.
+
+    Looks for lines matching ``# +tools: domain1, domain2`` in the
+    template body.  The domains are the first segment of command paths
+    (e.g. ``node``, ``predicate``, ``triple``, ``graph``).
+
+    Returns:
+        A set of domain strings, or ``None`` if no declaration is found
+        (meaning include all tools).
+    """
+    import re
+    for line in template.split("\n"):
+        stripped = line.strip()
+        match = re.match(r"^#\s*\+tools:\s*(.+)$", stripped, re.IGNORECASE)
+        if match:
+            domains = {d.strip().lower() for d in match.group(1).split(",") if d.strip()}
+            return domains if domains else None
+    return None
 
 
 def _render_markdown(text: str) -> str:
