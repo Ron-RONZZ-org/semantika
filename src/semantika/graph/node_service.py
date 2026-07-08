@@ -119,15 +119,10 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
                     labels = {}
             first_label = None
             if isinstance(labels, dict):
-                # Try Esperanto first (node ID should be from eo label),
-                # then English, then first available.
-                first_label = (
-                    labels.get("eo") or labels.get("en")
-                    or next(
-                        (v for v in labels.values()
-                         if v and isinstance(v, str)),
-                        None,
-                    )
+                # Neutral: derive from English label as default.
+                # The LLM should pass --id explicitly for custom IDs.
+                first_label = labels.get("en") or next(
+                    (v for v in labels.values() if v and isinstance(v, str)), None
                 )
             if first_label:
                 base_id = normalize_label_to_id(first_label)
