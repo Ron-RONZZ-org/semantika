@@ -1,28 +1,31 @@
-"""LLM integration routes — chat with tool-calling, config management.
+"""LLM integration routes — multi-round tool-calling chat with HITL.
 
-Port of lighterbird's two-phase chat flow:
-1. Generate structured command from natural language
-2. Check permission level — gate destructive commands behind user confirm
-3. Execute command and return result
-4. If no command matched, respond as plain chat
+``POST /api/v1/chat``        — Multi-round tool loop, replacing old one-shot flow.
+``POST /api/v1/chat/resume`` — Resume paused HITL session.
+``POST /api/v1/confirm``     — Legacy single-command confirmation (kept for compat).
+
+The chat endpoint uses the shared :func:`run_tool_loop` from lightercore.
+The LLM receives all registered ``!commands`` as native tools and can
+call them, see results, and iterate until it produces a final answer.
+WRITE-level tools gate behind user confirmation via ``/chat/resume``.
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from lightercore.llm.utils import parse_command_result
-from lightercore.permissions import PermissionLevel
+from lightercore.llm.base import defs_to_tools
+from lightercore.llm.tool_loop import resume_execution, run_tool_loop
 from pydantic import BaseModel
 
 from semantika.server.command.errors import CommandError
 from semantika.server.command.registry import (
     dispatch,
     get_command_definitions,
+    get_command_level,
     get_handler_metadata,
 )
 from semantika.server.llm.provider import get_provider
@@ -61,9 +64,46 @@ class ProfileSaveRequest(BaseModel):
 
 
 class ConfirmRequest(BaseModel):
-    """User confirmation to execute a destructive LLM-generated command."""
+    """Legacy single-command confirmation."""
     tokens: list[str]
     flags: dict[str, str] = {}
+
+
+# ── Semantika system prompt ──────────────────────────────────────────────
+
+
+_SEMANTIKA_SYSTEM_PROMPT = (
+    "You are Semantika AI, the built-in assistant of the **Semantika "
+    "knowledge graph** application. You run INSIDE the app and can "
+    "call tools to create, read, and update graph data.\n\n"
+    "## What Semantika Is\n"
+    "Semantika stores structured knowledge as:\n"
+    "- **Nodes** — entities or concepts (e.g. a book, a person, an idea)\n"
+    "- **Predicates** — relationship types between nodes (e.g. author, theme)\n"
+    "- **Triples** — subject-predicate-object statements\n\n"
+    "## How to Use Tools\n"
+    "- **Batch operations**: You can return MULTIPLE tool calls in a "
+    "single response. If you need to create 3 nodes, call the add tool "
+    "three times in one response — do NOT create them one at a time.\n"
+    "- **Plan first**: Decide everything you need before calling tools, "
+    "then batch all independent calls in a single round.\n"
+    "- **Search before creating**: Always check if data already exists "
+    "before creating duplicates (nodes, predicates).\n"
+    "- **Prefer update over delete+recreate**: If something just needs "
+    "changes, use the update tool instead of deleting and re-creating.\n"
+    "- **Stop when done**: Once you have fetched or modified all the "
+    "data the user asked for, produce a final text answer summarising "
+    "what you did. Do NOT keep calling tools after the task is complete.\n\n"
+    "## Write Operations\n"
+    "Tools that modify data (add, update, delete, merge) will prompt "
+    "the user for confirmation before executing. This is normal — "
+    "explain what the tool will do when the confirmation dialog appears.\n\n"
+    "## How to Respond\n"
+    "- Keep responses concise and helpful. Use Markdown formatting.\n"
+    "- Never invent data. If you truly have no data, say so clearly.\n"
+    "- When you have completed the user's request, output a plain text "
+    "answer summarising what you did. That signals the task is done."
+)
 
 
 # ── Config routes ────────────────────────────────────────────────────────
@@ -124,236 +164,113 @@ async def load_profile(name: str):
     return {"status": "loaded", "profile": name}
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────
+# ── Chat ─────────────────────────────────────────────────────────────────
 
 
-async def _safe_chat(provider: Any, prompt_messages: list[dict]) -> str | None:
-    """Try provider chat, returning ``None`` on transient errors."""
-    if not provider.available:
-        return None
-    try:
-        return await provider.chat(prompt_messages)
-    except (SystemExit, KeyboardInterrupt):
-        raise
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        return None
-
-
-def _resolve_command_meta(tokens: list[str]) -> tuple[str, dict[str, Any]] | None:
-    """Find the longest registered command prefix and return (path, metadata).
-
-    Uses the same longest-prefix matching as :func:`dispatch` so that
-    ``["node", "add", "MyLabel"]`` matches the ``"node.add"`` handler.
-    Returns ``None`` when no registered command matches.
-    """
-    for i in range(len(tokens), 0, -1):
-        path = ".".join(tokens[:i])
-        meta = get_handler_metadata(path)
-        if meta is not None:
-            return path, meta
-    return None
-
-
-def _command_permission_level(tokens: list[str]) -> PermissionLevel | None:
-    """Return the explicit permission level for the matched command, or ``None``.
-
-    Only returns a value when the command path is registered.  Unlike
-    :func:`get_command_level`, this does **not** return a default for
-    unknown paths — callers should treat ``None`` as "not a command".
-    """
-    resolved = _resolve_command_meta(tokens)
-    if resolved is None:
-        return None
-    _, meta = resolved
-    return meta.get("permission_level", PermissionLevel.WRITE)
-
-
-async def _try_execute(
-    tokens: list[str],
-    flags: dict[str, str],
-) -> dict | None:
-    """Attempt to dispatch *tokens*.  Returns the result dict on success
-    or ``None`` if the command path doesn't exist."""
-    try:
-        return dispatch(tokens, flags)
-    except CommandError:
-        return None
-
-
-async def _summarise(
-    tokens: list[str],
-    result: dict,
-    user_message: str,
-) -> str | None:
-    """Ask the LLM to summarise a command execution result."""
-    result_summary = json.dumps(
-        result.get("data", result), indent=2, default=str,
-    )
-    summary_messages = [
-        {
-            "role": "system",
-            "content": (
-                _SEMANTIKA_SYSTEM_PROMPT
-                + "\n\n"
-                "The user's question was answered by executing a command "
-                "on their behalf. Summarize the result in a friendly, "
-                "natural way. Use markdown formatting for readability.\n\n"
-                "Command executed: !" + " ".join(tokens) + "\n"
-                "Raw result:\n" + result_summary
-            ),
-        },
-        {"role": "user", "content": user_message},
-    ]
-    provider = get_provider()
-    return await _safe_chat(provider, summary_messages)
-
-
-# ── Chat route (with command generation) ─────────────────────────────────
+def _dispatch_path(path: str, flags: dict) -> dict:
+    """Dispatch a command by dot-separated path."""
+    return dispatch(path.split("."), flags)
 
 
 @router.post("/chat")
 async def chat(req: ChatRequest):
-    """Chat with the LLM, which may query the graph or execute commands.
+    """Chat with the LLM using multi-round tool-calling.
 
-    Two-phase flow:
-    1. Try to generate a structured command from the user's message
-    2. If a command was generated, execute it and summarize the result
-    3. Otherwise, respond as a plain chat
+    Replaces the old one-shot ``generate_command`` → execute → summarise
+    pipeline.  The LLM can now call tools, see results, and iterate
+    until it produces a final answer.
     """
     if not req.message.strip():
         return {"reply": "Say something!"}
 
     provider = get_provider()
+    if not provider.available:
+        return {"reply": stub_response(req.message)["reply"]}
 
-    # Build context from history
-    messages = list(req.context or req.history or [])
+    # Build messages with system prompt + conversation history
+    context = list(req.context or req.history or [])
+    messages = [
+        {"role": "system", "content": _SEMANTIKA_SYSTEM_PROMPT},
+        *context,
+        {"role": "user", "content": req.message},
+    ]
 
-    # ── Phase 1: Try structured command generation ───────────────────────
-    # Call without args to use the internal cache (avoids O(N) tree walk)
     defs = get_command_definitions()
-    cmd = None
+    tools = defs_to_tools(defs) if defs else []
+
+    # Run the multi-round tool loop
+    result = await run_tool_loop(
+        messages=messages,
+        tools=tools,
+        name="chat",
+        provider=provider,
+        dispatch_fn=_dispatch_path,
+        get_handler_metadata_fn=get_handler_metadata,
+        get_command_level_fn=get_command_level,
+    )
+
+    # Handle confirm_tool pause
+    if isinstance(result, dict) and result.get("type") == "confirm_tool":
+        return result
+
+    # Handle final text answer
+    reply = result if isinstance(result, str) and result.strip() else None
+    if reply:
+        return {"reply": reply}
+
+    # Fallback to plain chat if tool loop produced nothing
+    return {"reply": "I'm not sure how to help with that. Try using !commands directly."}
+
+
+@router.post("/chat/resume")
+async def chat_resume(data: dict) -> dict:
+    """Resume a paused chat execution after user confirmation.
+
+    Request body:
+        session_id (str): Session UUID from ``confirm_tool`` response.
+        decisions (dict[int, bool], optional): Per-tool-index approval.
+        confirmed (bool, optional): Blanket approve/reject all tools.
+    """
+    session_id = data.get("session_id", "")
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required.")
+
+    provider = get_provider()
+    if not provider.available:
+        return {"reply": "LLM not configured."}
+
     try:
-        cmd = await provider.generate_command(req.message, defs)
-    except Exception:
-        cmd = None
+        result = await resume_execution(
+            session_id=session_id,
+            decisions=data.get("decisions"),
+            confirmed=data.get("confirmed"),
+            provider=provider,
+            dispatch_fn=_dispatch_path,
+            get_handler_metadata_fn=get_handler_metadata,
+            get_command_level_fn=get_command_level,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
-    executed_cmd = None  # (tokens, flags, result)
+    if isinstance(result, dict) and result.get("type") == "confirm_tool":
+        return result
 
-    # Phase 1b: If generate_command returned nothing, try a softer approach
-    # — ask the LLM directly what command to run.
-    if not cmd or not cmd.get("tokens"):
-        probe_msgs = [
-            {
-                "role": "system",
-                "content": (
-                    "You MUST translate the user's request into a valid "
-                    "command from the list below. This is a question about "
-                    "graph data, so there IS a matching command. "
-                    "Respond with ONLY a JSON object, no extra text:\n"
-                    '{"tokens": ["exact", "path"], "flags": {}}\n\n'
-                    + json.dumps(defs, indent=2)
-                ),
-            },
-            {"role": "user", "content": req.message},
-        ]
-        probe_raw = await _safe_chat(provider, probe_msgs)
-        if probe_raw:
-            probe_cmd = parse_command_result(probe_raw.strip())
-            if probe_cmd and probe_cmd.get("tokens"):
-                cmd = probe_cmd
+    reply = result if isinstance(result, str) and result.strip() else None
+    if reply:
+        return {"reply": reply}
 
-    if cmd and cmd.get("tokens"):
-        tokens = cmd["tokens"]
-        flags = cmd.get("flags", {})
+    return {"reply": "(command completed)"}
 
-        # Phase 2a: Permission check — gate write & destructive commands
-        level = _command_permission_level(tokens)
-        if level is not None and level >= PermissionLevel.WRITE:
-            is_destructive = level >= PermissionLevel.DESTRUCTIVE
-            resolved_path, meta = _resolve_command_meta(tokens)
-            desc = meta.get("description", "")
-            if is_destructive:
-                tag = "destructive"
-                advice = (
-                    "If you do not want this, tell the LLM what to do "
-                    "instead (e.g. \"list first\" or \"try a different approach\")."
-                )
-            else:
-                tag = "write"
-                advice = (
-                    "This command will modify your data. If you prefer a "
-                    "different action, tell the LLM (e.g. \"search first\" "
-                    "or \"show me what exists\")."
-                )
-            return {
-                "type": "confirm",
-                "tokens": tokens,
-                "flags": flags,
-                "message": (
-                    f"The LLM wants to run a **{tag}** command "
-                    f"(`!{' '.join(tokens)}`).\n\n"
-                    f"{desc}\n\n"
-                    f"{advice}"
-                ),
-            }
 
-        # Phase 2b: Execute and summarise
-        result = await _try_execute(tokens, flags)
-        if result is not None:
-            executed_cmd = (tokens, flags, result)
-        else:
-            # Command path was invalid — give the LLM another chance with
-            # an error hint so it can correct itself.
-            correction_prompt = (
-                "I tried to run the command `!" + " ".join(tokens)
-                + "` but that exact path does not exist. "
-                "Here are the available commands. "
-                "Please translate the user's request into a correct command "
-                "from this list. Use ONLY exact paths from the list.\n\n"
-                + json.dumps(defs, indent=2)
-            )
-            retry_msgs = [
-                {"role": "system", "content": correction_prompt},
-                {"role": "user", "content": req.message},
-            ]
-            retry_raw = await _safe_chat(provider, retry_msgs)
-            if retry_raw:
-                retry_cmd = parse_command_result(retry_raw.strip())
-                if retry_cmd and retry_cmd.get("tokens"):
-                    retry_result = await _try_execute(
-                        retry_cmd["tokens"], retry_cmd.get("flags", {}),
-                    )
-                    if retry_result is not None:
-                        executed_cmd = (
-                            retry_cmd["tokens"],
-                            retry_cmd.get("flags", {}),
-                            retry_result,
-                        )
-
-    # ── Phase 3: Summarise if we have a successful execution ─────────────
-    if executed_cmd is not None:
-        tokens, flags, result = executed_cmd
-        reply = await _summarise(tokens, result, req.message)
-        if reply:
-            return {"reply": reply}
-
-    # ── Phase 4: Plain chat with system context ──────────────────────────
-    plain = await _safe_chat(provider, _build_chat_messages(messages, req.message))
-    if plain:
-        return {"reply": plain}
-
-    return {"reply": _stub_response(req.message)["reply"]}
+# ── Legacy confirm (kept for backward compat) ────────────────────────────
 
 
 @router.post("/confirm")
 async def confirm_command(req: ConfirmRequest) -> dict:
-    """Execute a command after user confirmation.
+    """Execute a command after user confirmation (legacy).
 
-    Called by the frontend after the user confirms a destructive
-    LLM-generated command in the confirmation modal.  Dispatches
-    directly without the permission gate — the user has approved it.
+    Called by any existing frontend code that still uses the old
+    single-command confirmation flow.
     """
     if not req.tokens:
         raise HTTPException(status_code=400, detail="No command tokens provided.")
@@ -371,65 +288,11 @@ async def confirm_command(req: ConfirmRequest) -> dict:
     }
 
 
-# ── Semantika system prompt ──────────────────────────────────────────────
+# ── Stub fallback (when no LLM configured) ───────────────────────────────
 
 
-_SEMANTIKA_SYSTEM_PROMPT = (
-    "You are Semantika AI, the built-in assistant of the **Semantika "
-    "knowledge graph** application. You run INSIDE the app and can "
-    "execute commands to look up data the user asks about.\n\n"
-    "## What Semantika Is\n"
-    "Semantika stores structured knowledge as:\n"
-    "- **Nodes** — entities or concepts\n"
-    "- **Predicates** — relationship types between nodes\n"
-    "- **Triples** — subject-predicate-object statements\n\n"
-    "## Available Commands\n"
-    "- `!node` — list, add, search, show, edit, delete, merge nodes\n"
-    "- `!predicate` — list, add, search, show, edit, delete predicates\n"
-    "- `!triple` — list, add, search, show, edit, delete triples\n"
-    "- `!search` — full-text search\n"
-    "- `!stats` — show graph statistics\n"
-    "- `!export` — export as Turtle (.ttl)\n"
-    "- `!unit` — manage units/ontology\n"
-    "- `!backup` — backup management\n\n"
-    "## How to Respond\n"
-    "- When the user asks about their graph data (domains, content, "
-    "what exists, what kind of X), the system will try to execute a "
-    "command on your behalf. If that happened, you will see the "
-    "command and its raw result in your system message. Use that data "
-    "to answer — do NOT tell the user to run commands themselves.\n"
-    "- If you see raw data in the system message, ANALYZE it and "
-    "present the answer directly. For example, if you see a list of "
-    "nodes, categorize them by domain and explain what you found.\n"
-    "- NEVER just tell the user to run a command like \"try !node "
-    "list\". If the data was fetched, you already have it — use it.\n"
-    "- Keep responses concise and helpful. Use Markdown formatting (not HTML).\n"
-    "  Never use raw HTML tags like `<p>`, `<code>`, `<b>` — use Markdown instead.\n"
-    "- Never invent data. If you truly have no data, say so clearly."
-)
-
-
-def _build_chat_messages(
-    messages: list[dict],
-    user_message: str,
-) -> list[dict]:
-    """Build message list with Semantika system context prepended."""
-    return [
-        {"role": "system", "content": _SEMANTIKA_SYSTEM_PROMPT},
-        *messages,
-        {"role": "user", "content": user_message},
-    ]
-
-
-# ── Stub fallback ────────────────────────────────────────────────────────
-
-
-def _stub_response(message: str) -> dict:
-    """Keyword-based stub responses when no LLM provider is configured.
-
-    Delegates to the command dispatch system for consistency with the
-    LLM-driven flow — both code paths produce the same result.
-    """
+def stub_response(message: str) -> dict:
+    """Keyword-based stub responses when no LLM provider is configured."""
     msg = message.strip().lower()
 
     if "stats" in msg or "count" in msg or "how many" in msg:
@@ -482,7 +345,6 @@ def _stub_response(message: str) -> dict:
     return {
         "reply": (
             "I'm not connected to an LLM provider yet. "
-            "Configure one via the LLM setup modal, or use !commands directly. "
             "Try keywords like \"stats\", \"search\", or \"help\"."
         )
     }
