@@ -149,7 +149,8 @@ def _batch_delete_triples(svc: dict, triples: list[dict]) -> int:
 @command("triple.list", description="List all triples",
          permission_level=PermissionLevel.READ,
          flags=[{"name": "limit", "type": "number", "help": "Max results (default 100)"},
-                {"name": "offset", "type": "number", "help": "Result offset for pagination (default 0)"}])
+                {"name": "offset", "type": "number", "help": "Result offset for pagination (default 0)"}],
+         list_id_key="triples")
 def cmd_triple_list(remaining: list[str], flags: dict[str, str]) -> dict:
     """List triples with optional pagination (--limit, --offset)."""
     svc = get_services()

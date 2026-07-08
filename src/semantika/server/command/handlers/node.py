@@ -27,7 +27,8 @@ logger = logging.getLogger(__name__)
 
 @command("node.list", description="List all nodes",
          permission_level=PermissionLevel.READ,
-         params=[{"name": "limit", "type": "number", "default": 100}])
+         params=[{"name": "limit", "type": "number", "default": 100}],
+         list_id_key="nodes")
 def cmd_node_list(remaining: list[str], flags: dict[str, str]) -> dict:
     """List all non-trashed nodes."""
     svc = get_services()

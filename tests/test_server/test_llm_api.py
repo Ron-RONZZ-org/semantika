@@ -98,50 +98,58 @@ class TestLlmProfileAPI:
 
 
 class TestLlmChatStub:
-    """Test the keyword-based stub fallback when no LLM is configured."""
+    """Test the dynamic stub fallback when no LLM is configured.
+
+    The stub uses the live command tree to provide relevant hints,
+    so responses stay in sync as commands are added or removed.
+    """
 
     def test_chat_empty_message(self, client: TestClient):
         resp = client.post("/api/v1/llm/chat", json={"message": ""})
         assert resp.status_code == 200
         assert "Say something" in resp.json()["reply"]
 
-    def test_chat_stats_keyword(self, client: TestClient):
-        """'stats' keyword triggers stats stub."""
-        resp = client.post("/api/v1/llm/chat", json={"message": "how many nodes do I have?"})
+    def test_chat_greeting(self, client: TestClient):
+        """Greeting returns a friendly intro response."""
+        resp = client.post("/api/v1/llm/chat", json={"message": "hello"})
         assert resp.status_code == 200
         reply = resp.json()["reply"]
-        assert "nodes" in reply or "graph" in reply
-
-    def test_chat_search_keyword(self, client: TestClient):
-        """'search' keyword triggers search stub."""
-        # First create a node
-        client.post("/api/v1/graph/nodes", json={"node_id": "DOG", "labels": {"en": "Dog"}})
-        resp = client.post("/api/v1/llm/chat", json={"message": "search for Dog"})
-        assert resp.status_code == 200
-        reply = resp.json()["reply"]
-        assert "Dog" in reply or "found" in reply
-
-    def test_chat_search_no_results(self, client: TestClient):
-        """Search stub with no matches returns appropriate message."""
-        resp = client.post("/api/v1/llm/chat", json={"message": "find ZZZNONEXISTENT"})
-        assert resp.status_code == 200
-        reply = resp.json()["reply"]
-        assert "couldn't find" in reply.lower() or "nothing" in reply.lower()
+        assert "Semantika AI" in reply
+        assert "!llm configure" in reply
 
     def test_chat_help_keyword(self, client: TestClient):
-        """'help' keyword returns help stub."""
+        """'help' keyword returns help-oriented response."""
         resp = client.post("/api/v1/llm/chat", json={"message": "what can you do?"})
         assert resp.status_code == 200
         reply = resp.json()["reply"]
-        assert "help" in reply or "commands" in reply
+        assert "help" in reply or "!help" in reply
 
     def test_chat_generic_fallback(self, client: TestClient):
-        """Unknown message returns a helpful hint instead of a generic 'not connected'."""
+        """Unknown message returns a hint with command categories."""
         resp = client.post("/api/v1/llm/chat", json={"message": "tell me a joke"})
         assert resp.status_code == 200
         reply = resp.json()["reply"]
-        # Should now give a friendly suggestion, not just "not connected"
-        assert "help" in reply.lower() or "stats" in reply.lower()
+        # Should mention available command areas
+        assert "command" in reply.lower() or "!help" in reply
+
+    def test_stub_response_greeting(self):
+        """stub_response directly returns appropriate greeting."""
+        from semantika.server.routes.llm import stub_response
+        result = stub_response("Hi there!")
+        assert "Semantika AI" in result["reply"]
+
+    def test_stub_response_help(self):
+        """stub_response returns help-oriented response."""
+        from semantika.server.routes.llm import stub_response
+        result = stub_response("help")
+        assert "!help" in result["reply"]
+
+    def test_stub_response_fallback(self):
+        """stub_response for unknown input mentions command categories."""
+        from semantika.server.routes.llm import stub_response
+        result = stub_response("something random")
+        # Should mention LLM setup and available commands
+        assert "!llm configure" in result["reply"] or "!help" in result["reply"]
 
 
 # ── Permission gate tests ─────────────────────────────────────────────────

@@ -14,6 +14,7 @@ import logging
 import mimetypes
 import re
 import shutil
+import socket
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -49,8 +50,10 @@ def _sanitize_filename(component: str) -> str:
     safe = component.replace("\0", "")
     # Path separators
     safe = safe.replace("/", "_").replace("\\", "_")
-    # Collapse any remaining ``..`` sequences
-    safe = re.sub(r"(?:^|_)\.\.(?:$|_)", "_", safe)
+    # Replace any ``..`` or longer dot sequences (``...``, ``....``, etc.)
+    # with a single underscore.  Catches cases like ``foo../bar`` or
+    # ``abc..def`` that the old word-boundary regex missed.
+    safe = re.sub(r"\.\.+", "_", safe)
     # Strip leading dots/dashes that could be interpreted as hidden files
     safe = safe.lstrip(".-_")
     return safe or "unnamed"
@@ -191,29 +194,59 @@ def move_file(src: Path, node_id: str, attachment_type: str | None = None) -> Pa
     return dest
 
 
-def _validate_url(url: str) -> None:
-    """Validate URL scheme and block SSRF against private/reserved hosts.
+def _resolve_and_pin(url: str) -> tuple[str, str]:
+    """Resolve hostname to IP once; return (url_with_ip, original_hostname).
+
+    Prevents DNS rebinding attacks by resolving the hostname **before**
+    opening the connection and using the resolved IP as the connection
+    target (with the original hostname in the ``Host`` header).
+
+    Also validates the resolved IP is not a private/loopback/link-local
+    address (SSRF prevention).
 
     Raises:
-        ValueError: If the scheme is unsupported or the host is a private
-            or loopback IP address.
+        ValueError: If the scheme is unsupported, resolution fails, or the
+            resolved IP is a private/reserved address.
     """
     if not url.lower().startswith(("http://", "https://")):
         raise ValueError(f"Unsupported URL scheme: {url}")
 
     parsed = urlparse(url)
     hostname = parsed.hostname or ""
+    port = parsed.port
 
-    # Block private, loopback, and link-local IPs (SSRF prevention)
     try:
-        ip = ipaddress.ip_address(hostname)
-        if ip.is_private or ip.is_loopback or ip.is_link_local:
-            raise ValueError(
-                f"URL resolves to a private/reserved IP and is blocked: {url}"
-            )
+        addrs = socket.getaddrinfo(
+            hostname,
+            port or (443 if parsed.scheme == "https" else 80),
+        )
+    except socket.gaierror:
+        raise ValueError(f"Could not resolve hostname: {hostname}")
+
+    if not addrs:
+        raise ValueError(f"Hostname resolved to no addresses: {hostname}")
+
+    ip_str = addrs[0][4][0]
+
+    # Validate resolved IP (SSRF prevention)
+    try:
+        ip_obj = ipaddress.ip_address(ip_str)
     except ValueError:
-        # Not a bare IP — hostname is fine (DNS-based SSRF is out of scope)
-        pass
+        raise ValueError(f"Resolved address is not a valid IP: {ip_str}")
+
+    if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local:
+        raise ValueError(
+            f"URL resolves to a private/reserved IP and is blocked: {url} "
+            f"(resolved to {ip_str})"
+        )
+
+    # Reconstruct URL with pinned IP, preserving original hostname for Host header
+    pinned_netloc = ip_str
+    if port:
+        pinned_netloc = f"{ip_str}:{port}"
+    pinned_url = parsed._replace(netloc=pinned_netloc).geturl()
+
+    return pinned_url, hostname
 
 
 def _check_size_from_head(
@@ -244,20 +277,25 @@ def download_file(
 ) -> Path:
     """Download a URL into the Semantika files directory (sync version).
 
+    Resolves the remote hostname **once** and pins the resolved IP for
+    the connection (with the original hostname in the ``Host`` header)
+    to prevent DNS rebinding attacks.
+
     For use in non-async contexts.  Use ``async_download_file`` inside
     async FastAPI routes to avoid blocking the event loop.
 
     The download is streamed and the size is enforced during streaming,
     so a too-large file is rejected before it is fully buffered.
     """
-    _validate_url(url)
+    pinned_url, host_header = _resolve_and_pin(url)
+    headers = {"Host": host_header}
 
     with httpx.Client(follow_redirects=True, timeout=30.0) as client:
-        head_resp = client.head(url)
+        head_resp = client.head(pinned_url, headers=headers)
         _check_size_from_head(head_resp, max_size, url)
 
         dest = _ensure_dest_dir(attachment_type, node_id)
-        with client.stream("GET", url) as resp:
+        with client.stream("GET", pinned_url, headers=headers) as resp:
             resp.raise_for_status()
             _check_size_from_head(resp, max_size, url)
             downloaded = 0
@@ -282,19 +320,24 @@ async def async_download_file(
 ) -> Path:
     """Download a URL into the Semantika files directory (async version).
 
+    Resolves the remote hostname **once** and pins the resolved IP for
+    the connection (with the original hostname in the ``Host`` header)
+    to prevent DNS rebinding attacks.
+
     Uses ``httpx.AsyncClient`` so it does not block the async event loop.
 
     The download is streamed and the size is enforced during streaming,
     so a too-large file is rejected before it is fully buffered.
     """
-    _validate_url(url)
+    pinned_url, host_header = _resolve_and_pin(url)
+    headers = {"Host": host_header}
 
     async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
-        head_resp = await client.head(url)
+        head_resp = await client.head(pinned_url, headers=headers)
         _check_size_from_head(head_resp, max_size, url)
 
         dest = _ensure_dest_dir(attachment_type, node_id)
-        async with client.stream("GET", url) as resp:
+        async with client.stream("GET", pinned_url, headers=headers) as resp:
             resp.raise_for_status()
             _check_size_from_head(resp, max_size, url)
             downloaded = 0

@@ -17,7 +17,9 @@ from semantika.graph.file_helpers import (
     is_managed_file,
     _files_root,
     _ensure_type_dir,
+    _resolve_and_pin,
     _resolve_stem,
+    _sanitize_filename,
 )
 
 
@@ -204,6 +206,72 @@ class TestIsManagedFile:
 
     def test_nonexistent_file_not_managed(self, tmp_path: Path):
         assert not is_managed_file(tmp_path / "nonexistent.txt")
+
+
+class TestSanitizeFilename:
+    """_sanitize_filename strips path-traversal sequences."""
+
+    def test_null_bytes_removed(self):
+        assert _sanitize_filename("foo\x00bar") == "foobar"
+
+    def test_path_separators_replaced(self):
+        assert "/" not in _sanitize_filename("a/b/c")
+        assert "\\" not in _sanitize_filename("a\\b\\c")
+
+    def test_dot_dot_sequences_replaced(self):
+        """Any ``..`` (or longer) sequence is replaced."""
+        assert ".." not in _sanitize_filename("foo../bar")
+        assert ".." not in _sanitize_filename("abc..def")
+
+    def test_leading_dots_stripped(self):
+        assert not _sanitize_filename("...hidden").startswith(".")
+
+    def test_leading_dashes_stripped(self):
+        assert not _sanitize_filename("-hidden").startswith("-")
+
+    def test_empty_returns_unnamed(self):
+        assert _sanitize_filename("") == "unnamed"
+
+    def test_safe_passthrough(self):
+        assert _sanitize_filename("hello") == "hello"
+
+
+class TestResolveAndPin:
+    """_resolve_and_pin validates URL scheme and resolves hostname.
+
+    DNS resolution is tested via monkeypatching to avoid network dependencies.
+    """
+
+    def test_rejects_unsupported_scheme(self):
+        with pytest.raises(ValueError, match="Unsupported URL scheme"):
+            _resolve_and_pin("ftp://example.com/file")
+
+    def test_rejects_non_url(self):
+        with pytest.raises(ValueError, match="Unsupported URL scheme"):
+            _resolve_and_pin("not-a-url")
+
+    def test_resolves_and_pins(self, monkeypatch: pytest.MonkeyPatch):
+        """Hostname is resolved to IP and pinned."""
+        import socket as _socket
+
+        def fake_getaddrinfo(host, port, *args, **kwargs):
+            return [(2, 1, 6, "", ("93.184.216.34", port))]  # example.com IP
+
+        monkeypatch.setattr(_socket, "getaddrinfo", fake_getaddrinfo)
+        pinned_url, host_header = _resolve_and_pin("http://example.com/file.txt")
+        assert "93.184.216.34" in pinned_url
+        assert host_header == "example.com"
+
+    def test_rejects_private_ip(self, monkeypatch: pytest.MonkeyPatch):
+        """Private/reserved IPs are blocked."""
+        import socket as _socket
+
+        def fake_getaddrinfo(host, port, *args, **kwargs):
+            return [(2, 1, 6, "", ("127.0.0.1", port))]
+
+        monkeypatch.setattr(_socket, "getaddrinfo", fake_getaddrinfo)
+        with pytest.raises(ValueError, match="private/reserved IP"):
+            _resolve_and_pin("http://internal.local/secret")
 
 
 class TestFilesRoot:

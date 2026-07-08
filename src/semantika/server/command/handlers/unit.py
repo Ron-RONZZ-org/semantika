@@ -10,7 +10,8 @@ from semantika.server.command.registry import command
 
 
 @command("unit.list", description="List all units",
-         permission_level=PermissionLevel.READ)
+         permission_level=PermissionLevel.READ,
+         list_id_key="units")
 def cmd_unit_list(remaining: list[str], flags: dict[str, str]) -> dict:
     """List all units in the ontology."""
     svc = get_services()
