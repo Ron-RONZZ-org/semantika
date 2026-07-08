@@ -1,8 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// Provide localStorage polyfill for node test environment
+// (createCommandHistory reads/writes localStorage on init and on push)
+if (typeof globalThis.localStorage === "undefined") {
+  const store = {};
+  globalThis.localStorage = {
+    getItem: (key) => store[key] ?? null,
+    setItem: (key, value) => { store[key] = String(value); },
+    removeItem: (key) => { delete store[key]; },
+    clear: () => { Object.keys(store).forEach(k => delete store[k]); },
+    get length() { return Object.keys(store).length; },
+    key: (i) => Object.keys(store)[i] ?? null,
+  };
+}
+
 let history;
 
 beforeEach(async () => {
+  localStorage.clear();
   vi.resetModules();
   const mod = await import("../commandHistory.svelte.js");
   history = mod.history;
