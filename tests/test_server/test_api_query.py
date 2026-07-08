@@ -6,18 +6,11 @@ and date-filtered search via both REST and command dispatch.
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 import pytest
 from fastapi.testclient import TestClient
 
-# Must override data dir before importing app
-TEST_DATA_DIR = Path("/tmp/semantika-query-test") / str(os.getpid())
-TEST_DATA_DIR.mkdir(parents=True, exist_ok=True)
-os.environ["SEMANTIKA_DATA_DIR"] = str(TEST_DATA_DIR)
-
 from semantika.server.app import create_app
+from semantika.server.routes.query import MAX_RAW_QUERY_LENGTH
 
 
 @pytest.fixture(scope="class")
@@ -191,6 +184,24 @@ class TestRawQueryAPI:
         assert resp.status_code == 200
         data = resp.json()
         assert "results" in data
+
+    def test_raw_rejects_excessive_length(self, client: TestClient):
+        """Queries exceeding MAX_RAW_QUERY_LENGTH are rejected."""
+        long_query = "SELECT 1" + (" " * MAX_RAW_QUERY_LENGTH)
+        resp = client.post("/api/v1/query/raw", json={"query": long_query})
+        assert resp.status_code == 400
+        assert "exceeds maximum length" in resp.json()["detail"].lower()
+
+    def test_raw_accepts_boundary_length(self, client: TestClient):
+        """Query at exactly MAX_RAW_QUERY_LENGTH is accepted (if valid)."""
+        # Build a valid query that reaches the limit
+        padding = MAX_RAW_QUERY_LENGTH - len("SELECT 1")
+        boundary_query = "SELECT 1" + (" " * padding)
+        resp = client.post("/api/v1/query/raw", json={"query": boundary_query})
+        # Should be 200 (valid query within length limit)
+        if resp.status_code != 200:
+            # Could be 400 if SQLite rejects it, but NOT 400 for length
+            assert "maximum length" not in resp.json().get("detail", "").lower()
 
 
 # ── Search with date filter ────────────────────────────────────────────

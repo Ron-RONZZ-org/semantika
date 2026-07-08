@@ -386,7 +386,8 @@ from disk.** The following considerations apply:
 - The hooks file lives in the XDG config directory, which should be treated as a **trusted
   location** by the user.
 - A malicious ``.dev`` file or a compromised config directory could inject arbitrary code.
-- There is no ``--no-hooks`` flag to skip loading user hooks during debugging.
+- The ``--no-hooks`` flag (on ``semantika-dev`` or ``create_app(no_hooks=True)``) skips
+  loading user hooks entirely — use it during debugging or when the hooks file is suspect.
 - **Recommendation**: If you share your config directory across machines, audit the hooks
   file for unexpected content before running Semantika.
 

@@ -22,6 +22,7 @@ FastAPI web server: application factory, API routes, middleware, command engine,
 | `/api/v1/llm` | `routes/llm.py` | Chat (two-phase: command gen → exec → summarise), config, profiles, confirm |
 | `/api/v1/units` | `routes/unit.py` | Unit ontology |
 | `/api/v1/files` | `routes/files.py` | File attachments |
+| `/api/v1/triple-templates` | `routes/triple_templates.py` | List, get, expand, execute triple templates |
 | `/api/v1/prompt-commands` | `routes/prompt_commands.py` | List, expand, execute, SSE stream |
 | `/api/v1/user` | `routes/user_config.py` | Locale/preferences |
 
@@ -52,6 +53,11 @@ FastAPI web server: application factory, API routes, middleware, command engine,
 
 ## Documentation Reference
 - lighterbird's server module for proven patterns: `../lighterbird/src/lighterbird/server/`
+
+## Security and Operational Notes
+- **User hooks flag**: ``create_app(no_hooks=True)`` skips loading ``~/.config/semantika/hooks.py``. The ``semantika-dev --no-hooks`` CLI flag exposes this for debugging.
+- **System prompt source of truth**: The canonical Semantika system prompt lives in ``llm/system_prompt.py`` (exported as ``SEMANTIKA_SYSTEM_PROMPT``). All endpoints (``routes/llm.py``, ``routes/prompt_commands.py``) import from there — never duplicate it.
+- **Raw SQL query limit**: The ``POST /api/v1/query/raw`` endpoint rejects queries longer than ``MAX_RAW_QUERY_LENGTH`` (10,000 chars) to prevent resource exhaustion.
 
 ## Domain-Specific Rules for Agents
 - **Command response types**: `status` (simple message), `form-required` (redirect to GUI form), `table` (data table), `graph` (graph visualization data), `error`
