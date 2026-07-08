@@ -6,15 +6,9 @@ Covers config, profiles, chat stub, error paths, and the permission gate.
 from __future__ import annotations
 
 import json
-import os
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-
-TEST_DATA_DIR = Path("/tmp/semantika-llm-test") / str(os.getpid())
-TEST_DATA_DIR.mkdir(parents=True, exist_ok=True)
-os.environ["SEMANTIKA_DATA_DIR"] = str(TEST_DATA_DIR)
 
 from semantika.server.app import create_app
 from semantika.server.routes.llm import get_provider
@@ -142,11 +136,12 @@ class TestLlmChatStub:
         assert "help" in reply or "commands" in reply
 
     def test_chat_generic_fallback(self, client: TestClient):
-        """Unknown message returns the generic not-connected stub."""
+        """Unknown message returns a helpful hint instead of a generic 'not connected'."""
         resp = client.post("/api/v1/llm/chat", json={"message": "tell me a joke"})
         assert resp.status_code == 200
         reply = resp.json()["reply"]
-        assert "not connected" in reply.lower() or "LLM" in reply
+        # Should now give a friendly suggestion, not just "not connected"
+        assert "help" in reply.lower() or "stats" in reply.lower()
 
 
 # ── Permission gate tests ─────────────────────────────────────────────────
@@ -364,7 +359,7 @@ class TestConfirmEndpoint:
         )
         # Should try to dispatch reset (will fail because confirmed is set, but should not be blocked)
         # It attempts reset, which requires --no-backup (provided) and confirmed (provided).
-        # It will try to reset the DB, but TEST_DATA_DIR might have issues.
+        # It will try to reset the DB — may encounter issues.
         # The important thing: it returns a status response, not "confirm" type
         assert resp.status_code in (200, 400, 500)
         data = resp.json()
