@@ -96,7 +96,19 @@ def cmd_node_add(remaining: list[str], flags: dict[str, str]) -> dict:
     """
     svc = get_services()
     labels_raw = flags.get("labels") or (remaining[0] if remaining else "")
-    payload = {"labels": {"en": labels_raw}} if labels_raw else {"labels": {}}
+    if labels_raw:
+        # Accept both JSON ({"eo": "...", "fr": "...", "en": "..."})
+        # and simple string ("en::My Node" or "My Node").
+        try:
+            labels_dict = json.loads(labels_raw) if labels_raw.startswith("{") else None
+        except (json.JSONDecodeError, TypeError):
+            labels_dict = None
+        if labels_dict:
+            payload = {"labels": labels_dict}
+        else:
+            payload = {"labels": {"en": labels_raw}}
+    else:
+        payload = {"labels": {}}
 
     # ── Resolve arc shortcuts ─────────────────────────────────────────
     arc_targets: list[tuple[str, str]] = []
