@@ -445,49 +445,59 @@ async def _run_tool_loop(
         messages.append(assistant_msg)
 
         # Process tool calls in this batch
+        write_batch: list[dict] = []
         for idx, tc in enumerate(result.tool_calls):
             path, flags = _tc_path(tc)
-
-            # Check permission — gate write+destructive behind human
-            # approval.  READ-level commands pass through.
             level = get_command_level(path) if _is_registered(path) else None
+
+            # Collect write+ tools for user review.  READ tools execute
+            # immediately without confirmation.
             if level is not None and level >= PermissionLevel.WRITE:
-                session_id = str(uuid.uuid4())
-                desc = _resolve_command_desc(path)
-                tokens = path.split(".")
-
-                _pending_executions[session_id] = {
-                    "messages": list(messages),
-                    "tool_calls": result.tool_calls,
-                    "current_index": idx,
-                    "tools": tools,
-                    "name": name,
-                }
-
-                return {
-                    "type": "confirm_tool",
-                    "session_id": session_id,
-                    "tokens": tokens,
+                write_batch.append({
+                    "index": idx,
+                    "tokens": path.split("."),
                     "flags": flags,
-                    "message": (
-                        f"The LLM wants to run `!{' '.join(tokens)}`.\n\n"
-                        f"{desc}\n\n"
-                        "Approve this operation?"
-                    ),
-                }
+                    "description": _resolve_command_desc(path),
+                })
+                continue
 
-            # READ-level tool: execute immediately via direct path dispatch
+            # READ-level tool: execute immediately
             try:
                 cmd_result = dispatch_path(path, flags)
             except CommandError as exc:
                 cmd_result = {"error": str(exc), "suggestion": getattr(exc, "suggestion", "")}
-
-            sanitized = _sanitize_tool_result(cmd_result)
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc.id,
-                "content": json.dumps(sanitized),
+                "content": json.dumps(_sanitize_tool_result(cmd_result)),
             })
+
+        # If there are pending write+ tools, gate them behind user review
+        if write_batch:
+            session_id = str(uuid.uuid4())
+            _pending_executions[session_id] = {
+                "messages": list(messages),
+                "tool_calls": result.tool_calls,
+                "tools": tools,
+                "name": name,
+                "write_indices": {w["index"] for w in write_batch},
+            }
+
+            first = write_batch[0]
+            total = len(write_batch)
+            return {
+                "type": "confirm_tool",
+                "session_id": session_id,
+                "tokens": first["tokens"],
+                "flags": first["flags"],
+                "batch": write_batch,
+                "message": (
+                    f"The LLM wants to perform **{total}** operation(s). "
+                    f"Review and approve individually below.\n\n"
+                    f"First: `!{' '.join(first['tokens'])}`\n"
+                    f"{first['description']}"
+                ),
+            }
 
     logger.warning("Tool-calling loop exhausted for /%s (max %d rounds)", name, max_rounds)
     return None
@@ -497,19 +507,22 @@ async def _run_tool_loop(
 async def resume_execution(data: dict[str, Any]) -> dict[str, Any]:
     """Resume a paused prompt command execution after user confirmation.
 
-    Called by the frontend after the user approves or rejects a tool call
+    Called by the frontend after the user reviews the pending tool batch
     in the confirmation modal.
 
     Request body:
         session_id (str): The session UUID from ``confirm_tool`` response.
-        confirmed (bool): Whether the user approved the operation.
+        confirmed (bool, optional): Apply this decision to ALL tools in
+            the batch. ``true`` = approve all, ``false`` = reject all.
+        decisions (dict[int, bool], optional): Per-tool-index approval,
+            e.g. ``{0: true, 1: false, 2: true}``.  Overrides
+            ``confirmed`` when present.
 
     Returns:
         Either a final ``{"type": "chat", ...}`` response, or another
         ``{"type": "confirm_tool", ...}`` if further tools need approval.
     """
     session_id = data.get("session_id", "")
-    confirmed = data.get("confirmed", False)
 
     if session_id not in _pending_executions:
         raise HTTPException(status_code=404, detail="Session not found or expired.")
@@ -517,45 +530,41 @@ async def resume_execution(data: dict[str, Any]) -> dict[str, Any]:
     state = _pending_executions.pop(session_id)
     messages: list[dict] = state["messages"]
     tool_calls: list[ToolCall] = state["tool_calls"]
-    current_index: int = state["current_index"]
     tools: list[dict] = state["tools"]
     name: str = state["name"]
+    write_indices: set[int] = state["write_indices"]
 
-    # Process the current tool call based on user's choice
-    tc = tool_calls[current_index]
-    path, flags = _tc_path(tc)
-
-    if confirmed:
-        try:
-            cmd_result = dispatch_path(path, flags)
-        except CommandError as exc:
-            cmd_result = {"error": str(exc), "suggestion": getattr(exc, "suggestion", "")}
+    # Resolve decisions: per-index map takes precedence, fall back to
+    # blanket ``confirmed`` flag.
+    raw_decisions: dict = data.get("decisions", {})
+    if raw_decisions:
+        decisions = {int(k): bool(v) for k, v in raw_decisions.items()}
     else:
-        cmd_result = {"error": f"User rejected command !{'/'.join(path.split('.'))}"}
+        blanket = data.get("confirmed", False)
+        decisions = {idx: blanket for idx in write_indices}
 
-    messages.append({
-        "role": "tool",
-        "tool_call_id": tc.id,
-                "content": json.dumps(_sanitize_tool_result(cmd_result)),
-    })
+    # Process ALL tools in the batch, executing approved ones and
+    # recording rejections for declined ones.
+    for idx, tc in enumerate(tool_calls):
+        path, flags = _tc_path(tc)
 
-    # Process remaining tool calls from the same batch using the user's
-    # decision on the first tool.  This is a batch: one approve/reject
-    # applies to all tools the LLM planned in this round.
-    for remaining_tc in tool_calls[current_index + 1:]:
-        r_path, r_flags = _tc_path(remaining_tc)
-
-        if confirmed:
-            try:
-                cmd_result = dispatch_path(r_path, r_flags)
-            except CommandError as exc:
-                cmd_result = {"error": str(exc), "suggestion": getattr(exc, "suggestion", "")}
+        if idx in write_indices:
+            # Write+ tool: gate behind user decision
+            approved = decisions.get(idx, False)
+            if approved:
+                try:
+                    cmd_result = dispatch_path(path, flags)
+                except CommandError as exc:
+                    cmd_result = {"error": str(exc), "suggestion": getattr(exc, "suggestion", "")}
+            else:
+                cmd_result = {"error": f"User rejected !{' '.join(path.split('.'))}"}
         else:
-            cmd_result = {"error": f"User rejected command !{'/'.join(r_path.split('.'))}"}
+            # READ tool already executed in _run_tool_loop — skip
+            continue
 
         messages.append({
             "role": "tool",
-            "tool_call_id": remaining_tc.id,
+            "tool_call_id": tc.id,
             "content": json.dumps(_sanitize_tool_result(cmd_result)),
         })
 

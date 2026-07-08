@@ -199,7 +199,9 @@ class TestConfirmationGate:
         assert data["type"] == "confirm_tool"
         assert "session_id" in data
         assert data["tokens"] == ["node", "merge"]
-        assert "Approve" in data["message"]
+        assert "Review and approve" in data["message"]
+        assert "batch" in data
+        assert len(data["batch"]) == 1
 
     def test_write_triggers_confirm(self, client: TestClient, monkeypatch: pytest.MonkeyPatch):
         """LLM calling !node.add (WRITE-level) returns confirm_tool."""
