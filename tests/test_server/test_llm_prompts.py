@@ -92,7 +92,7 @@ def test_api_modified_count(client, patch_config_to_tmp):
 
 
 def test_api_view(client, patch_config_to_tmp):
-    resp = client.get("/api/v1/llm/prompts/system-prompt")
+    resp = client.get("/api/v1/llm/prompts/view?name=system-prompt")
     assert resp.status_code == 200
     data = resp.json()
     assert data["name"] == "system-prompt"
@@ -100,12 +100,18 @@ def test_api_view(client, patch_config_to_tmp):
 
 
 def test_api_view_not_found(client):
-    resp = client.get("/api/v1/llm/prompts/nonexistent")
+    resp = client.get("/api/v1/llm/prompts/view?name=nonexistent")
     assert resp.status_code == 404
 
 
+def test_api_view_missing_name(client):
+    resp = client.get("/api/v1/llm/prompts/view")
+    # FastAPI returns 422 for missing required query params
+    assert resp.status_code == 422
+
+
 def test_api_reset(client, patch_config_to_tmp):
-    resp = client.post("/api/v1/llm/prompts/agents/reset")
+    resp = client.post("/api/v1/llm/prompts/reset", json={"name": "agents"})
     assert resp.status_code == 200
     data = resp.json()
     assert "reset" in data["message"].lower()
@@ -115,8 +121,14 @@ def test_api_reset(client, patch_config_to_tmp):
     assert resp.json()["modified_count"] == 0
 
 
+def test_api_reset_missing_name(client):
+    resp = client.post("/api/v1/llm/prompts/reset", json={})
+    assert resp.status_code == 400
+
+
 def test_api_save(client, patch_config_to_tmp):
-    resp = client.post("/api/v1/llm/prompts/system-prompt/save", json={
+    resp = client.post("/api/v1/llm/prompts/save", json={
+        "name": "system-prompt",
         "content": "New content",
     })
     assert resp.status_code == 200
@@ -128,7 +140,12 @@ def test_api_save(client, patch_config_to_tmp):
 
 
 def test_api_save_no_content(client):
-    resp = client.post("/api/v1/llm/prompts/system-prompt/save", json={})
+    resp = client.post("/api/v1/llm/prompts/save", json={"name": "system-prompt"})
+    assert resp.status_code == 400
+
+
+def test_api_save_no_name(client):
+    resp = client.post("/api/v1/llm/prompts/save", json={"content": "x"})
     assert resp.status_code == 400
 
 
