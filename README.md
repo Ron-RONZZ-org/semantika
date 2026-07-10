@@ -43,6 +43,7 @@ Semantika uses a **centralized command box** with three input modes and a **tab-
 ```
 
 - `!command` — built-in graph operations; results open in a new tab
+- **Multi-command input**: chain multiple `!` commands in one message — `!node list !predicate list`. Commands execute sequentially; `!` inside quoted strings ignored.
 - `/name [args...]` — user-defined prompt commands; results appear in the Home tab conversation
 - Natural text — free-form LLM chat; results appear in the Home tab conversation
 - The **Home tab** is always pinned at index 0 — it shows a compact header once a conversation starts, the conversation history, and the command input box

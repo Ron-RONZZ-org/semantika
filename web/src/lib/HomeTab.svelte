@@ -12,6 +12,7 @@
   import { commandTree, findNode } from "./commandTree.js";
   import { shouldIntercept } from "./commandRouter.js";
   import { banner } from "./bannerStore.svelte.js";
+  import { splitCommands, isMultiCommand } from "@lightercore/ui/multiCommand.js";
 
   let hasSentLlmMessage = $state(false);
   let showLlmSetup = $state(false);
@@ -166,6 +167,49 @@
     }
 
     if (trimmed.startsWith("!")) {
+      // ── Multi-command batch execution ─────────────────────────────
+      // Execute multiple !-commands sequentially, continue on error.
+      // Interactive commands (form-required) are skipped with an error.
+      if (isMultiCommand(trimmed)) {
+        const commands = splitCommands(trimmed);
+        for (const cmd of commands) {
+          try {
+            const routing = shouldIntercept(cmd);
+            if (routing.intercept) {
+              tabStore.open("error", "Skipped", {
+                message: `Command "${cmd}" requires an interactive form. Run it separately.`,
+              });
+              continue;
+            }
+            const result = await execute(cmd);
+            if (result.type === "form-required") {
+              tabStore.open("error", "Skipped", {
+                message: `Command "${cmd}" requires interactive input. Run it separately.`,
+              });
+              continue;
+            }
+            if (result.type === "quiz") {
+              tabStore.open("quiz", result.title || "Quiz", result.data, {});
+              continue;
+            }
+            if (result.type === "table") {
+              popup.show("status", result.title || result.label || "Results", {
+                type: "table", data: result.data, label: result.label || "",
+              });
+              continue;
+            }
+            popup.show(result.type, result.title, result.data);
+          } catch (err) {
+            tabStore.open("error", "Command Failed", {
+              message: err.message || String(err),
+              suggestion: err.suggestion || "",
+            });
+          }
+        }
+        scrollToBottom();
+        return;
+      }
+
       const routing = shouldIntercept(trimmed);
       if (routing.intercept) {
         try {
