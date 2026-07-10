@@ -355,7 +355,52 @@ When the LLM issues write-level tool calls, the tool loop gates them behind user
 - Feedback is injected as a user message summarising rejected tools + reason
 - Individual rejected tool results include: `"User rejected {cmd}, with the feedback: {fb}"`
 
-The `--seed` flag on `semantika-dev` creates a demo prompt command for testing.
+The `--seed` flag on `semantika-dev` creates demo prompt commands for testing.
+Prompt files are only seeded **if they don't already exist** — your edits survive
+across restarts.  Use ``!llm prompt list`` and ``!llm prompt reset`` to inspect
+or restore shipped defaults.
+
+## Prompt File Management (``!llm prompt``)
+
+Semantika ships with several editable prompt files that control LLM behavior.
+You can inspect, edit, and reset them via ``!llm prompt`` commands or the GUI
+tab at ``!llm prompt list``.
+
+| File | Logical Name | Purpose |
+|------|-------------|---------|
+| ``system_prompt.md`` | ``system-prompt`` | Base system prompt (tool usage, operational rules) |
+| ``AGENTS.md`` | ``agents`` | User style instructions (appended to base prompt) |
+| ``commands/_template_turns/turn1.md`` | ``template/turn1`` | Predicate discovery prompt for ``/template`` |
+| ``commands/_template_turns/turn2.md`` | ``template/turn2`` | YAML generation prompt for ``/template`` |
+
+### Commands
+
+- ``!llm prompt list`` — List all prompt files with modification status
+  (opens the prompt management tab in the GUI).
+- ``!llm prompt view <name>`` — Show current and default content.
+- ``!llm prompt reset <name>`` — Reset a single prompt to its shipped default
+  (WRITE-level, HITL confirmation).
+- ``!llm prompt reset --all`` — Reset ALL prompt files to defaults
+  (WRITE-level, HITL confirmation).
+
+### GUI
+
+- **Prompt management tab**: ``!llm prompt list`` opens a tab showing all
+  files with ``!modified`` badges, View/Edit/Reset buttons, and an inline
+  text editor.
+- **Banner**: When any prompt file differs from its default, a persistent
+  yellow banner appears on the home page: *"Custom LLM prompts active"*.
+  Click the ✕ to dismiss.
+- **Reset all**: Available in the prompt management tab header.
+
+### How defaults work
+
+Shipped defaults are defined centrally in
+``src/semantika/server/llm/prompt_defaults.py`` using
+:class:`lightercore.prompt_files.PromptFile` descriptors. The
+:class:`lightercore.prompt_files.PromptFilesManager` compares file content
+on disk against these defaults (whitespace-normalised) to detect
+modifications.  ``!llm prompt reset`` writes the default back to disk.
 
 ## System Prompt Customization
 

@@ -96,6 +96,7 @@ def help_text() -> dict:
             {"cmd": "!trash list/restore/delete/purge", "desc": "Trash management"},
             {"cmd": "!llm show/new/set/clear", "desc": "LLM provider configuration"},
             {"cmd": "!llm profile list/show/load/delete", "desc": "LLM profile management"},
+            {"cmd": "!llm prompt list/view/reset", "desc": "Prompt file management (system prompt, AGENTS.md, turn prompts)"},
             {"cmd": "!backup now/list/restore/prune", "desc": "Database backup"},
             {"cmd": "!backup config list/add/modify/delete", "desc": "Backup strategies"},
             {"cmd": "!backup export/import", "desc": "Portable data export/import"},

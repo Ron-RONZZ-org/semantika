@@ -125,3 +125,123 @@ def cmd_llm_profile_delete(remaining: list[str], flags: dict[str, str]) -> dict:
     if p.delete_profile(name):
         return {"type": "status", "title": "Profile Deleted", "data": {"removed": [name]}}
     raise CommandValidationError(f"Profile not found: {name}")
+
+
+# ── !llm prompt commands ──────────────────────────────────────────────────────
+
+
+@command("llm.prompt.list",
+         description="List all customizable prompt files and their modification status",
+         permission_level=PermissionLevel.READ)
+def cmd_llm_prompt_list(remaining: list[str], flags: dict[str, str]) -> dict:
+    """List all prompt files with their current status.
+
+    Returns a ``prompt-list`` type so the frontend opens PromptListTab.
+    """
+    from semantika.server.llm.prompt_defaults import get_prompt_files_manager
+    mgr = get_prompt_files_manager()
+    entries = mgr.list_all()
+    modified_count = sum(1 for e in entries if e["is_modified"])
+    return {
+        "type": "prompt-list",
+        "title": "Custom Prompt Files",
+        "data": {
+            "prompts": entries,
+            "count": len(entries),
+            "modified_count": modified_count,
+        },
+    }
+
+
+@command("llm.prompt.view",
+         description="View the current content of a prompt file",
+         params=[{"name": "name", "type": "string", "required": True, "description": "Prompt file name (e.g. system-prompt, agents, template/turn1)"}],
+         permission_level=PermissionLevel.READ)
+def cmd_llm_prompt_view(remaining: list[str], flags: dict[str, str]) -> dict:
+    """View the full contents of a specific prompt file."""
+    name = flags.get("name", "").strip() or (remaining[0] if remaining else "")
+    if not name:
+        raise CommandValidationError(
+            "Missing prompt name.",
+            "Usage: !llm prompt view <name>\n"
+            "Run !llm prompt list to see available names.",
+        )
+
+    from semantika.server.llm.prompt_defaults import get_prompt_files_manager
+    mgr = get_prompt_files_manager()
+
+    # Resolve name (accept either the raw name or a display variant)
+    default_content = mgr.get_default(name)
+    if default_content is None:
+        # Try partial match
+        all_entries = mgr.list_all()
+        known = [e["name"] for e in all_entries]
+        raise CommandValidationError(
+            f"Unknown prompt '{name}'. Available: {', '.join(known)}"
+        )
+
+    content = mgr.get_content(name)
+    entry = next((e for e in mgr.list_all() if e["name"] == name), {})
+    return {
+        "type": "status",
+        "title": f"Prompt: {name}",
+        "data": {
+            "name": name,
+            "relative_path": entry.get("relative_path", ""),
+            "category": entry.get("category", ""),
+            "current": content or "",
+            "default": default_content,
+            "exists": entry.get("exists", False),
+            "is_modified": entry.get("is_modified", False),
+        },
+    }
+
+
+@command("llm.prompt.reset",
+         description="Reset a prompt file to its shipped default",
+         params=[{"name": "name", "type": "string", "required": True, "description": "Prompt file name or --all to reset everything"}],
+         flags=[{"name": "all", "type": "flag", "help": "Reset ALL prompt files to defaults"}])
+def cmd_llm_prompt_reset(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Reset one or all prompt files to their shipped defaults."""
+    from semantika.server.llm.prompt_defaults import get_prompt_files_manager
+    mgr = get_prompt_files_manager()
+
+    if "all" in flags:
+        results = mgr.reset_all()
+        success_count = sum(1 for r in results if r["success"])
+        return {
+            "type": "status",
+            "title": "Prompt Reset",
+            "data": {
+                "message": f"Reset {success_count}/{len(results)} prompt files to defaults",
+                "results": results,
+            },
+        }
+
+    name = flags.get("name", "").strip() or (remaining[0] if remaining else "")
+    if not name:
+        raise CommandValidationError(
+            "Missing prompt name.",
+            "Usage: !llm prompt reset <name>  or  !llm prompt reset --all",
+        )
+
+    default_content = mgr.get_default(name)
+    if default_content is None:
+        all_entries = mgr.list_all()
+        known = [e["name"] for e in all_entries]
+        raise CommandValidationError(
+            f"Unknown prompt '{name}'. Available: {', '.join(known)}"
+        )
+
+    result = mgr.reset(name)
+    if result is None:
+        raise CommandValidationError(f"Failed to reset prompt '{name}' — check file permissions.")
+
+    return {
+        "type": "status",
+        "title": "Prompt Reset",
+        "data": {
+            "message": f"Prompt '{name}' reset to default",
+            "name": name,
+        },
+    }
