@@ -625,13 +625,21 @@ async def execute_template_flow(data: dict[str, Any]) -> dict[str, Any]:
                 predicate_summary = msg["content"]
                 break
 
-    # ── Turn 2: YAML template generation ─────────────────────────────────
+    # ── Turn 2: YAML template generation via tool-calling ────────────────
+    #
+    # Unlike the old plain-chat approach, turn 2 now uses _run_tool_loop
+    # so the LLM can call !template.save to persist the generated YAML.
+    # The WRITE-level save triggers the standard HITL confirmation dialog.
     turn2_expand_args = [predicate_summary, user_description] if predicate_summary else [user_description]
     turn2_text = _load_and_expand_turn("turn2", turn2_expand_args)
     if turn2_text is None:
         # Fallback hardcoded prompt
-        schema_block = (
-            "## Schema\n"
+        turn2_text = (
+            "## Objective\n"
+            "Generate a valid YAML triple template from the user's description "
+            "and predicates found, then **save it** using the ``template.save`` "
+            "tool.\n\n"
+            "## Template schema\n"
             "```yaml\n"
             "name: <short-name>\n"
             "description: <short-description>\n"
@@ -644,13 +652,8 @@ async def execute_template_flow(data: dict[str, Any]) -> dict[str, Any]:
             '  - "{var1} {predicate1} {var2}"           # URI (node ref)\n'
             '  - "{var1} {predicate2} {var3} --str"     # string literal\n'
             '  - "{var1} {predicate3} {var4} --int"     # number literal\n'
-            "```"
-        )
-        turn2_text = (
-            "You are a YAML template generator for the Semantika knowledge graph.\n\n"
-            "Generate a triple template YAML from the user's description.\n\n"
-            + schema_block +
-            "\n\n## Rules\n"
+            "```\n\n"
+            "## Rules\n"
             "- No flag = URI reference (object is another node)\n"
             "- `--str` = string literal, `--int` = number literal\n"
             "- Optional params: if not filled, the triple is auto-skipped\n"
@@ -658,38 +661,103 @@ async def execute_template_flow(data: dict[str, Any]) -> dict[str, Any]:
             "## Predicates found\n"
             + (predicate_summary or "No predicates found.") + "\n\n"
             "## User description\n" + user_description + "\n\n"
-            "Output ONLY the YAML code block — no explanation, no surrounding text."
+            "## Instructions\n"
+            "1. Generate the YAML template content in your response.\n"
+            "2. Then call **template.save** with ``--yaml`` set to the full YAML "
+            "content to persist it to disk.\n"
+            "3. The user will be asked to confirm — explain what the template "
+            "contains so they can make an informed decision.\n"
+            "4. After the tool completes, provide a brief summary of what was created.\n\n"
+            "You may also call **template.list** to check which templates already "
+            "exist, or **predicate.search** if you need to verify predicate IDs."
         )
 
-    turn2_prompt = (
-        "You are a YAML template generator for the Semantika knowledge graph.\n\n"
-        + turn2_text
-    )
+    turn2_messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a YAML template generator for the Semantika knowledge graph. "
+                "Your job is to generate valid YAML triple templates and save them "
+                "using the available tools.\n\n"
+                "Available tools:\n"
+                "- **template.save** — Save a YAML template file to disk "
+                "(WRITE-level, requires user confirmation).\n"
+                "- **template.list** — Check existing template names (no confirmation).\n"
+                "- **template.view** — Inspect a template's full structure (no confirmation).\n"
+                "- **predicate.search** — Find predicate IDs by keyword (no confirmation).\n\n"
+                "Important: Always generate the YAML content first, then call "
+                "``template.save --yaml <content>`` to persist it. The user will "
+                "be prompted to approve the save operation."
+            ),
+        },
+        {"role": "user", "content": turn2_text},
+    ]
+
+    # Build tool definitions — template.* + predicate.search
+    all_defs = get_command_definitions()
+    turn2_tool_paths = {
+        ("template", "save"),
+        ("template", "list"),
+        ("template", "view"),
+        ("predicate", "search"),
+    }
+    turn2_defs = [d for d in all_defs if tuple(d["path"]) in turn2_tool_paths]
+    turn2_tools = defs_to_tools(turn2_defs) if turn2_defs else []
+
+    if not turn2_tools:
+        # Fallback: no tools registered (e.g. template handler not loaded)
+        logger.warning("No turn 2 tools available — falling back to plain chat")
+        try:
+            turn2_result = await provider.chat(
+                [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a YAML template generator. Generate a triple "
+                            "template YAML from the user's description and the "
+                            "predicates found. Output ONLY the YAML code block."
+                        ),
+                    },
+                    {"role": "user", "content": turn2_text},
+                ],
+            )
+        except Exception as exc:
+            logger.exception("/template turn 2 plain-chat fallback failed")
+            return {"type": "status", "title": "/template", "data": {"message": f"Turn 2 failed: {exc}"}}
+
+        yaml_content = _extract_yaml(turn2_result) or turn2_result or ""
+        return {
+            "type": "template_yaml",
+            "title": "/template",
+            "data": {
+                "yaml": yaml_content,
+                "description": user_description,
+            },
+        }
 
     try:
-        turn2_result = await provider.chat(
-            [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a YAML template generator. Generate a triple "
-                        "template YAML from the user's description and the "
-                        "predicates found. Output ONLY the YAML code block."
-                    ),
-                },
-                {"role": "user", "content": turn2_prompt},
-            ],
-        )
+        turn2_result = await _run_tool_loop(turn2_messages, turn2_tools, "template_turn2", max_rounds=15)
     except Exception as exc:
         logger.exception("/template turn 2 failed")
         return {"type": "status", "title": "/template", "data": {"message": f"Turn 2 failed: {exc}"}}
 
-    yaml_content = _extract_yaml(turn2_result) or turn2_result or ""
+    # _run_tool_loop returns:
+    #   - str (final text) → render as chat
+    #   - dict with "type": "confirm_tool" → pass through for HITL
+    #   - None → tool loop exhausted
+    if isinstance(turn2_result, dict) and turn2_result.get("type") == "confirm_tool":
+        return turn2_result
+
+    if isinstance(turn2_result, str) and turn2_result.strip():
+        html = _render_markdown(turn2_result)
+        return {
+            "type": "chat",
+            "title": "/template",
+            "data": {"html": html, "actions": []},
+        }
+
     return {
-        "type": "template_yaml",
+        "type": "chat",
         "title": "/template",
-        "data": {
-            "yaml": yaml_content,
-            "description": user_description,
-        },
+        "data": {"html": "<p><em>Template generation produced no output.</em></p>", "actions": []},
     }
