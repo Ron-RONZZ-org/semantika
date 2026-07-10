@@ -83,7 +83,7 @@ def _seed_prompt_commands() -> None:
         turn2_file.write_text(
             "# turn2 — YAML template generation\n"
             "Generate a YAML template definition matching the user's description "
-            "using the predicates found.\n\n"
+            "using the predicates found, then save it with ``template.save``.\n\n"
             "## Template Schema\n"
             "```yaml\n"
             "name: <short-name>\n"
@@ -107,7 +107,15 @@ def _seed_prompt_commands() -> None:
             "$1\n\n"
             "## User description\n"
             "$2\n\n"
-            "Output ONLY the YAML code block.\n",
+            "## Instructions\n"
+            "1. Generate the YAML template content.\n"
+            "2. Call **template.save** with ``--yaml`` set to the full YAML "
+            "content to persist it to disk.\n"
+            "3. The user will be asked to confirm — explain what the template "
+            "contains so they can make an informed decision.\n"
+            "4. After the tool completes, summarise what was created.\n\n"
+            "You may also call **template.list** to check existing templates "
+            "or **predicate.search** to verify predicate IDs.\n",
             encoding="utf-8",
         )
 

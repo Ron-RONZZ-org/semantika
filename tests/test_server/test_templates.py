@@ -321,3 +321,111 @@ def test_triple_add_template_not_found(client) -> None:
     assert data["type"] == "form-required"
     message = (data.get("data") or {}).get("message", "") or ""
     assert "nonexistent" in message or "not found" in message
+
+
+# ── Template command handler tests (!template list/view/save) ───────────
+
+
+def test_template_list_empty(client, patch_templates_dir) -> None:
+    """!template list with no templates returns empty list."""
+    resp = client.post("/api/v1/command", json={
+        "tokens": ["template", "list"],
+        "flags": {},
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["type"] == "status"
+    assert data["data"]["count"] == 0
+    assert data["data"]["templates"] == []
+
+
+def test_template_list_with_template(client, patch_templates_dir, sample_template_yaml) -> None:
+    """!template list returns available templates."""
+    resp = client.post("/api/v1/command", json={
+        "tokens": ["template", "list"],
+        "flags": {},
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["type"] == "status"
+    assert data["data"]["count"] >= 1
+    names = [t["name"] for t in data["data"]["templates"]]
+    assert "book" in names
+
+
+def test_template_view_found(client, patch_templates_dir, sample_template_yaml) -> None:
+    """!template view returns the full template structure."""
+    resp = client.post("/api/v1/command", json={
+        "tokens": ["template", "view"],
+        "flags": {"name": "book"},
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["type"] == "status"
+    assert data["data"]["name"] == "book"
+    assert len(data["data"]["params"]) == 4
+    assert len(data["data"]["triples"]) == 3
+
+
+def test_template_view_not_found(client) -> None:
+    """!template view with nonexistent name returns error."""
+    resp = client.post("/api/v1/command", json={
+        "tokens": ["template", "view"],
+        "flags": {"name": "nonexistent"},
+    })
+    # template.view has no interactive form → CommandValidationError → HTTP 400
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.json()}"
+    detail = str(resp.json().get("detail", {}))
+    assert "not found" in detail.lower()
+
+
+def test_template_save(client, patch_templates_dir) -> None:
+    """!template save writes a valid YAML template to disk."""
+    yaml_content = (
+        "name: test-save\n"
+        "description: Test save\n"
+        "params:\n"
+        "  - name: x\n"
+        "    label: X\n"
+        "    type: string\n"
+        "    required: true\n"
+        "triples:\n"
+        '  - "{x} hasTitle {x} --str"\n'
+    )
+    resp = client.post("/api/v1/command", json={
+        "tokens": ["template", "save"],
+        "flags": {"yaml": yaml_content},
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["type"] == "status"
+    assert "saved" in data["data"]["message"].lower()
+    assert data["data"]["name"] == "test-save"
+
+    # Verify the file was actually written
+    from pathlib import Path
+    templates_dir = patch_templates_dir
+    saved_file = templates_dir / "test-save.yaml"
+    assert saved_file.exists()
+    content = saved_file.read_text(encoding="utf-8")
+    assert "hasTitle" in content
+
+
+def test_template_save_invalid_yaml(client) -> None:
+    """!template save with invalid YAML returns error."""
+    resp = client.post("/api/v1/command", json={
+        "tokens": ["template", "save"],
+        "flags": {"yaml": "not: valid: yaml: ["},
+    })
+    # template.save has no interactive form → CommandValidationError → HTTP 400
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.json()}"
+
+
+def test_template_save_no_name(client) -> None:
+    """!template save with YAML lacking a name field returns error."""
+    resp = client.post("/api/v1/command", json={
+        "tokens": ["template", "save"],
+        "flags": {"yaml": "description: no-name\n"},
+    })
+    # template.save has no interactive form → CommandValidationError → HTTP 400
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.json()}"

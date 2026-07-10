@@ -1,6 +1,11 @@
 <script>
   /**
-   * Popup showing generated template YAML with Save and Reject buttons.
+   * Fallback popup showing generated template YAML.
+   *
+   * The primary /template flow now uses tool-calling + HITL to save
+   * templates via `!template save`. This popup is only shown when
+   * tool-calling is unavailable (e.g. LLM provider doesn't support it)
+   * and the user must save the YAML manually.
    *
    * Props:
    *   data.yaml         — the YAML content
@@ -34,27 +39,18 @@
       saving = false;
     }
   }
-
-  function handleReject() {
-    // Tell the user to refine their description and try again
-    const msg = "Not happy with the result? Describe what you'd like to change and run /template again with more detail.";
-    const { popup } = import.meta.glob("/lib/popupStore.svelte.js", { eager: true });
-    // Actually, we can just show a banner or dialog
-    alert(msg);
-  }
 </script>
 
 <div class="template-yaml-popup">
   <div class="yaml-header">
-    <h3>Generated Template</h3>
+    <h3>Generated Template (fallback)</h3>
     <div class="actions">
       {#if saved}
         <span class="saved-badge">Saved</span>
       {:else}
         <button class="btn btn-save" onclick={handleSave} disabled={saving}>
-          {saving ? "Saving\u2026" : "Save"}
+          {saving ? "Saving\u2026" : "Save Manually"}
         </button>
-        <button class="btn btn-reject" onclick={handleReject}>Reject</button>
       {/if}
     </div>
   </div>
@@ -66,7 +62,11 @@
   {#if saved}
     <p class="success-msg">Template saved! Use <code>!triple add --template &#x200b;{extractName(yaml)}</code> to use it.</p>
   {:else}
-    <p class="hint">Review the YAML below. <strong>Save</strong> writes it to <code>~/.config/semantika/templates/</code>. <strong>Reject</strong> discards it — refine your description and run <code>/template</code> again.</p>
+    <p class="hint">
+      The LLM could not use tools to save this template automatically.
+      Review the YAML below and click <strong>Save Manually</strong> to persist it,
+      or run <code>/template</code> again with a different LLM provider that supports tool-calling.
+    </p>
   {/if}
 
   <pre class="yaml-block"><code>{yaml}</code></pre>
@@ -96,10 +96,6 @@
     background: #3a6a3a; color: #e0e0e0;
   }
   .btn-save:hover:not(:disabled) { background: #4a8a4a; }
-  .btn-reject {
-    background: #6a3a3a; color: #e0e0e0;
-  }
-  .btn-reject:hover { background: #8a4a4a; }
   .saved-badge { color: #4a8a4a; font-weight: bold; font-size: 0.85rem; }
   .hint { font-size: 0.78rem; color: #82829a; margin: 0 0 0.75rem; }
   .hint code { background: #222; padding: 1px 4px; border-radius: 3px; }
