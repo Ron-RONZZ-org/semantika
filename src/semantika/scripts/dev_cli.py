@@ -61,6 +61,56 @@ def _seed_prompt_commands() -> None:
             encoding="utf-8",
         )
 
+    # Seed the two-turn prompt files for /template
+    template_turns_dir = commands_dir / "_template_turns"
+    template_turns_dir.mkdir(parents=True, exist_ok=True)
+    turn1_file = template_turns_dir / "turn1.md"
+    if not turn1_file.exists():
+        turn1_file.write_text(
+            "# turn1 — predicate discovery\n"
+            "Your task is to find existing predicates in the Semantika "
+            "knowledge graph that are relevant to the user's template "
+            "description.\n\n"
+            "User description:\n"
+            "$ARGUMENTS\n\n"
+            "Use the **predicate.search** tool to find relevant predicates. "
+            "Try different keyword variations to get broad coverage. "
+            "Once you have a good set, list the predicate IDs you found.\n",
+            encoding="utf-8",
+        )
+    turn2_file = template_turns_dir / "turn2.md"
+    if not turn2_file.exists():
+        turn2_file.write_text(
+            "# turn2 — YAML template generation\n"
+            "Generate a YAML template definition matching the user's description "
+            "using the predicates found.\n\n"
+            "## Template Schema\n"
+            "```yaml\n"
+            "name: <short-name>\n"
+            "description: <short-description>\n"
+            "params:\n"
+            "  - name: <variable-name>\n"
+            "    label: <human-label>\n"
+            "    type: node | string | number\n"
+            "    required: true\n"
+            "triples:\n"
+            '  - "{var1} {predicate1} {var2}"           # URI (node ref)\n'
+            '  - "{var1} {predicate2} {var3} --str"     # string literal\n'
+            '  - "{var1} {predicate3} {var4} --int"     # number literal\n'
+            "```\n\n"
+            "## Rules\n"
+            "- No flag = URI reference (object is another node)\n"
+            "- `--str` = string literal, `--int` = number literal\n"
+            "- Optional params: if not filled, the triple is auto-skipped\n"
+            "- Use PREDICATE IDs that already exist in your graph\n\n"
+            "## Predicates found\n"
+            "$1\n\n"
+            "## User description\n"
+            "$2\n\n"
+            "Output ONLY the YAML code block.\n",
+            encoding="utf-8",
+        )
+
     # Seed a sample YAML triple template for testing
     templates_dir = config_dir() / "templates"
     templates_dir.mkdir(parents=True, exist_ok=True)

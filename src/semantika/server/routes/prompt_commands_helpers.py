@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from pathlib import Path
 from typing import Any
 
 from lightercore.llm.base import ToolCall, defs_to_tools
@@ -36,23 +37,6 @@ def _commands_dir() -> str:
 # ── Helpers ───────────────────────────────────────────────────────────
 
 
-def _parse_search_plan(text: str | None) -> list[str]:
-    """Parse LLM response for a search_plan JSON object."""
-    if not text:
-        return []
-
-    import re
-    text = text.strip()
-    json_match = re.search(r'\{[^{}]*"type"\s*:\s*"search_plan"[^{}]*\}', text, re.DOTALL)
-    if json_match:
-        try:
-            obj = json.loads(json_match.group())
-            return obj.get("keywords", [])
-        except (json.JSONDecodeError, TypeError):
-            pass
-    return []
-
-
 def _extract_yaml(text: str | None) -> str | None:
     """Extract YAML content from a code-fenced block."""
     if not text:
@@ -66,12 +50,6 @@ def _extract_yaml(text: str | None) -> str | None:
     if match:
         return match.group(1).strip()
     return None
-
-
-def _get_predicate_label(pred: dict) -> str:
-    """Get the best human-readable label for a predicate."""
-    labels = pred.get("labels", {}) or {}
-    return labels.get("en", labels.get("eo", pred.get("predicate_id", "")))
 
 
 def _resolve_command_desc(path: str) -> str:
@@ -558,11 +536,70 @@ async def resume_execution(
     }
 
 
+# ── Turn prompts for /template two-turn flow ───────────────────────────────
+
+_TEMPLATE_TURN_DIR = "commands/_template_turns"
+"""Subdirectory within the config dir for template flow turn prompts."""
+
+
+def _template_turns_dir() -> Path:
+    """Return the template turns directory path."""
+    return config_dir() / _TEMPLATE_TURN_DIR
+
+
+def _load_turn_prompt(name: str) -> str | None:
+    """Load a turn prompt file from the template turns directory.
+
+    Reads ``~/.config/semantika/commands/_template_turns/{name}.md``
+    and returns the full file content (including the ``# `` header line).
+    Returns ``None`` if the file doesn't exist.
+    """
+    path = _template_turns_dir() / f"{name}.md"
+    if not path.is_file():
+        return None
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        logger.warning("Failed to read turn prompt: %s", path)
+        return None
+
+
+def _expand_turn_prompt(template: str, args: list[str]) -> str:
+    """Expand a turn prompt template with $1, $2, $ARGUMENTS substitution.
+
+    Unlike prompt commands, turn prompts always use $1 for the first arg,
+    $2 for the second, etc., and $ARGUMENTS for all remaining args joined.
+    Fallback to ``expand_prompt_template`` for consistency.
+    """
+    from lightercore.prompt_commands import expand_prompt_template
+    return expand_prompt_template(template, args)
+
+
+def _load_and_expand_turn(name: str, expand_args: list[str]) -> str | None:
+    """Load and expand a turn prompt, or return ``None`` if missing."""
+    template = _load_turn_prompt(name)
+    if template is None:
+        return None
+    return _expand_turn_prompt(template, expand_args)
+
+
 # ── /template two-turn flow ────────────────────────────────────────────────
 
 
 async def execute_template_flow(data: dict[str, Any]) -> dict[str, Any]:
-    """Two-turn flow for /template: search_plan → LLM YAML generation."""
+    """Two-turn flow for /template: tool-based predicate discovery → YAML generation.
+
+    Turn 1 uses the :func:`_run_tool_loop` with only the ``predicate.search``
+    tool available, so the LLM can search for relevant predicates by calling
+    the tool directly (no fragile JSON-in-text parsing).
+
+    Turn 2 passes the discovered predicates to the LLM for YAML template
+    generation.
+
+    Both turn prompts are stored as user-editable files in
+    ``~/.config/semantika/commands/_template_turns/``.
+    """
+    from pathlib import Path
 
     args = data.get("args", [])
     user_description = " ".join(args) if args else ""
@@ -587,103 +624,116 @@ async def execute_template_flow(data: dict[str, Any]) -> dict[str, Any]:
             },
         }
 
-    # Turn 1: Ask LLM for predicate search keywords
-    turn1_prompt = (
-        "You are a template generator for the Semantika knowledge graph. "
-        "The user wants to create a reusable triple template.\n\n"
-        "First, determine what predicates you need to search for. "
-        "Respond with a JSON object listing search keywords:\n"
-        '{"type": "search_plan", "keywords": ["keyword1", "keyword2", ...]}\n\n'
-        "User description:\n" + user_description
-    )
+    # ── Turn 1: Predicate discovery via tool calling ──────────────────────
+    turn1_text = _load_and_expand_turn("turn1", args)
+    if turn1_text is None:
+        # Fallback hardcoded prompt if file is missing
+        turn1_text = (
+            "Your task is to find relevant predicates in the Semantika "
+            "knowledge graph for creating a triple template.\n\n"
+            "User description:\n" + user_description + "\n\n"
+            "Use the **predicate.search** tool with different keywords "
+            "to find predicates relevant to the user's description. "
+            "Try multiple searches. Once you have a good set, summarise "
+            "what predicates you found and what they are for."
+        )
+
+    turn1_messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a predicate discovery assistant for the Semantika "
+                "knowledge graph. Your ONLY job is to find existing predicates "
+                "relevant to the user's template description.\n\n"
+                "Use the **predicate.search** tool to search for predicates. "
+                "Each call returns matching predicate IDs and labels. "
+                "Try different keyword variations to get broad coverage.\n\n"
+                "Once you have a good set of predicates, provide a concise "
+                "summary listing the predicate IDs you found."
+            ),
+        },
+        {"role": "user", "content": turn1_text},
+    ]
+
+    # Build tool definitions — only predicate.search (READ-level, no confirm)
+    all_defs = get_command_definitions()
+    pred_search_defs = [d for d in all_defs if d["path"] == ["predicate", "search"]]
+    turn1_tools = defs_to_tools(pred_search_defs) if pred_search_defs else []
 
     try:
-        turn1_result = await provider.chat(
-            [{"role": "system", "content": _SEMANTIKA_SYSTEM_PROMPT},
-             {"role": "user", "content": turn1_prompt}],
-        )
+        turn1_result = await _run_tool_loop(turn1_messages, turn1_tools, "template_turn1", max_rounds=10)
     except Exception as exc:
         logger.exception("/template turn 1 failed")
-        return {"type": "status", "title": "/template", "data": {"message": f"LLM call failed: {exc}"}}
+        return {"type": "status", "title": "/template", "data": {"message": f"Turn 1 failed: {exc}"}}
 
-    # Parse search plan from LLM response
-    keywords = _parse_search_plan(turn1_result)
-    if not keywords:
-        yaml_content = _extract_yaml(turn1_result)
-        if yaml_content:
-            return {
-                "type": "template_yaml",
-                "title": "/template",
-                "data": {
-                    "yaml": yaml_content,
-                    "description": user_description,
-                },
-            }
-        return {
-            "type": "chat",
-            "title": "/template",
-            "data": {"html": _render_markdown(turn1_result or "")},
-        }
+    # Extract predicates summary from LLM's final answer
+    predicate_summary = turn1_result if isinstance(turn1_result, str) and turn1_result.strip() else ""
+    if not predicate_summary:
+        # If the tool loop returned no text, try to reconstruct from messages
+        # Pick last assistant message content that has tool results context
+        for msg in reversed(turn1_messages):
+            if msg["role"] == "assistant" and msg.get("content", "").strip():
+                predicate_summary = msg["content"]
+                break
 
-    # Execute predicate searches
-    from semantika.graph.db import get_services
-    svc = get_services()
-    search_results: list[dict[str, str]] = []
-    for kw in keywords:
-        try:
-            matches = svc["predicate"].search(kw, limit=5)
-            for m in matches:
-                search_results.append({
-                    "keyword": kw,
-                    "predicate_id": m.get("predicate_id", ""),
-                    "label": _get_predicate_label(m),
-                })
-        except Exception:
-            logger.debug("Predicate search failed for: %s", kw, exc_info=True)
-
-    # Turn 2: Send search results + user description for YAML generation
-    if search_results:
-        found_summary = "Existing predicates found:\n"
-        for r in search_results:
-            found_summary += f"  - {r['predicate_id']} (matched keyword: {r['keyword']})\n"
-    else:
-        found_summary = "(No existing predicates matched — you may need to create new ones.)\n"
+    # ── Turn 2: YAML template generation ─────────────────────────────────
+    turn2_expand_args = [predicate_summary, user_description] if predicate_summary else [user_description]
+    turn2_text = _load_and_expand_turn("turn2", turn2_expand_args)
+    if turn2_text is None:
+        # Fallback hardcoded prompt
+        schema_block = (
+            "## Schema\n"
+            "```yaml\n"
+            "name: <short-name>\n"
+            "description: <short-description>\n"
+            "params:\n"
+            "  - name: <variable-name>\n"
+            "    label: <human-label>\n"
+            "    type: node | string | number\n"
+            "    required: true\n"
+            "triples:\n"
+            '  - "{var1} {predicate1} {var2}"           # URI (node ref)\n'
+            '  - "{var1} {predicate2} {var3} --str"     # string literal\n'
+            '  - "{var1} {predicate3} {var4} --int"     # number literal\n'
+            "```"
+        )
+        turn2_text = (
+            "You are a YAML template generator for the Semantika knowledge graph.\n\n"
+            "Generate a triple template YAML from the user's description.\n\n"
+            + schema_block +
+            "\n\n## Rules\n"
+            "- No flag = URI reference (object is another node)\n"
+            "- `--str` = string literal, `--int` = number literal\n"
+            "- Optional params: if not filled, the triple is auto-skipped\n"
+            "- Use PREDICATE IDs that already exist in your graph\n\n"
+            "## Predicates found\n"
+            + (predicate_summary or "No predicates found.") + "\n\n"
+            "## User description\n" + user_description + "\n\n"
+            "Output ONLY the YAML code block — no explanation, no surrounding text."
+        )
 
     turn2_prompt = (
         "You are a YAML template generator for the Semantika knowledge graph.\n\n"
-        "Generate a triple template YAML from the user's description.\n\n"
-        "## Schema\n"
-        "```yaml\n"
-        "name: <short-name>\n"
-        "description: <short-description>\n"
-        "params:\n"
-        "  - name: <variable-name>\n"
-        "    label: <human-label>\n"
-        "    type: node | string | number\n"
-        "    required: true\n"
-        "triples:\n"
-        '  - "{var1} {predicate1} {var2}"           # URI (node ref) — no flag\n'
-        '  - "{var1} {predicate2} {var3} --str"     # string literal\n'
-        '  - "{var1} {predicate3} {var4} --int"     # number literal\n'
-        "```\n\n"
-        "## Rules\n"
-        "- No flag = URI reference (object is another node)\n"
-        "- `--str` = string literal, `--int` = number literal\n"
-        "- Optional params: if not filled, the triple is auto-skipped\n"
-        "- Use PREDICATE IDs that ALREADY EXIST in your graph\n\n"
-        "## " + found_summary + "\n"
-        "## User description\n" + user_description + "\n\n"
-        "Output ONLY the YAML code block — no explanation, no surrounding text."
+        + turn2_text
     )
 
     try:
         turn2_result = await provider.chat(
-            [{"role": "system", "content": _SEMANTIKA_SYSTEM_PROMPT},
-             {"role": "user", "content": turn2_prompt}],
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a YAML template generator. Generate a triple "
+                        "template YAML from the user's description and the "
+                        "predicates found. Output ONLY the YAML code block."
+                    ),
+                },
+                {"role": "user", "content": turn2_prompt},
+            ],
         )
     except Exception as exc:
         logger.exception("/template turn 2 failed")
-        return {"type": "status", "title": "/template", "data": {"message": f"LLM call failed: {exc}"}}
+        return {"type": "status", "title": "/template", "data": {"message": f"Turn 2 failed: {exc}"}}
 
     yaml_content = _extract_yaml(turn2_result) or turn2_result or ""
     return {

@@ -173,6 +173,16 @@ SEMANTIKA_PORT=8765 npm run dev
 
 In production (built frontend served by FastAPI), port configuration is automatic — the Svelte SPA is served as static files on the same port as the API. No proxy needed.
 
+### Disable file watching
+
+To run the Vite dev server without file watching or HMR (useful when you want manual refresh on restart):
+
+```bash
+DISABLE_WATCH=true npm run dev
+```
+
+This sets `server.watch: null` and `server.hmr: false` — no chokidar watcher runs and no WebSocket connection is established. Restart the process to see changes.
+
 ## Testing
 
 ```bash
