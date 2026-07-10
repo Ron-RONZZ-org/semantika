@@ -25,6 +25,7 @@ from semantika.server.command.registry import (
     get_handler_metadata,
 )
 from semantika.server.llm.provider import get_provider
+from semantika.server.llm.system_prompt import load_system_prompt, system_prompt_path
 
 logger = logging.getLogger(__name__)
 
@@ -130,81 +131,29 @@ def _render_markdown(text: str) -> str:
     return mistune.html(text)
 
 
-_SEMANTIKA_SYSTEM_PROMPT = (
-    "You are Semantika AI, the built-in assistant of the **Semantika "
-    "knowledge graph** application. You run INSIDE the app and can "
-    "call tools to create, read, and update graph data.\n\n"
-    "## What Semantika Is\n"
-    "Semantika stores structured knowledge as:\n"
-    "- **Nodes** — entities or concepts (e.g. a book, a person, an idea)\n"
-    "- **Predicates** — relationship types between nodes (e.g. author, theme)\n"
-    "- **Triples** — subject-predicate-object statements\n\n"
-    "## How to Use Tools\n"
-    "- **Batch operations**: You can return MULTIPLE tool calls in a "
-    "single response. If you need to create 3 nodes, call ``node_add`` "
-    "three times in one response — do NOT create them one at a time.\n"
-    "- **Plan first**: Decide everything you need before calling tools, "
-    "then batch all independent calls in a single round.\n"
-    "- **Prefer update over delete+recreate**: If a node needs a different "
-    "label, use ``node_update`` instead of deleting and re-creating.\n"
-    "- **Stop when done**: Once you have created/fetched all the data the "
-    "user asked for, produce a final text answer. Do NOT keep calling "
-    "tools after the task is complete — just write your response.\n\n"
-    "## How to Respond\n"
-    "- Keep responses concise and helpful. Use Markdown formatting.\n"
-    "- Never invent data. If you truly have no data, say so clearly.\n"
-    "- When you have completed the user's request, output a plain text "
-    "answer summarizing what you did. That signals the task is done."
-)
-
-
 def _load_user_prompt() -> str:
-    """Load the user's ``~/.config/semantika/AGENTS.md`` file.
+    """Load the user's ``~/.config/semantika/system_prompt.md`` file.
 
-    This file provides additional context / instructions that the user
-    wants injected into every prompt command.  It is **appended** to the
-    base ``_SEMANTIKA_SYSTEM_PROMPT``, so the user does not need to
-    duplicate the base prompt.
+    This is the **full** system prompt (not an appendix) — the shipped
+    default is auto-seeded on first run, and the user can edit the file
+    freely.  The same file is used by the chat endpoint.
 
-    The file is auto-seeded on first run with a template explaining its
-    purpose.  The user can edit it freely.
+    .. deprecated::
+        Kept for backward compat.  New code should call
+        :func:`load_system_prompt` directly.
     """
-    from pathlib import Path
-
-    from lightercore.system_prompt import SystemPromptManager
-
-    default_agents = (
-        "# AGENTS.md — Additional context for Semantika AI\n\n"
-        "This file is loaded automatically and appended to the system prompt "
-        "for all prompt commands (``/``).  Use it to add your personal "
-        "naming conventions, style preferences, or workflow rules.\n\n"
-        "## Example\n"
-        "```\n"
-        "When creating nodes:\n"
-        "- Always provide labels in eo, fr, en\n"
-        "- Node ID from Esperanto label, uppercased, ASCII-normalised\n"
-        "- Predicate IDs: rs:xxx with Esperanto word\n"
-        "```\n"
-    )
-    mgr = SystemPromptManager(
-        Path(str(config_dir())),
-        filename="AGENTS.md",
-    )
-    return mgr.load(default_agents)
+    return load_system_prompt()
 
 
 def _build_prompt_messages(expanded: str) -> list[dict]:
     """Build messages with Semantika system context for prompt commands.
 
-    Combines the base system prompt with the user's ``AGENTS.md``
-    (if present), then appends the expanded prompt command template
+    Uses the user-editable ``system_prompt.md`` (via :func:`load_system_prompt`)
+    as the system message, then appends the expanded prompt command template
     as the user message.
     """
-    user_prompt = _load_user_prompt()
-    full_system = _SEMANTIKA_SYSTEM_PROMPT + "\n\n" + user_prompt if user_prompt else _SEMANTIKA_SYSTEM_PROMPT
-
     return [
-        {"role": "system", "content": full_system},
+        {"role": "system", "content": load_system_prompt()},
         {"role": "user", "content": expanded},
     ]
 

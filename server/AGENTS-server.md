@@ -4,7 +4,7 @@
 FastAPI web server: application factory, API routes, middleware, command engine, LLM integration, prompt commands, user configuration.
 
 ## Purpose and Expected Behavior
-- `app.py` — `create_app()` factory that registers all routers and static file serving
+- `app.py` — `create_app()` factory that registers all routers and static file serving.  The ``lifespan`` handler calls :func:`~semantika.server.llm.system_prompt.seed_config_defaults` to create any missing config files (``system_prompt.md``) with shipped defaults.
 - `routes/` — API endpoint handlers organized by domain
 - `command/` — `!command` parsing engine, tree metadata, handler registry with `@command`/`@group_command` decorators
 - `llm/` — Provider abstraction for OpenAI-compatible APIs and Ollama; singleton managed by `get_provider()`/`reset_provider()`
@@ -56,7 +56,8 @@ FastAPI web server: application factory, API routes, middleware, command engine,
 
 ## Security and Operational Notes
 - **User hooks flag**: ``create_app(no_hooks=True)`` skips loading ``~/.config/semantika/hooks.py``. The ``semantika-dev --no-hooks`` CLI flag exposes this for debugging.
-- **System prompt source of truth**: The canonical Semantika system prompt lives in ``llm/system_prompt.py`` (exported as ``SEMANTIKA_SYSTEM_PROMPT``). All endpoints (``routes/llm.py``, ``routes/prompt_commands.py``) import from there — never duplicate it.
+- **System prompt source of truth**: The canonical Semantika system prompt lives in ``llm/system_prompt.py``.  Both the chat endpoint and prompt command endpoints call :func:`load_system_prompt` which reads the user-editable ``~/.config/semantika/system_prompt.md`` file (auto-seeded on first run).  Never hardcode or duplicate the prompt text — always import from ``llm/system_prompt.py``.
+- **Legacy ``AGENTS.md`` migration**: On first access after this change, the loader automatically migrates content from the legacy ``~/.config/semantika/AGENTS.md`` into ``system_prompt.md`` (with the default prepended).  The legacy file is left in place for the user to delete manually.
 - **Raw SQL query limit**: The ``POST /api/v1/query/raw`` endpoint rejects queries longer than ``MAX_RAW_QUERY_LENGTH`` (10,000 chars) to prevent resource exhaustion.
 
 ## Domain-Specific Rules for Agents

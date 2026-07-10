@@ -40,8 +40,14 @@ def _cors_config() -> tuple[list[str], bool]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Application lifespan: init DB, backup scheduler, ensure template dir."""
+    """Application lifespan: init DB, seed config defaults, backup scheduler, ensure template dir."""
     init_db()
+    # Seed default config files (system_prompt.md, etc.) on startup
+    try:
+        from semantika.server.llm.system_prompt import seed_config_defaults
+        seed_config_defaults()
+    except Exception:
+        logger.warning("Config defaults seeding failed (non-fatal)")
     try:
         from semantika.server.tasks import init_backup_scheduler
         init_backup_scheduler()

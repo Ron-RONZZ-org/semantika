@@ -28,7 +28,7 @@ from semantika.server.command.registry import (
     get_handler_metadata,
 )
 from semantika.server.llm.provider import get_provider
-from semantika.server.llm.system_prompt import SEMANTIKA_SYSTEM_PROMPT
+from semantika.server.llm.system_prompt import load_system_prompt, reload_system_prompt, system_prompt_path
 
 logger = logging.getLogger(__name__)
 
@@ -67,11 +67,6 @@ class ConfirmRequest(BaseModel):
     """Legacy single-command confirmation."""
     tokens: list[str]
     flags: dict[str, str] = {}
-
-
-# Semantika system prompt — single source of truth in llm/system_prompt.py
-# SEMANTIKA_SYSTEM_PROMPT intentionally NOT duplicated here;
-# import SEMANTIKA_SYSTEM_PROMPT from that module instead.
 
 
 # ── Config routes ────────────────────────────────────────────────────────
@@ -132,6 +127,38 @@ async def load_profile(name: str):
     return {"status": "loaded", "profile": name}
 
 
+# ── System prompt endpoints ─────────────────────────────────────────────
+
+
+@router.get("/prompt")
+async def get_system_prompt() -> dict:
+    """Return the current system prompt content and its file path.
+
+    The user can edit the file at *path* to customise the LLM's
+    behaviour, then call ``POST /api/v1/llm/reload-prompt`` to apply
+    changes without restarting the server.
+    """
+    return {
+        "prompt": load_system_prompt(),
+        "path": str(system_prompt_path()),
+    }
+
+
+@router.post("/reload-prompt")
+async def reload_system_prompt_endpoint() -> dict:
+    """Force-reload the system prompt from disk.
+
+    Call this after the user edits ``system_prompt.md`` so the LLM
+    sees the new content on the next request (no server restart needed).
+    """
+    prompt = reload_system_prompt()
+    return {
+        "status": "reloaded",
+        "length": len(prompt),
+        "path": str(system_prompt_path()),
+    }
+
+
 # ── Chat ─────────────────────────────────────────────────────────────────
 
 
@@ -156,9 +183,12 @@ async def chat(req: ChatRequest):
         return {"reply": stub_response(req.message)["reply"]}
 
     # Build messages with system prompt + conversation history
+    # load_system_prompt() reads the user-editable system_prompt.md file
+    # from the config directory, auto-seeding with the shipped default
+    # on first run.
     context = list(req.context or req.history or [])
     messages = [
-        {"role": "system", "content": SEMANTIKA_SYSTEM_PROMPT},
+        {"role": "system", "content": load_system_prompt()},
         *context,
         {"role": "user", "content": req.message},
     ]
@@ -192,7 +222,7 @@ async def chat(req: ChatRequest):
     logger.warning("Tool loop returned empty for message=%r — retrying as plain chat", req.message)
     try:
         fallback = await provider.chat([
-            {"role": "system", "content": SEMANTIKA_SYSTEM_PROMPT},
+            {"role": "system", "content": load_system_prompt()},
             {"role": "user", "content": req.message},
         ])
         if isinstance(fallback, str) and fallback.strip():
