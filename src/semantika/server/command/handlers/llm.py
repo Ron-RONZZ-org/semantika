@@ -86,8 +86,26 @@ def cmd_llm_clear(remaining: list[str], flags: dict[str, str]) -> dict:
          permission_level=PermissionLevel.READ)
 def cmd_llm_profile_list(remaining: list[str], flags: dict[str, str]) -> dict:
     p = get_provider()
-    profiles = p.list_profiles()
-    return {"type": "status", "title": "LLM Profiles", "data": {"profiles": profiles, "active_profile": p.active_profile_name}}
+    raw_profiles = p.list_profiles()
+    active = p.active_profile_name or "(none)"
+    if not raw_profiles:
+        return {"type": "status", "title": "LLM Profiles", "data": {"_summary": "No saved profiles."}}
+    lines = [f"Active: {active}\n"]
+    for prof in raw_profiles:
+        name = prof.get("name", "?")
+        model = prof.get("model", "")
+        prov = prof.get("provider_type", "")
+        marker = "  ► " if name == active else "    "
+        lines.append(f"{marker}{name}  ({prov}, {model})")
+    return {
+        "type": "status",
+        "title": "LLM Profiles",
+        "data": {
+            "_summary": "\n".join(lines),
+            "profiles": raw_profiles,
+            "active_profile": active,
+        },
+    }
 
 
 @command("llm.profile.show", description="Show active LLM profile",
