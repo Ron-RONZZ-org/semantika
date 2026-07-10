@@ -100,10 +100,12 @@ def _auto_configure_llm(creds: dict[str, str]) -> None:
     if not api_key:
         return
 
-    from lightercore.llm.config import get_active_config, save_active_config
+    from lightercore.llm.config import load_active_config, save_active_config
     from lightercore.llm.config import ProviderConfig
 
-    existing = get_active_config()
+    SERVICE = "semantika-llm"
+
+    existing = load_active_config(SERVICE)
     if existing is not None:
         return  # already configured
 
@@ -115,7 +117,7 @@ def _auto_configure_llm(creds: dict[str, str]) -> None:
         temperature=0.7,
         max_tokens=4096,
     )
-    save_active_config(config)
+    save_active_config(SERVICE, config)
 
 
 def dev_main() -> None:
