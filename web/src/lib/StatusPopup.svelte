@@ -100,18 +100,6 @@
   let entityLabel = $derived(isDetailView() ? (firstValue(d.labels, "en") || "") : "");
   let entityDef = $derived(isDetailView() ? (firstValue(d.definitions, "en") || "") : "");
 
-  // Refresh profiles data in the current tab after add/delete/activate
-  async function refreshProfiles() {
-    try {
-      const resp = await fetch("/api/v1/llm/profiles");
-      if (!resp.ok) return;
-      const data = await resp.json();
-      const activeTab = tabStore.active;
-      if (activeTab) {
-        tabStore.update(activeTab.id, { ...d, profiles: data.profiles || [], _refreshed: Date.now() });
-      }
-    } catch (_) { /* silent */ }
-  }
 </script>
 
 <div class="status">
