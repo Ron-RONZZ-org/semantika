@@ -1,12 +1,23 @@
 """Editable system prompt for the Semantika LLM agent.
 
-Delegates to :class:`lightercore.system_prompt.SystemPromptManager` for
-file-based prompt management with auto-seed on first run.
+Two files work together:
 
-The shipped default is defined here (app-specific content).  The user
-can customise the system prompt by editing the file at the path returned
-by :func:`system_prompt_path` (typically
-``~/.config/semantika/system_prompt.md``).
+1. **``system_prompt.md``** — the base prompt (the app's operational
+   instructions: tool usage, batch operations, error recovery, etc.).
+   Shipped default is :data:`DEFAULT_SEMANTIKA_PROMPT`.  Edited by
+   power users who want deep customisation of the LLM's behaviour.
+
+2. **``AGENTS.md``** — the user's custom style instructions (naming
+   conventions, language preferences, workflow rules, etc.).  Always
+   *appended* after the base prompt.  This is the primary customisation
+   point for regular users.
+
+Both files are auto-seeded on first access (lazy seeding).  The combined
+result is returned by :func:`load_system_prompt`.
+
+Backward-compat note: users who previously ran a version that merged
+AGENTS.md into system_prompt.md will see their existing system_prompt.md
+returned as-is (no double-append of AGENTS.md).
 """
 
 from __future__ import annotations
@@ -21,16 +32,15 @@ from semantika.core import config_dir
 logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT_FILENAME = "system_prompt.md"
-_LEGACY_FILENAME = "AGENTS.md"
-"""Legacy filename from the earlier append-only customisation model.
+_AGENTS_FILENAME = "AGENTS.md"
+_MIGRATION_MARKER = "migrated from AGENTS.md"
+"""String embedded in system_prompt.md by the previous single-file migration.
 
-On first access to the new system prompt, the loader attempts to migrate
-content from the legacy AGENTS.md to the new system_prompt.md.  The legacy
-file is **not** removed — the user may delete it manually after confirming
-the migration.
+If present, the file already contains the user's AGENTS.md content merged
+in, so we must NOT append AGENTS.md again on top.
 """
 
-# ── Shipped default ─────────────────────────────────────────────────────────
+# ── Shipped defaults ─────────────────────────────────────────────────────────
 
 DEFAULT_SEMANTIKA_PROMPT = (
     "You are Semantika AI, the built-in assistant of the **Semantika "
@@ -65,186 +75,193 @@ DEFAULT_SEMANTIKA_PROMPT = (
     "answer summarising what you did. That signals the task is done."
 )
 
+DEFAULT_AGENTS_STYLE = (
+    "# AGENTS.md — Additional context for Semantika AI\n\n"
+    "This file is loaded automatically and appended to the system prompt "
+    "for ALL interactions (chat and prompt commands).  Use it to add your "
+    "personal naming conventions, style preferences, or workflow rules.\n\n"
+    "## Example\n"
+    "```\n"
+    "When creating nodes:\n"
+    "- Always provide labels in eo, fr, en\n"
+    "- Node ID from Esperanto label, uppercased, ASCII-normalised\n"
+    "- Predicate IDs: rs:xxx with Esperanto word\n"
+    "```\n"
+)
+
 # ── Backward-compat alias ───────────────────────────────────────────────────
 
 #: The default system prompt text, kept for backward compatibility with code
-#: that imports ``SEMANTIKA_SYSTEM_PROMPT`` directly.  New code should call
-#: :func:`load_system_prompt` instead to respect user customisation.
+#: that imports ``SEMANTIKA_SYSTEM_PROMPT`` directly.
 SEMANTIKA_SYSTEM_PROMPT = DEFAULT_SEMANTIKA_PROMPT
-
-# ── Default config files registry ─────────────────────────────────────────
-
-_CONFIG_DEFAULTS: dict[str, str] = {
-    _SYSTEM_PROMPT_FILENAME: DEFAULT_SEMANTIKA_PROMPT,
-}
-"""Registry of config filenames → default content.
-
-Add new entries here when introducing a new user-editable config file
-with a shipped default.  The :func:`seed_config_defaults` function
-reads this dict on startup and creates any missing files.
-"""
-
-
-def seed_config_defaults() -> None:
-    """Create default config files if they do not already exist.
-
-    Called once on server startup (from ``lifespan``).  For each known
-    config file, if the file is missing, it is created with its shipped
-    default content so the user has a starting point for customisation.
-
-    All write failures are logged as warnings and silently swallowed —
-    a failure to seed a config file should never prevent the server from
-    starting.  The corresponding ``load_*`` functions will fall back to
-    lazy seeding when the file is first accessed.
-    """
-    for filename, default in _CONFIG_DEFAULTS.items():
-        path = config_dir() / filename
-        if path.is_file():
-            try:
-                content = path.read_text(encoding="utf-8").strip()
-                if content:
-                    continue  # file exists with content — respect user edits
-            except OSError:
-                pass  # unreadable file — try to reseed below
-
-        # Handle legacy migration for system_prompt.md
-        if filename == _SYSTEM_PROMPT_FILENAME:
-            migrated = _migrate_from_legacy()
-            if migrated is not None:
-                continue  # migration created the file
-
-        # Auto-seed with shipped default
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(default, encoding="utf-8")
-            logger.info("Seeded default config: %s", path)
-        except OSError as exc:
-            logger.warning("Failed to seed %s: %s", path, exc)
-
 
 # ── Manager factory ─────────────────────────────────────────────────────────
 
 
-def _get_manager() -> SystemPromptManager:
-    """Return a fresh SystemPromptManager for the current config dir."""
-    return SystemPromptManager(config_dir(), _SYSTEM_PROMPT_FILENAME)
+def _get_manager(filename: str) -> SystemPromptManager:
+    """Return a fresh SystemPromptManager for *filename* in the config dir."""
+    return SystemPromptManager(config_dir(), filename)
 
 
-def _get_legacy_path() -> Path:
-    """Return the path to the legacy AGENTS.md file."""
-    return config_dir() / _LEGACY_FILENAME
-
-
-def _migrate_from_legacy() -> str | None:
-    """Migrate content from legacy AGENTS.md to system_prompt.md.
-
-    Called on startup (from :func:`seed_config_defaults`) or on first
-    access (from :func:`load_system_prompt`) when ``system_prompt.md``
-    does not exist yet but ``AGENTS.md`` does.  Creates ``system_prompt.md``
-    with the shipped default prepended so the user sees the full base
-    prompt plus their existing customisations in a single file.
-
-    Returns the merged content, or ``None`` if there is nothing to migrate.
-    """
-    legacy = _get_legacy_path()
-    if not legacy.is_file():
-        return None
-
-    try:
-        legacy_content = legacy.read_text(encoding="utf-8").strip()
-    except OSError:
-        logger.warning("Failed to read legacy AGENTS.md at %s", legacy)
-        return None
-
-    if not legacy_content:
-        return None
-
-    # Prepend the shipped default so the user gets the full base prompt
-    # in a single file.  The separator header helps users understand what
-    # was part of the app default vs their custom additions.
-    merged = (
-        DEFAULT_SEMANTIKA_PROMPT
-        + "\n\n"
-        + "---\n"
-        + "*The content below was migrated from AGENTS.md.*  "
-        "You may edit or remove it freely.\n"
-        + "---\n\n"
-        + legacy_content
-    )
-
-    prompt_path = _get_manager().path()
-    try:
-        prompt_path.parent.mkdir(parents=True, exist_ok=True)
-        prompt_path.write_text(merged, encoding="utf-8")
-        logger.info(
-            "Migrated system prompt from legacy AGENTS.md to %s",
-            prompt_path,
-        )
-        return merged
-    except OSError as exc:
-        logger.warning("Failed to write migrated system prompt: %s", exc)
-        return None
+# ── Path access ─────────────────────────────────────────────────────────────
 
 
 def system_prompt_path() -> Path:
-    """Return the path to the user-modifiable system prompt file.
+    """Return the path to the base system prompt file.
 
     Returns:
         ``~/.config/semantika/system_prompt.md``.
     """
-    return _get_manager().path()
+    return config_dir() / _SYSTEM_PROMPT_FILENAME
 
 
-def load_system_prompt() -> str:
-    """Load the system prompt, auto-seeding on first run.
-
-    Under normal operation :func:`seed_config_defaults` already creates
-    the file on startup, so this function reads an existing file.  The
-    fallback paths handle edge cases (e.g. the user deleted the file
-    while the server is running).
-
-    Resolution order:
-    1. If ``system_prompt.md`` already exists → return its content.
-    2. If ``AGENTS.md`` (legacy) exists → migrate it into ``system_prompt.md``
-       with the shipped default prepended, then return the merged content.
-    3. Otherwise → auto-seed ``system_prompt.md`` with the shipped default.
+def agents_path() -> Path:
+    """Return the path to the user's AGENTS.md style file.
 
     Returns:
-        The system prompt string.
+        ``~/.config/semantika/AGENTS.md``.
     """
-    prompt_path = _get_manager().path()
+    return config_dir() / _AGENTS_FILENAME
 
-    # Fast path: file already exists
-    if prompt_path.is_file():
+
+# ── Lazy loading helpers ────────────────────────────────────────────────────
+
+
+def _has_migration_marker(content: str) -> bool:
+    """Check if *content* contains the legacy migration marker string."""
+    return _MIGRATION_MARKER in content
+
+
+def _lazy_seed(filepath: Path, default: str) -> str | None:
+    """Auto-seed *filepath* with *default* if it doesn't exist.
+
+    Returns the file content if successfully seeded, ``None`` if the
+    file exists with content already or if writing fails.
+    """
+    if filepath.is_file():
         try:
-            content = prompt_path.read_text(encoding="utf-8").strip()
+            content = filepath.read_text(encoding="utf-8").strip()
+            if content:
+                return None  # already exists with content
+        except OSError:
+            pass
+
+    try:
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        filepath.write_text(default, encoding="utf-8")
+        logger.info("Auto-seeded: %s", filepath)
+        return default
+    except OSError as exc:
+        logger.warning("Failed to seed %s: %s", filepath, exc)
+        return None
+
+
+def _load_user_style() -> str | None:
+    """Load the user's AGENTS.md style guide, auto-seeding on first access.
+
+    Returns the content of AGENTS.md, or ``None`` if the file is missing
+    or empty (no style guidance to append).
+    """
+    path = agents_path()
+    if path.is_file():
+        try:
+            content = path.read_text(encoding="utf-8").strip()
             if content:
                 return content
         except OSError:
             pass
 
-    # Attempt legacy migration
-    migrated = _migrate_from_legacy()
-    if migrated is not None:
-        return migrated
+    # Auto-seed on first access
+    _lazy_seed(path, DEFAULT_AGENTS_STYLE)
+    try:
+        content = path.read_text(encoding="utf-8").strip()
+        return content if content else None
+    except OSError:
+        return None
 
-    # Auto-seed with the shipped default (fallback)
-    return _get_manager().load(DEFAULT_SEMANTIKA_PROMPT)
+
+# ── Public API ──────────────────────────────────────────────────────────────
+
+
+def load_system_prompt() -> str:
+    """Load the full system prompt = base prompt + user's AGENTS.md.
+
+    Resolution order:
+    1. If ``system_prompt.md`` exists and *does not* contain the legacy
+       migration marker → return its content with AGENTS.md appended
+       (if present).  This is the normal two-file mode.
+    2. If ``system_prompt.md`` exists and *does* contain the migration
+       marker → return its content as-is (backward compat — the file
+       already includes the user's AGENTS.md content merged in).
+    3. Otherwise → auto-seed ``system_prompt.md`` with the shipped
+       default, load AGENTS.md, combine, and return.
+
+    Returns:
+        The combined system prompt string.
+    """
+    base_path = system_prompt_path()
+
+    # Fast path: existing system_prompt.md
+    if base_path.is_file():
+        try:
+            content = base_path.read_text(encoding="utf-8").strip()
+            if content:
+                # Backward compat: if the file was migrated from AGENTS.md
+                # in a previous single-file version, return as-is.
+                if _has_migration_marker(content):
+                    return content
+                # Normal two-file mode: base exists, append AGENTS.md
+                style = _load_user_style()
+                if style:
+                    return content + "\n\n" + style
+                return content
+        except OSError:
+            pass
+
+    # First run (no system_prompt.md yet): auto-seed base + load style
+    base = DEFAULT_SEMANTIKA_PROMPT
+    _lazy_seed(base_path, base)
+
+    style = _load_user_style()
+    if style:
+        return base + "\n\n" + style
+    return base
 
 
 def reload_system_prompt() -> str:
-    """Force-reload the system prompt, ignoring any cached version.
+    """Force-reload the system prompt, re-reading both files from disk.
 
-    Useful when the user edits the prompt file while the server is running.
+    Useful when the user edits the prompt file(s) while the server is
+    running.  Re-reads both ``system_prompt.md`` and ``AGENTS.md`` and
+    returns the combined result.
     """
-    return _get_manager().reload(DEFAULT_SEMANTIKA_PROMPT)
+    base_path = system_prompt_path()
+
+    if base_path.is_file():
+        try:
+            content = base_path.read_text(encoding="utf-8").strip()
+            if content:
+                # Backward compat: migrated file → return as-is
+                if _has_migration_marker(content):
+                    return content
+                # Normal two-file mode: re-read AGENTS.md and combine
+                style = _load_user_style()
+                if style:
+                    return content + "\n\n" + style
+                return content
+        except OSError:
+            pass
+
+    # Fall back to fresh combine
+    return load_system_prompt()
 
 
 __all__ = [
+    "DEFAULT_AGENTS_STYLE",
     "DEFAULT_SEMANTIKA_PROMPT",
     "SEMANTIKA_SYSTEM_PROMPT",
+    "agents_path",
     "load_system_prompt",
     "reload_system_prompt",
-    "seed_config_defaults",
     "system_prompt_path",
 ]

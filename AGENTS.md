@@ -359,68 +359,61 @@ The `--seed` flag on `semantika-dev` creates a demo prompt command for testing.
 
 ## System Prompt Customization
 
-The LLM's system prompt is exposed as a user-editable Markdown file at
-``~/.config/semantika/system_prompt.md`` (XDG config dir).  This replaces
-the earlier ``AGENTS.md`` mechanism — both the chat endpoint
-(``POST /api/v1/llm/chat``) and prompt commands (``/`` prefix) now read
-from this single file.
+Semantika uses a **two-file model** for LLM system prompt customisation:
+
+| File | Purpose | Default Source |
+|------|---------|---------------|
+| ``~/.config/semantika/system_prompt.md`` | **Base prompt** — the app's operational instructions (tool usage, batch operations, error recovery). For power users who want deep customisation. | :data:`~semantika.server.llm.system_prompt.DEFAULT_SEMANTIKA_PROMPT` |
+| ``~/.config/semantika/AGENTS.md`` | **User style instructions** — your personal naming conventions, language preferences, workflow rules. Always **appended** to the base prompt. This is the primary customisation point for regular users. | :data:`~semantika.server.llm.system_prompt.DEFAULT_AGENTS_STYLE` |
 
 ### How it works
 
-- On **first run**, the file is auto-seeded with the shipped default
-  Semantika AI system prompt.  The user can edit it immediately.
-- If **``AGENTS.md`` (legacy)** exists but ``system_prompt.md`` does
-  not, the content is automatically migrated on first access — the
-  shipped default is prepended and the user's custom content is appended
-  under a separator heading.  The legacy file is left in place for the
-  user to delete manually.
+- Both files are **auto-seeded on first access** (lazy seeding) — no files are
+  created at startup, only when ``load_system_prompt()`` is first called
+  (typically on the first chat or prompt command).
+- The combined system prompt = content of ``system_prompt.md`` + ``"\n\n"`` +
+  content of ``AGENTS.md``.
 - **After editing**, call ``POST /api/v1/llm/reload-prompt`` to apply
-  changes without restarting the server.  The route returns the new
-  prompt length and file path for confirmation.
+  changes without restarting the server.
 - **View the current prompt**: ``GET /api/v1/llm/prompt`` returns
   ``{"prompt": "...", "path": "..."}``.
 
-### Example: Adding custom instructions
+### Which file to edit?
 
-Edit ``~/.config/semantika/system_prompt.md``:
+- **Most users**: Edit ``AGENTS.md`` to add your graph naming conventions,
+  language rules, or workflow preferences.  The base prompt stays as shipped.
+- **Power users**: Edit ``system_prompt.md`` to change the LLM's fundamental
+  behaviour (tone, tool-use patterns, response format).  You can also move
+  your ``AGENTS.md`` content into ``system_prompt.md`` if you prefer a single
+  file — both approaches work.
+- **Note**: Editing ``system_prompt.md`` means you may miss new operational
+  instructions shipped in future app upgrades.  Your ``AGENTS.md``
+  customisations are never affected by upgrades.
+
+### Example
+
+Edit ``~/.config/semantika/AGENTS.md``:
 
 ```markdown
-[default prompt content — you can edit freely]
+# AGENTS.md — Additional context for Semantika AI
 
-## Custom Graph Naming Conventions
-
-- Node labels must always include eo, fr, en.
-- Predicate IDs follow Esperanto grammar: -o for subject-is, -on for object-is.
+## Graph Naming Conventions
+- Always provide labels in eo, fr, en
+- Predicate IDs follow Esperanto grammar: -o for subject-is, -on for object-is
 ```
 
-The next LLM chat or prompt command invocation will use the edited prompt.
+The next LLM interaction will append these rules after the base prompt.
 
-### Migration from AGENTS.md
+### Migration note
 
-Previous versions of Semantika used a separate ``AGENTS.md`` file that was
-appended to a hardcoded base prompt.  The new ``system_prompt.md`` is the
-**full** system prompt (replace model), matching lighterbird's convention.
-If you had ``AGENTS.md`` customisations, check ``system_prompt.md`` after
-the first run — your content should be there under a ``---`` separator.
-You can safely delete ``AGENTS.md`` once you confirm the migration.
+Previous versions of Semantika either:
+- Used a single merged ``system_prompt.md`` (with AGENTS.md content migrated in)
+- Or used ``AGENTS.md`` as the only customisation point
 
-### Startup seeding
-
-On server startup the ``lifespan`` handler (``app.py``) calls
-:func:`~semantika.server.llm.system_prompt.seed_config_defaults`,
-which creates any missing config files with shipped defaults.
-
-| File | Default Source | Purpose |
-|------|---------------|---------|
-| ``system_prompt.md`` | :data:`~semantika.server.llm.system_prompt.DEFAULT_SEMANTIKA_PROMPT` | LLM agent system prompt (user-editable) |
-
-Files that already exist with non-empty content are never overwritten.
-Write failures are logged as warnings — the corresponding ``load_*``
-functions fall back to lazy seeding on first access.
-
-Add a new entry to ``_CONFIG_DEFAULTS`` in
-``src/semantika/server/llm/system_prompt.py`` when introducing a new
-user-editable config file with a shipped default.
+Both are handled automatically: if your ``system_prompt.md`` contains the
+migration marker, it is returned as-is (no double-append).  If you want to
+switch to the two-file model, simply delete ``system_prompt.md`` and the
+next access will re-seed it fresh, re-appending your AGENTS.md content.
 
 ## Service Caching
 

@@ -4,60 +4,12 @@
 FastAPI web server: application factory, API routes, middleware, command engine, LLM integration, prompt commands, user configuration.
 
 ## Purpose and Expected Behavior
-- `app.py` — `create_app()` factory that registers all routers and static file serving.  The ``lifespan`` handler calls :func:`~semantika.server.llm.system_prompt.seed_config_defaults` to create any missing config files (``system_prompt.md``) with shipped defaults.
-- `routes/` — API endpoint handlers organized by domain
-- `command/` — `!command` parsing engine, tree metadata, handler registry with `@command`/`@group_command` decorators
-- `llm/` — Provider abstraction for OpenAI-compatible APIs and Ollama; singleton managed by `get_provider()`/`reset_provider()`
-- `user_config.py` — User preferences persistence as JSON file (locale, etc.) at `~/.local/share/semantika/user_config.json`
-
-## API Routes
-
-| Prefix | File | Description |
-|--------|------|-------------|
-| `/api/v1/graph` | `routes/graph.py` | CRUD for nodes, predicates, triples |
-| `/api/v1/query` | `routes/query.py` | Search, export, stats, raw SQL |
-| `/api/v1/command` | `routes/command.py` | Tree, dispatch, execute, help |
-| `/api/v1/review` | `routes/review.py` | Review sessions |
-| `/api/v1/proof` | `routes/proof.py` | Proof CRUD |
-| `/api/v1/llm` | `routes/llm.py` | Chat (two-phase: command gen → exec → summarise), config, profiles, confirm |
-| `/api/v1/units` | `routes/unit.py` | Unit ontology |
-| `/api/v1/files` | `routes/files.py` | File attachments |
-| `/api/v1/triple-templates` | `routes/triple_templates.py` | List, get, expand, execute triple templates |
-| `/api/v1/prompt-commands` | `routes/prompt_commands.py` | List, expand, execute, SSE stream |
-| `/api/v1/user` | `routes/user_config.py` | Locale/preferences |
-
-## Constraints and Invariants
-- All routes under `/api/v1/` namespace with version prefix
-- Command handlers use decorator-based registration in `command/registry.py` — tree auto-generates from registrations
-- Every `!command` must follow the **one concern, one root command** principle:
-  - `!graph stats`, `!graph export`, `!graph import`, `!graph search`, `!graph view` — graph-level operations
-  - `!node *`, `!predicate *`, `!triple *` — entity CRUD
-  - `!predicate group *` — predicate group sub-namespace
-  - `!backup *`, `!llm *`, `!user *` — feature groups
-- List-type commands return specific types: `"node-list"`, `"predicate-list"`, `"triple-list"` — not `"table"`
-- Static files mounted at `/` for Svelte SPA — the SPA handles client-side routing
-- CORS defaults to localhost dev ports; configure via `SEMANTIKA_CORS_ORIGINS` env var for production
-- Static directory overridable via `SEMANTIKA_STATIC_DIR` env var
-
-## Input/Output Expectations
-- All route handlers return Pydantic models or dicts (auto-JSON serialization)
-- Errors return structured `{"error": "...", "detail": "..."}` responses
-- The `!command` engine returns typed responses: `status`, `form-required`, `node-list`, `predicate-list`, `triple-list`, `graph`, `error`
-- List commands support pagination via `--limit` (default 100) and `--offset` (default 0) flags; responses include `total`, `limit`, and `offset` metadata keys
-- Prompt commands (`/` prefix) are served by `GET/POST /api/v1/prompt-commands/*`:
-  - `GET /list` — autocomplete source
-  - `POST /expand` — preview expanded prompt
-  - `POST /execute` — expand + send to LLM (sync JSON)
-  - `POST /execute/stream` — SSE streaming variant
-- User config served by `GET/PATCH /api/v1/user/config`
-
-## Documentation Reference
-- lighterbird's server module for proven patterns: `../lighterbird/src/lighterbird/server/`
-
-## Security and Operational Notes
-- **User hooks flag**: ``create_app(no_hooks=True)`` skips loading ``~/.config/semantika/hooks.py``. The ``semantika-dev --no-hooks`` CLI flag exposes this for debugging.
-- **System prompt source of truth**: The canonical Semantika system prompt lives in ``llm/system_prompt.py``.  Both the chat endpoint and prompt command endpoints call :func:`load_system_prompt` which reads the user-editable ``~/.config/semantika/system_prompt.md`` file (auto-seeded on first run).  Never hardcode or duplicate the prompt text — always import from ``llm/system_prompt.py``.
-- **Legacy ``AGENTS.md`` migration**: On first access after this change, the loader automatically migrates content from the legacy ``~/.config/semantika/AGENTS.md`` into ``system_prompt.md`` (with the default prepended).  The legacy file is left in place for the user to delete manually.
+- `app.py` — `create_app()` factory that registers all routers and static file serving.
+- **System prompt — two-file model**: The canonical Semantika system prompt lives in ``llm/system_prompt.py``.
+  - ``~/.config/semantika/system_prompt.md`` — the base prompt (app's operational instructions).  Auto-seeded on first access.
+  - ``~/.config/semantika/AGENTS.md`` — user's custom style/naming conventions.  Auto-seeded and **appended** to the base prompt.
+  - Both the chat endpoint and prompt command endpoints call :func:`load_system_prompt` which returns the combined result.
+  - Never hardcode or duplicate the prompt text — always import from ``llm/system_prompt.py``.
 - **Raw SQL query limit**: The ``POST /api/v1/query/raw`` endpoint rejects queries longer than ``MAX_RAW_QUERY_LENGTH`` (10,000 chars) to prevent resource exhaustion.
 
 ## Domain-Specific Rules for Agents
