@@ -68,7 +68,13 @@ def create_app(no_hooks: bool = False) -> FastAPI:
         no_hooks: If True, skip loading user-defined hooks from
             ``~/.config/semantika/hooks.py``.  Useful for debugging
             or when the hooks file is known to be problematic.
+
+            When called via a uvicorn import string (``factory=True``),
+            the caller should set ``SEMANTIKA_NO_HOOKS=1`` in the
+            environment instead.
     """
+    if not no_hooks:
+        no_hooks = os.environ.get("SEMANTIKA_NO_HOOKS") == "1"
     app = FastAPI(title="Semantika", version="0.1.0", lifespan=lifespan)
 
     # CORS — restrict via SEMANTIKA_CORS_ORIGINS env var in production

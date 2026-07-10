@@ -214,13 +214,21 @@ def dev_main() -> None:
     _log(f"Starting server on http://127.0.0.1:{port}")
     _log("Press Ctrl+C to stop.")
 
-    from semantika.server.app import create_app
-
     import uvicorn
 
-    app = create_app(no_hooks=args.no_hooks)
+    # Pass no_hooks via env var (needed because uvicorn >= 0.30 requires an
+    # import string, not an app instance, when reload=True).
+    if args.no_hooks:
+        os.environ["SEMANTIKA_NO_HOOKS"] = "1"
+
     try:
-        uvicorn.run(app, host="127.0.0.1", port=port)
+        uvicorn.run(
+            "semantika.server.app:create_app",
+            host="127.0.0.1",
+            port=port,
+            reload=True,
+            factory=True,
+        )
     finally:
         cleanup_data_dir(
             root_dir, is_temp, args.keep_data,

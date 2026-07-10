@@ -1,6 +1,7 @@
 """Tests for semantika.scripts.dev_cli — dev_main using lightercore.dev_helpers."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -35,17 +36,15 @@ class TestDevMain:
 
     @patch("uvicorn.run")
     def test_starts_uvicorn(self, mock_uvicorn, tmp_path: Path) -> None:
-        """dev_main should call uvicorn.run."""
+        """dev_main should call uvicorn.run with factory import string."""
         with (
             patch("semantika.scripts.dev_cli.standard_dev_parser") as mock_parser_factory,
             patch("semantika.scripts.dev_cli.setup_data_dir") as mock_setup,
-            patch("semantika.server.app.create_app") as mock_create_app,
         ):
             mock_parser = MagicMock()
             mock_parser.parse_args.return_value = self._make_args()
             mock_parser_factory.return_value = mock_parser
             mock_setup.return_value = (tmp_path, tmp_path / "data", tmp_path / "config", True)
-            mock_create_app.return_value = MagicMock()
 
             from semantika.scripts.dev_cli import dev_main
 
@@ -57,21 +56,23 @@ class TestDevMain:
                 pass
 
             assert mock_uvicorn.called
-            assert mock_create_app.called
+            # uvicorn is called with import string (not an app instance)
+            args, kwargs = mock_uvicorn.call_args
+            assert "semantika.server.app:create_app" in args
+            assert kwargs.get("factory") is True
+            assert kwargs.get("reload") is True
 
     @patch("uvicorn.run")
     def test_passes_no_hooks(self, mock_uvicorn, tmp_path: Path) -> None:
-        """--no-hooks should be passed to create_app."""
+        """--no-hooks should set SEMANTIKA_NO_HOOKS env var."""
         with (
             patch("semantika.scripts.dev_cli.standard_dev_parser") as mock_parser_factory,
             patch("semantika.scripts.dev_cli.setup_data_dir") as mock_setup,
-            patch("semantika.server.app.create_app") as mock_create_app,
         ):
             mock_parser = MagicMock()
             mock_parser.parse_args.return_value = self._make_args(no_hooks=True)
             mock_parser_factory.return_value = mock_parser
             mock_setup.return_value = (tmp_path, tmp_path / "data", tmp_path / "config", True)
-            mock_create_app.return_value = MagicMock()
 
             from semantika.scripts.dev_cli import dev_main
 
@@ -82,7 +83,7 @@ class TestDevMain:
             except Exception:
                 pass
 
-            mock_create_app.assert_called_once_with(no_hooks=True)
+            assert os.environ.get("SEMANTIKA_NO_HOOKS") == "1"
 
     # ── Seed sources ──────────────────────────────────────────────────────
 
