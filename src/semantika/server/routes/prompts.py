@@ -1,10 +1,13 @@
 """API routes for prompt file management (``!llm prompt`` GUI backend).
 
+Uses query params for ``name`` instead of path params because names like
+``template/turn1`` contain slashes that break FastAPI path matching.
+
 Endpoints:
-- GET  /api/v1/llm/prompts/list    — list all prompt files with diff status
-- GET  /api/v1/llm/prompts/{name}  — view a specific prompt file
-- POST /api/v1/llm/prompts/{name}/reset — reset a prompt to default
-- POST /api/v1/llm/prompts/{name}/save  — save edited content
+- GET  /api/v1/llm/prompts/list          — list all prompt files with diff status
+- GET  /api/v1/llm/prompts/view?name=…   — view a specific prompt file
+- POST /api/v1/llm/prompts/reset          — reset a prompt to default
+- POST /api/v1/llm/prompts/save           — save edited content
 - GET  /api/v1/llm/prompts/modified-count — count of modified prompts (for banner)
 """
 
@@ -42,9 +45,16 @@ async def modified_count_endpoint() -> dict[str, Any]:
     }
 
 
-@router.get("/{name}")
+@router.get("/view")
 async def view_prompt_endpoint(name: str) -> dict[str, Any]:
-    """Return the current and default content for a prompt file."""
+    """Return the current and default content for a prompt file.
+
+    Query param: ``name`` — logical prompt name (e.g. ``system-prompt``,
+    ``template/turn1``).
+    """
+    if not name:
+        raise HTTPException(status_code=400, detail="'name' query parameter is required.")
+
     mgr = get_prompt_files_manager()
 
     default_content = mgr.get_default(name)
@@ -70,9 +80,16 @@ async def view_prompt_endpoint(name: str) -> dict[str, Any]:
     }
 
 
-@router.post("/{name}/reset")
-async def reset_prompt_endpoint(name: str) -> dict[str, Any]:
-    """Reset a prompt file to its shipped default."""
+@router.post("/reset")
+async def reset_prompt_endpoint(data: dict[str, Any]) -> dict[str, Any]:
+    """Reset a prompt file to its shipped default.
+
+    Expects ``{"name": "..."}`` in the request body.
+    """
+    name = (data.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="'name' is required in request body.")
+
     mgr = get_prompt_files_manager()
 
     default_content = mgr.get_default(name)
@@ -97,13 +114,16 @@ async def reset_prompt_endpoint(name: str) -> dict[str, Any]:
     }
 
 
-@router.post("/{name}/save")
-async def save_prompt_endpoint(name: str, data: dict[str, Any]) -> dict[str, Any]:
+@router.post("/save")
+async def save_prompt_endpoint(data: dict[str, Any]) -> dict[str, Any]:
     """Save edited prompt file content.
 
-    Expects ``{"content": "..."}``.
+    Expects ``{"name": "...", "content": "..."}``.
     """
+    name = (data.get("name") or "").strip()
     content = (data.get("content") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="'name' is required in request body.")
     if not content:
         raise HTTPException(status_code=400, detail="'content' is required.")
 

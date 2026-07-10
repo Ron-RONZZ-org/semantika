@@ -21,6 +21,22 @@
   let editingDefault = $state("");
   let saving = $state(false);
 
+  /** @type {string} */
+  let configDir = $state("");
+
+  // Derive config dir from first prompt's path by stripping relative_path
+  function deriveConfigDir() {
+    if (prompts.length > 0 && prompts[0].path && prompts[0].relative_path) {
+      const fullPath = prompts[0].path;
+      const relPath = prompts[0].relative_path;
+      if (fullPath.endsWith(relPath)) {
+        configDir = fullPath.slice(0, -relPath.length);
+      } else {
+        configDir = fullPath;
+      }
+    }
+  }
+
   // Fetch prompts on mount if not provided
   if (!data) {
     fetchPrompts();
@@ -33,6 +49,7 @@
       const resp = await fetch("/api/v1/llm/prompts/list");
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       prompts = await resp.json();
+      deriveConfigDir();
     } catch (err) {
       error = err.message || String(err);
       prompts = [];
@@ -44,8 +61,10 @@
   async function handleReset(name) {
     if (!confirm(`Reset "${name}" to its default content?`)) return;
     try {
-      const resp = await fetch(`/api/v1/llm/prompts/${encodeURIComponent(name)}/reset`, {
+      const resp = await fetch("/api/v1/llm/prompts/reset", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
       });
       if (!resp.ok) {
         const err = await resp.json();
@@ -66,8 +85,10 @@
       const all = await resp.json();
       for (const p of all) {
         if (p.is_modified) {
-          await fetch(`/api/v1/llm/prompts/${encodeURIComponent(p.name)}/reset`, {
+          await fetch("/api/v1/llm/prompts/reset", {
             method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: p.name }),
           });
         }
       }
@@ -78,15 +99,9 @@
     }
   }
 
-  function startEdit(p) {
-    editingName = p.name;
-    editingDefault = null; // we don't fetch default here
-    openEditDialog(p.name);
-  }
-
   async function openEditDialog(name) {
     try {
-      const resp = await fetch(`/api/v1/llm/prompts/${encodeURIComponent(name)}`);
+      const resp = await fetch(`/api/v1/llm/prompts/view?name=${encodeURIComponent(name)}`);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
       editingName = name;
@@ -102,10 +117,10 @@
     if (!editingName) return;
     saving = true;
     try {
-      const resp = await fetch(`/api/v1/llm/prompts/${encodeURIComponent(editingName)}/save`, {
+      const resp = await fetch("/api/v1/llm/prompts/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: editingContent }),
+        body: JSON.stringify({ name: editingName, content: editingContent }),
       });
       if (!resp.ok) {
         const err = await resp.json();
@@ -125,20 +140,57 @@
     editingName = null;
   }
 
-  function handleView(name) {
-    tabStore.open({ type: "status", title: `Prompt: ${name}`, data: {} });
-    // Load via command instead
-    const { execute } = import.meta.glob("/lib/commandExecutor.js", { eager: true });
-    execute(`!llm prompt view ${name}`);
+  async function handleView(name) {
+    try {
+      const resp = await fetch(`/api/v1/llm/prompts/view?name=${encodeURIComponent(name)}`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      const lines = (data.current || data.default || "").split("\n").length;
+      tabStore.open("status", `Prompt: ${name}`, {
+        message: `**${name}** (${data.category}, ${data.exists ? `${lines} lines` : "not yet created"})`,
+        details: data.current || data.default || "(empty)",
+      });
+    } catch (err) {
+      banner.show(`Failed to view prompt: ${err.message}`, "error", 5000);
+    }
+  }
+
+  function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+      banner.show("Path copied to clipboard", "success");
+    }).catch(() => {
+      // Fallback
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      banner.show("Path copied to clipboard", "success");
+    });
   }
 
   let modifiedCount = $derived(prompts.filter(p => p.is_modified).length);
   let totalCount = $derived(prompts.length);
+
+  // Derive config dir after first render
+  $effect(() => {
+    if (prompts.length > 0 && !configDir) {
+      deriveConfigDir();
+    }
+  });
 </script>
 
 <div class="prompt-list-tab">
   <div class="list-header">
-    <h3>Custom Prompt Files</h3>
+    <div class="header-left">
+      <h3>Custom Prompt Files</h3>
+      {#if configDir}
+        <span class="config-dir" title="Click to copy config directory path" onclick={() => copyToClipboard(configDir)} role="button" tabindex="0" onkeydown={(e) => { if (e.key === "Enter") copyToClipboard(configDir); }}>
+          {configDir}
+        </span>
+      {/if}
+    </div>
     <div class="header-actions">
       {#if modifiedCount > 0}
         <button class="btn btn-reset-all" onclick={handleResetAll} title="Reset all modified prompts to defaults">
@@ -164,7 +216,13 @@
           <div class="prompt-info">
             <span class="prompt-name">{p.name}</span>
             <span class="prompt-category">{p.category}</span>
-            <span class="prompt-path">{p.relative_path}</span>
+            {#if p.path}
+              <span class="prompt-path clickable" title="Click to copy full path" onclick={() => copyToClipboard(p.path)} role="button" tabindex="0" onkeydown={(e) => { if (e.key === "Enter") copyToClipboard(p.path); }}>
+                {p.relative_path} 📋
+              </span>
+            {:else}
+              <span class="prompt-path">{p.relative_path}</span>
+            {/if}
           </div>
           <div class="prompt-status">
             {#if p.is_modified}
@@ -177,7 +235,7 @@
           </div>
           <div class="prompt-actions">
             <button class="btn btn-view" onclick={() => handleView(p.name)} title="View content">View</button>
-            <button class="btn btn-edit" onclick={() => startEdit(p)} title="Edit content">Edit</button>
+            <button class="btn btn-edit" onclick={() => openEditDialog(p.name)} title="Edit content">Edit</button>
             <button class="btn btn-reset" onclick={() => handleReset(p.name)} title="Reset to default">
               Reset
             </button>
@@ -222,11 +280,17 @@
 <style>
   .prompt-list-tab { padding: 1rem; }
   .list-header {
-    display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: 1rem;
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 1rem; margin-bottom: 1rem;
   }
+  .header-left { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
   .list-header h3 { margin: 0; font-size: 1rem; color: #e0e0e0; }
-  .header-actions { display: flex; align-items: center; gap: 0.75rem; }
+  .config-dir {
+    font-size: 0.7rem; color: #6a6a8a; font-family: monospace;
+    cursor: pointer; word-break: break-all;
+  }
+  .config-dir:hover { color: #8a8aaa; text-decoration: underline; }
+  .header-actions { display: flex; align-items: center; gap: 0.75rem; flex-shrink: 0; }
   .badge {
     font-size: 0.78rem; color: #82829a; background: #1e1e30;
     padding: 2px 8px; border-radius: 8px;
@@ -249,6 +313,8 @@
   .prompt-name { font-size: 0.9rem; color: #e0e0e0; font-weight: 500; }
   .prompt-category { font-size: 0.72rem; color: #6a6a8a; }
   .prompt-path { font-size: 0.7rem; color: #5a5a7a; font-family: monospace; }
+  .prompt-path.clickable { cursor: pointer; }
+  .prompt-path.clickable:hover { color: #8a8aaa; text-decoration: underline; }
   .prompt-status { flex-shrink: 0; }
   .modified-badge { font-size: 0.72rem; color: #dbdb8f; background: #2a2a1e; padding: 1px 6px; border-radius: 4px; font-weight: 600; }
   .default-badge { font-size: 0.72rem; color: #6a9a6a; }
