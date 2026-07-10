@@ -1,7 +1,49 @@
 <script>
+  import { banner } from "./bannerStore.svelte.js";
+  import { tabStore } from "./tabStore.svelte.js";
+  import AccountList from "@lightercore/ui/AccountList.svelte";
+  import LlmProfileForm from "@lightercore/ui/LlmProfileForm.svelte";
+
   let { data = {} } = $props();
   let d = $derived(data || {});
   let showTech = $state(false);
+  let activeProfileForm = $state(null); // "new" | "edit" | null
+  let editingProfile = $state(null);
+
+  async function deleteProfile(item) {
+    if (!confirm(`Delete profile "${item.name}"?`)) return;
+    try {
+      const resp = await fetch(`/api/v1/llm/profiles/${encodeURIComponent(item.name)}`, { method: "DELETE" });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      banner.show(`Profile "${item.name}" deleted`, "success");
+      refreshProfiles();
+    } catch (err) {
+      banner.show(`Activate failed: ${err.message}`, "error", 5000);
+    }
+  }
+
+  async function activateProfile(item) {
+    try {
+      const resp = await fetch(`/api/v1/llm/profiles/${encodeURIComponent(item.name)}/load`, { method: "POST" });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      banner.show(`Profile "${item.name}" activated`, "success");
+      refreshProfiles();
+    } catch (err) {
+      banner.show(`Activate failed: ${err.message}`, "error", 5000);
+    }
+  }
+
+  async function refreshProfiles() {
+    try {
+      const resp = await fetch("/api/v1/llm/profiles");
+      if (!resp.ok) return;
+      const data = await resp.json();
+      const activeTab = tabStore.active;
+      if (activeTab) {
+        tabStore.update(activeTab.id, { ...d, profiles: data.profiles || [], _refreshed: Date.now() });
+      }
+    } catch (_) { /* silent */ }
+  }
 
   function renderValue(val) {
     if (val === null || val === undefined) return "";
@@ -57,6 +99,19 @@
   let entityType = $derived(isDetailView() ? (d.node_id ? "Node" : "Predicate") : "");
   let entityLabel = $derived(isDetailView() ? (firstValue(d.labels, "en") || "") : "");
   let entityDef = $derived(isDetailView() ? (firstValue(d.definitions, "en") || "") : "");
+
+  // Refresh profiles data in the current tab after add/delete/activate
+  async function refreshProfiles() {
+    try {
+      const resp = await fetch("/api/v1/llm/profiles");
+      if (!resp.ok) return;
+      const data = await resp.json();
+      const activeTab = tabStore.active;
+      if (activeTab) {
+        tabStore.update(activeTab.id, { ...d, profiles: data.profiles || [], _refreshed: Date.now() });
+      }
+    } catch (_) { /* silent */ }
+  }
 </script>
 
 <div class="status">
@@ -139,6 +194,27 @@
         {/each}
       {/if}
     {/if}
+  {:else if d.profiles !== undefined}
+    <div class="profiles-section">
+      <AccountList
+        type="llm"
+        items={d.profiles}
+        activeName={d.active_profile || ""}
+        onAdd={() => { activeProfileForm = "new"; }}
+        onModify={(item) => { activeProfileForm = "edit"; editingProfile = item; }}
+        onRemove={async (item) => { await deleteProfile(item); }}
+        onActivate={async (item) => { await activateProfile(item); }}
+      />
+    </div>
+
+    {#if activeProfileForm === "new" || activeProfileForm === "edit"}
+      <LlmProfileForm
+        profile={activeProfileForm === "edit" ? editingProfile : null}
+        onSaved={() => { activeProfileForm = null; editingProfile = null; refreshProfiles(); }}
+        onDismiss={() => { activeProfileForm = null; editingProfile = null; }}
+      />
+    {/if}
+
   {:else if d.triples !== undefined}
     <div class="section-header">
       <h3 class="title">Triples ({d.triples.length})</h3>

@@ -117,6 +117,56 @@ async def create_profile(req: ProfileSaveRequest):
     return {"status": "created", "name": req.name}
 
 
+@router.get("/profiles/{name}")
+async def get_profile(name: str):
+    """Return a single profile by name."""
+    provider = get_provider()
+    profiles = provider.list_profiles()
+    for p in profiles:
+        if p.get("name", "").lower() == name.lower():
+            return p
+    raise HTTPException(404, f"Profile '{name}' not found")
+
+
+@router.patch("/profiles/{name}")
+async def update_profile(name: str, req: ProfileSaveRequest):
+    """Update a named LLM profile (partial)."""
+    provider = get_provider()
+    # Load existing config to preserve unchanging fields
+    existing = provider.switch_to_profile(name)
+    if existing is None:
+        raise HTTPException(404, f"Profile '{name}' not found")
+
+    # Switch back to active profile (switch_to_profile changes the active)
+    from lightercore.llm.config import load_active_config
+    from lightercore.llm.profiles import ProfileManager
+
+    pm = ProfileManager("semantika-llm", provider._profile_dir)
+    active = load_active_config("semantika-llm")
+    if active and active.name:
+        provider.switch_to_profile(active.name)
+
+    provider.save_profile(
+        name=name,
+        provider_type=req.provider_type or existing.provider_type,
+        api_key=req.api_key or existing.api_key or "",
+        base_url=req.base_url or existing.base_url or "",
+        model=req.model or existing.model or "",
+        temperature=req.temperature or existing.temperature,
+        max_tokens=req.max_tokens or existing.max_tokens,
+    )
+    return {"status": "updated", "name": name}
+
+
+@router.delete("/profiles/{name}")
+async def delete_profile(name: str):
+    """Delete a saved LLM profile."""
+    provider = get_provider()
+    if not provider.delete_profile(name):
+        raise HTTPException(404, f"Profile '{name}' not found")
+    return {"status": "deleted", "name": name}
+
+
 @router.post("/profiles/{name}/load")
 async def load_profile(name: str):
     """Load a saved profile by name."""
