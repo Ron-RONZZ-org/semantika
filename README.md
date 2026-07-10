@@ -15,25 +15,38 @@ Semantika is the **third-generation** of a knowledge-graph toolchain. Understand
 
 ## Interaction Model
 
-Semantika uses a **centralized command box** with three input modes:
+Semantika uses a **centralized command box** with three input modes and a **tab-based result system**:
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│ ❯ !node add --label "Concept"            ← ! built-in   │
-│ ❯ /weekly 7 productivity                ← / prompt      │
-│ ❯ What do I know about X?                ← natural text  │
+│ ❯ !node add --label "Concept"             ← ! built-in  │
+│ ❯ /weekly 7 productivity                 ← / prompt     │
+│ ❯ What do I know about X?                ← natural text │
+│                                                          │
+│  ┌────────── Home tab (pinned) ──────────┐              │
+│  │  Brand header + graph stats           │              │
+│  │  Conversation area (LLM chat,         │              │
+│  │  prompt command replies)              │              │
+│  │  Command input                        │              │
+│  └───────────────────────────────────────┘              │
+│                                                          │
+│  ┌─── Tab bar ───────────────────────────┐              │
+│  │ ⌂ Home │ 📋 node list │ 📋 result … │  ✕│              │
+│  └───────────────────────────────────────┘              │
 ├──────────────────────────────────────────────────────────┤
 │                                                          │
-│  Rich result area                                        │
+│  Active tab content:                                     │
 │  (node details, triple tables, graph viz, LLM chat,     │
-│   katex, code blocks, images, forms)                    │
+│   katex, code blocks, images, forms, quizzes)           │
 │                                                          │
 └──────────────────────────────────────────────────────────┘
 ```
 
-- `!command` — built-in graph operations
-- `/name [args...]` — user-defined prompt commands (see below)
-- Natural text — free-form LLM chat
+- `!command` — built-in graph operations; results open in a new tab
+- `/name [args...]` — user-defined prompt commands; results appear in the Home tab conversation
+- Natural text — free-form LLM chat; results appear in the Home tab conversation
+- The **Home tab** is always pinned at index 0 — it shows a compact header once a conversation starts, the conversation history, and the command input box
+- Most `!command` results (lists, details, forms, graph views, quizzes) open as separate tabs with a tab bar at the bottom for switching; close with `Esc` or `q`
 
 ## Features
 
@@ -142,12 +155,12 @@ npm run dev
 ### Without the frontend (API-only)
 
 ```bash
-uv run uvicorn semantika.server.app:create_app --factory --port 8001 --reload
+uv run uvicorn semantika.server.app:create_app --factory --port 6015 --reload
 ```
 
 ### Port synchronization
 
-If the backend is on a different port (e.g. 8001 is taken, or you used `--port 0` for an OS-assigned port), set `SEMANTIKA_PORT` before starting the frontend:
+If the backend is on a different port (e.g. 6015 is taken, or you used `--port 0` for an OS-assigned port), set `SEMANTIKA_PORT` before starting the frontend:
 
 ```bash
 # Terminal 1: start backend on custom port
@@ -279,15 +292,15 @@ The first run creates tables and seeds default predicates automatically.
 
 ```bash
 # Start with persistent data
-uv run uvicorn semantika.server.app:create_app --factory --port 8001 --reload
+uv run uvicorn semantika.server.app:create_app --factory --port 6015 --reload
 
 # Start with an isolated temporary database
-SEMANTIKA_DATA_DIR=/tmp/semantika-dev uv run uvicorn semantika.server.app:create_app --factory --port 8001 --reload
+SEMANTIKA_DATA_DIR=/tmp/semantika-dev uv run uvicorn semantika.server.app:create_app --factory --port 6015 --reload
 ```
 
 ### CORS Configuration (Production)
 
-By default, Semantika allows `http://localhost:5173` and `http://127.0.0.1:5173` (Vite dev ports). In production, you **must** restrict CORS to your actual frontend domain:
+By default, Semantika allows `http://localhost:6016` and `http://127.0.0.1:6016` (Vite dev ports). In production, you **must** restrict CORS to your actual frontend domain:
 
 ```bash
 # Single frontend origin
@@ -311,15 +324,15 @@ SEMANTIKA_STATIC_DIR=/path/to/custom/dist uv run uvicorn ...
 
 ```bash
 # List nodes
-curl http://localhost:8001/api/v1/graph/nodes
+curl http://127.0.0.1:6015/api/v1/graph/nodes
 
 # Create a node
-curl -X POST http://localhost:8001/api/v1/graph/nodes \
+curl -X POST http://127.0.0.1:6015/api/v1/graph/nodes \
   -H "Content-Type: application/json" \
   -d '{"node_id":"CONCEPT","labels":{"en":"My Concept"}}'
 
 # Execute a command
-curl -X POST http://localhost:8001/api/v1/command \
+curl -X POST http://127.0.0.1:6015/api/v1/command \
   -H "Content-Type: application/json" \
   -d '{"tokens":["stats"],"flags":{}}'
 ```
