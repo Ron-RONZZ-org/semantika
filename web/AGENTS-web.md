@@ -37,6 +37,7 @@ Svelte 5 SPA frontend — command-bar UI with rich result rendering for the Sema
 | `commandExecutor.js` | Routes input to !command or / prefix, normalizes response types |
 | `commandRouter.js` | Maps response types to tab/component display |
 | `parser.js` | Tokenizer for !commands; `parsePromptCommand()` for / prefix |
+| `formatCommand.js` | Format `{tokens, flags}` → human-readable command string |
 | `commandHistory.svelte.js` | Navigation history with up/down arrow recall |
 | `popupStore.svelte.js` | Popup/overlay state management |
 | `tabStore.svelte.js` | Multi-tab state management (pinned home, open/close/update) |
@@ -60,7 +61,8 @@ Svelte 5 SPA frontend — command-bar UI with rich result rendering for the Sema
 | `StatusPopup.svelte` | Status/result display (node details, triple lists, etc.) |
 | `ErrorPopup.svelte` | Error display |
 | `LoadingPopup.svelte` | Loading spinner |
-| `ConfirmDialog.svelte` | Confirmation dialog for destructive actions |
+| `ConfirmDialog.svelte` | LLM action approval dialog — per-item approve/reject with feedback, full command display, no truncation |
+| `formatCommand.js` | Utility: format `{tokens, flags}` → human-readable command string |
 | `HelpPopup.svelte` | Command help overlay |
 | `KeyboardShortcutOverlay.svelte` | Keyboard shortcuts reference |
 | `LlmSetupModal.svelte` | Multi-step LLM provider configuration wizard |
@@ -80,10 +82,40 @@ Svelte 5 SPA frontend — command-bar UI with rich result rendering for the Sema
 ## Prompt Command Flow
 
 1. User types `/command-name arg1 arg2` in input
-2. `HomeTab.svelte` detects `/` prefix, calls `execute()` from `commandExecutor.js`
-3. `commandExecutor.js` calls `POST /api/v1/prompt-commands/execute` with `{name, args}`
-4. Backend loads the `.md` file from `~/.config/semantika/commands/`, expands `$1`/`$2`/`$ARGUMENTS`, sends to LLM
-5. Response is rendered as chat in the HomeTab
+2. `HomeTab.svelte` detects `/` prefix, calls `POST /api/v1/prompt-commands/expand` with `{name, args}`
+3. Backend loads the `.md` file, expands `$1`/`$2`/`$ARGUMENTS`, returns the expanded template text
+4. An **expanded prompt preview dialog** appears showing the full template text
+5. User clicks **Send to LLM** — the expanded text is sent as a normal plain-text message to `POST /api/v1/llm/chat`
+6. LLM responds normally; tool calls are gated by ConfirmDialog if write-level
+
+## LLM Action Approval Flow (ConfirmDialog)
+
+When the LLM issues write-level tool calls, they are gated behind user confirmation:
+
+1. Backend returns `{"type": "confirm_tool", "session_id", "batch": [...]}`
+2. `ConfirmDialog.svelte` opens with per-item controls:
+   - Each tool call shows full command with flags (no truncation)
+   - **[Approve]** / **[Tell LLM what to do instead…]** buttons per item
+   - Global **[Approve All]** / **[Tell LLM what to do instead (global)…]** buttons
+   - **[Submit Decisions]** sends per-item decisions + feedback to the resume endpoint
+3. On submit, `POST /api/v1/llm/chat/resume` (or `/api/v1/prompt-commands/execute/resume`) is called with:
+   - `decisions: {index: true/false}` — per-item approval
+   - `feedback: {index: "string"} | "string"` — per-item or global user feedback
+4. The backend injects a summary of rejected tools + feedback as a user message before resuming the tool loop
+5. Rejected tool results include the user's feedback: `"User rejected !cmd, with the feedback: {feedback}"`
+
+### ConfirmDialog Props
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `message` | string | Dialog heading message |
+| `batch` | `Array<{index, tokens, flags, description}>` | Tool calls needing approval |
+| `onSubmit` | `(decisions, feedback) => void` | Called with per-item decisions + feedback |
+| `onDismiss` | `() => void` | Called when dialog is closed/cancelled |
+
+## FormatCommand Utility
+
+`web/src/lib/formatCommand.js` exports `formatCommand(item)` which renders a `{tokens, flags}` object into a human-readable command string like `!node add --label Alice`. Used by `ConfirmDialog.svelte`.
 
 ## Constraints and Invariants
 - Routes handled client-side via svelte-spa-router
@@ -149,3 +181,23 @@ These components are identified as shareable but need behavioral alignment befor
 - **Locale**: The locale badge in HomeHeader lets users switch language. Sync via `PATCH /api/v1/user/config`.
 - **Shared components**: Before modifying a re-export file, check if the change should go into `@lightercore/ui` instead. Canonical implementations are in lightercore.
 - Follow the same component patterns as lighterbird: `FormField.svelte`, `MultiEntryField.svelte` for shared form components.
+
+## GUI Style — Imitate Existing Components
+
+**Do not write custom CSS from scratch.** All new UI components must imitate the styling patterns found in these canonical source files:
+
+| Pattern | Reference file | Key elements to imitate |
+|---------|---------------|------------------------|
+| Toolbar buttons | `lighterbird/web/src/lib/EmailListToolbar.svelte` | `.tool-btn` class, `<kbd>` shortcuts, flex `left/center/right` layout |
+| Dialogs/overlays | `lighterbird/web/src/lib/AdvancedSearchDialog.svelte` | `.overlay` + `.dialog` pattern, close on backdrop click |
+| Forms | `DynamicForm.svelte` | Field layout, label/input spacing, validation errors |
+| Graph visualization | `GraphView.svelte` | Node/edge rendering, drag interaction |
+| Colors | Any `.svelte` file in `web/src/lib/` | Dark theme: `#1a1a2e` bg, `#e0e0e0` text, `#444` borders |
+
+**Rules to follow:**
+- Use `font-family: monospace` on all structural elements
+- Use `border-radius: 4px` for buttons/inputs, `10px` for dialogs
+- All interactive elements must be keyboard-reachable
+- Animations under 150ms; no keyframe animations on structural elements
+- **Never duplicate CSS patterns** — import shared components from `@lightercore/ui` or `web/src/lib/` instead of re-creating them
+- If you need a new component, model it after the closest existing component above

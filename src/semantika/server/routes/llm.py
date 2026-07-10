@@ -213,6 +213,9 @@ async def chat_resume(data: dict) -> dict:
         session_id (str): Session UUID from ``confirm_tool`` response.
         decisions (dict[int, bool], optional): Per-tool-index approval.
         confirmed (bool, optional): Blanket approve/reject all tools.
+        feedback (dict[int, str] | str, optional): User feedback for
+            rejected tools. A dict maps tool index to feedback string;
+            a string is applied to all rejected tools.
     """
     session_id = data.get("session_id", "")
     if not session_id:
@@ -227,6 +230,7 @@ async def chat_resume(data: dict) -> dict:
             session_id=session_id,
             decisions=data.get("decisions"),
             confirmed=data.get("confirmed"),
+            feedback=data.get("feedback"),
             provider=provider,
             dispatch_fn=_dispatch_path,
             get_handler_metadata_fn=get_handler_metadata,
