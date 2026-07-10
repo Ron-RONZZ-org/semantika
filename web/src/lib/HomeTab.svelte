@@ -712,7 +712,7 @@
   {@const subs = buildSubstitutionMap(expandedPrompt.template, expandedPrompt.args)}
   <div class="confirm-overlay" role="alertdialog" aria-modal="true" aria-label="Expanded Prompt"
        onclick={handleExpandDismiss} onkeydown={() => {}} tabindex="0">
-    <div class="expand-box" onclick={(e) => e.stopPropagation()}>
+    <div class="expand-box" role="presentation" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
       <div class="expand-header">
         <h3 class="expand-heading">/{expandedPrompt.name}</h3>
         {#if expandedPrompt.description}
@@ -724,13 +724,15 @@
         <div class="expand-section">
           <h4 class="expand-section-title">Substitutions</h4>
           <table class="expand-map">
-            {#each subs as s}
-              <tr>
-                <td class="expand-ph">{s.placeholder}</td>
-                <td class="expand-arrow">&rarr;</td>
-                <td class="expand-val">{s.value}</td>
-              </tr>
-            {/each}
+            <tbody>
+              {#each subs as s}
+                <tr>
+                  <td class="expand-ph">{s.placeholder}</td>
+                  <td class="expand-arrow">&rarr;</td>
+                  <td class="expand-val">{s.value}</td>
+                </tr>
+              {/each}
+            </tbody>
           </table>
         </div>
       {/if}
@@ -857,11 +859,6 @@
     overflow-y: auto;
     max-height: 55vh;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  }
-  .expand-hint {
-    color: #888;
-    font-size: 0.8rem;
-    margin: 0.5rem 0 0.75rem 0;
   }
   .actions {
     display: flex;

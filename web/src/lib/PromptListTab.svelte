@@ -11,7 +11,9 @@
   let { data = null } = $props();
 
   /** @type {Array<{name:string, relative_path:string, category:string, exists:boolean, is_modified:boolean, path:string}>} */
+  // svelte-ignore state_referenced_locally
   let prompts = $state(data?.prompts || []);
+  // svelte-ignore state_referenced_locally
   let loading = $state(!data);
   let error = $state("");
 
@@ -38,6 +40,7 @@
   }
 
   // Fetch prompts on mount if not provided
+  // svelte-ignore state_referenced_locally
   if (!data) {
     fetchPrompts();
   }
@@ -247,8 +250,9 @@
 
   {#if editingName !== null}
     <!-- Edit dialog overlay -->
-    <div class="edit-overlay" onclick={cancelEdit} role="dialog" aria-modal="true" aria-label="Edit prompt">
-      <div class="edit-dialog" onclick={(e) => e.stopPropagation()}>
+    <div class="edit-overlay" onclick={cancelEdit} role="dialog" aria-modal="true" aria-label="Edit prompt"
+         tabindex="0" onkeydown={(e) => { if (e.key === "Escape") cancelEdit(); }}>
+      <div class="edit-dialog" role="presentation" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
         <div class="edit-header">
           <h3>Edit: {editingName}</h3>
           <button class="btn-close" onclick={cancelEdit}>✕</button>

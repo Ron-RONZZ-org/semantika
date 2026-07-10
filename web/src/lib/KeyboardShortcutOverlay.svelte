@@ -3,9 +3,8 @@
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_static_element_interactions -->
-<div class="shortcut-overlay" onclick={onclose} onkeydown={(e) => { if (e.key === 'Escape') onclose(); }} tabindex="0" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-  <div class="shortcut-box" onclick={(e) => e.stopPropagation()} role="document">
+<div class="shortcut-overlay" onclick={(e) => { if (e.target === e.currentTarget) onclose(); }} onkeydown={(e) => { if (e.key === 'Escape') onclose(); }} tabindex="0" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+  <div class="shortcut-box" role="document">
     <h3>Keyboard Shortcuts</h3>
     <div class="shortcut-grid">
       <div class="group">
