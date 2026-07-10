@@ -360,6 +360,13 @@ Prompt files are only seeded **if they don't already exist** — your edits surv
 across restarts.  Use ``!llm prompt list`` and ``!llm prompt reset`` to inspect
 or restore shipped defaults.
 
+## Optimistic UI Updates
+
+Write operations that go through the GUI (list tabs, command bar) should update the UI **immediately** using the optimistic pattern in `web/src/lib/optimisticStore.svelte.js`. See `web/AGENTS-web.md` → Optimistic UI Pattern for the full guide.
+
+**Safe for optimistic updates**: deletes, renames, toggles, trash operations.
+**NOT safe**: LLM interactions, multi-step creates, confirmation-gated commands, file I/O, backup restore.
+
 ## Prompt File Management (``!llm prompt``)
 
 Semantika ships with several editable prompt files that control LLM behavior.

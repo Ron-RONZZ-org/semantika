@@ -117,6 +117,10 @@ Semantika uses a **two-file model** for LLM system prompt customisation:
 - **Reload at runtime**: ``POST /api/v1/llm/reload-prompt`` (no server restart)
 - **View current prompt**: ``GET /api/v1/llm/prompt``
 
+### Reactive UI (Optimistic Updates)
+
+Write operations (deletes, trash actions, toggles) update the UI **instantly** — items disappear from list tabs the moment you click Delete, while the API call runs in the background. On the rare occasion a delete fails, the items are restored and an error banner is shown. This pattern is implemented via `web/src/lib/optimisticStore.svelte.js`.
+
 ### Backup & Recovery
 - `!backup now/list/restore/prune/config` — database backup with multi-strategy support
 - `!backup config list/add/modify/delete/test` — backup strategy management

@@ -2,6 +2,8 @@
   /** Triple list tab — filterable by subject/predicate, API-backed. */
 
   import { tabStore } from "./tabStore.svelte.js";
+  import { banner } from "./bannerStore.svelte.js";
+  import { opt } from "./optimisticStore.svelte.js";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import {
     createSelectionManager,
@@ -57,17 +59,34 @@
       if (t) openNode(t.subject_id);
     },
     async (keys) => {
-      for (const key of keys) {
-        const t = triples.find(t => tripleKey(t) === key);
-        if (t) {
-          const params = new URLSearchParams({
-            subject: t.subject_id, predicate: t.predicate_id, object: t.object_value,
-          });
-          await fetch(`/api/v1/graph/triples?${params}`, { method: "DELETE" });
+      // 1. Optimistic removal: remove triples from tab data immediately
+      const activeId = tabStore.active?.id;
+      const rollback = activeId
+        ? opt.removeFromTab(activeId, keys, (t) => tripleKey(t), "triples")
+        : () => {};
+      // 2. Fire API calls in background
+      try {
+        for (const key of keys) {
+          const t = triples.find(t => tripleKey(t) === key);
+          if (t) {
+            const params = new URLSearchParams({
+              subject: t.subject_id, predicate: t.predicate_id, object: t.object_value,
+            });
+            const resp = await fetch(`/api/v1/graph/triples?${params}`, { method: "DELETE" });
+            if (!resp.ok) {
+              const err = await resp.json().catch(() => ({}));
+              throw new Error(err.detail?.error || err.detail || `HTTP ${resp.status}`);
+            }
+          }
         }
+      } catch (err) {
+        // 3. On failure: rollback + banner error
+        rollback();
+        banner.show(`Delete failed: ${err.message}`, "error");
+        throw err;
       }
     },
-    () => fetchTriples(searchQuery),
+    () => {}, // no-op refresh: data already updated optimistically
     { onNew: handleNew, getKey: (item) => item.node_id },
   );
 

@@ -2,6 +2,8 @@
   /** Predicate list tab — selection, batch delete, API-backed. */
 
   import { tabStore } from "./tabStore.svelte.js";
+  import { banner } from "./bannerStore.svelte.js";
+  import { opt } from "./optimisticStore.svelte.js";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import {
     createSelectionManager,
@@ -52,11 +54,28 @@
     () => predicates,
     (id) => openPredicate(id),
     async (ids) => {
-      for (const id of ids) {
-        await fetch(`/api/v1/graph/predicates/${encodeURIComponent(id)}`, { method: "DELETE" });
+      // 1. Optimistic removal: remove items from tab data immediately
+      const activeId = tabStore.active?.id;
+      const rollback = activeId
+        ? opt.removeFromTab(activeId, ids, (item) => item.predicate_id, "predicates")
+        : () => {};
+      // 2. Fire API calls in background
+      try {
+        for (const id of ids) {
+          const resp = await fetch(`/api/v1/graph/predicates/${encodeURIComponent(id)}`, { method: "DELETE" });
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.detail?.error || err.detail || `HTTP ${resp.status}`);
+          }
+        }
+      } catch (err) {
+        // 3. On failure: rollback + banner error
+        rollback();
+        banner.show(`Delete failed: ${err.message}`, "error");
+        throw err;
       }
     },
-    () => fetchPredicates(searchQuery),
+    () => {}, // no-op refresh: data already updated optimistically
     { onNew: handleNew, getKey: (item) => item.predicate_id },
   );
 

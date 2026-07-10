@@ -39,6 +39,7 @@ Svelte 5 SPA frontend — command-bar UI with rich result rendering for the Sema
 | `parser.js` | Tokenizer for !commands; `parsePromptCommand()` for / prefix |
 | `formatCommand.js` | Format `{tokens, flags}` → human-readable command string |
 | `commandHistory.svelte.js` | Navigation history with up/down arrow recall |
+| `optimisticStore.svelte.js` | Optimistic UI helpers — snapshot/rollback for instant tab data updates |
 | `popupStore.svelte.js` | Popup/overlay state management |
 | `tabStore.svelte.js` | Multi-tab state management (pinned home, open/close/update) |
 | `bannerStore.svelte.js` | Banner notification state |
@@ -166,6 +167,53 @@ These components are identified as shareable but need behavioral alignment befor
 - `FormField.svelte`, `ConfirmDialog.svelte`, `DynamicForm.svelte`
 - `MultiEntryField.svelte` (doesn't exist in semantika yet — add from lightercore when needed)
 - `ListTabBase.svelte` (new abstraction for list tabs)
+
+## Optimistic UI Pattern
+
+Write operations (deletes, toggles, simple mutations) should update the UI **immediately** and fire the API call in the background, rolling back on failure. This eliminates the ~1-2s perceived lag from synchronous round-trips.
+
+### When to use
+- **Safe**: Deletes, renames, toggles, trash operations — low-risk DB writes
+- **NOT safe**: LLM interactions, multi-step creates, confirmation-gated commands, file I/O, backup restore
+
+### Pattern
+
+```js
+import { opt } from "./optimisticStore.svelte.js";
+import { banner } from "./bannerStore.svelte.js";
+
+async function handleDelete(ids) {
+  // 1. Optimistic removal from tab data (instant)
+  const rollback = opt.removeFromTab(tabStore.active.id, ids, getKey, "nodes");
+  
+  try {
+    // 2. Fire API calls in background
+    for (const id of ids) {
+      const resp = await fetch(`/api/v1/graph/nodes/${id}`, { method: "DELETE" });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    }
+  } catch (err) {
+    // 3. On failure: rollback + banner error
+    rollback();
+    banner.show(`Delete failed: ${err.message}`, "error");
+    throw err; // keep selection state for retry
+  }
+  // On success: no-op — tab data already updated
+}
+```
+
+### `opt` API
+
+| Method | Purpose |
+|--------|---------|
+| `removeFromTab(tabId, ids, getKey, field)` | Remove items from tab data; returns rollback fn |
+| `mutateTab(tabId, mutator)` | Arbitrary mutation on tab data with rollback |
+
+### Rules
+- Always provide a rollback function and call it on API failure
+- Always show an error banner when rollback occurs (so the user knows the operation actually failed)
+- Re-throw the error so the caller (selection manager, command executor) can manage its own state
+- Prefer `removeFromTab` over raw `tabStore.update` for deletes — it handles all data shapes (plain array, `{nodes: [...]}`, `{data: [...]}`)
 
 ## Documentation Reference
 - lighterbird's web frontend: `../lighterbird/web/` for proven patterns
