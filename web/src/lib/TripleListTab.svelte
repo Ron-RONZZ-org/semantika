@@ -178,7 +178,9 @@
         class:selected={sel.isSelected(key)}
         class:focused={i === sel.focusedIndex}
         role="option" aria-selected={sel.isSelected(key)}
-        onclick={(e) => sel.handleRowClick(e, key)}>
+        tabindex="-1"
+        onclick={(e) => sel.handleRowClick(e, key)}
+        onkeydown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); sel.handleRowClick(e, key); } }}>
         <span class="subject">{triple.subject_id}</span>
         <span class="arrow">→</span>
         <span class="predicate">{triple.predicate_id}</span>

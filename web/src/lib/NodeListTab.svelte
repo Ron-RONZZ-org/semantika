@@ -157,7 +157,9 @@
         class:selected={sel.isSelected(node.node_id)}
         class:focused={i === sel.focusedIndex}
         role="option" aria-selected={sel.isSelected(node.node_id)}
-        onclick={(e) => sel.handleRowClick(e, node.node_id)}>
+        tabindex="-1"
+        onclick={(e) => sel.handleRowClick(e, node.node_id)}
+        onkeydown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); sel.handleRowClick(e, node.node_id); } }}>
         <span class="label">{getLabel(node.labels, getLocale()) || node.node_id}</span>
         <span class="id">{node.node_id}</span>
         <span class="actions">
