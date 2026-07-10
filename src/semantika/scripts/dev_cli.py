@@ -95,29 +95,31 @@ def _seed_prompt_commands() -> None:
 
 
 def _auto_configure_llm(creds: dict[str, str]) -> None:
-    """Configure the LLM provider from credentials if not already set."""
+    """Configure the LLM provider from credentials on fresh seed.
+
+    Always overwrites any existing keyring config because this function
+    is only called during ``--seed`` / ``--prod`` with a fresh (empty)
+    data directory — stale configs from previous test runs or broken
+    seeds must not block the live key.
+    """
     api_key = creds.get("DEEPSEEK_API_KEY", "") or creds.get("TEST_DEEPSEEK_APIKEY", "")
     if not api_key:
         return
 
-    from lightercore.llm.config import load_active_config, save_active_config
+    from lightercore.llm.config import save_active_config as _save
     from lightercore.llm.config import ProviderConfig
 
     SERVICE = "semantika-llm"
 
-    existing = load_active_config(SERVICE)
-    if existing is not None:
-        return  # already configured
-
     config = ProviderConfig(
-        provider_type="openai",
+        provider_type="deepseek",
         api_key=api_key,
         base_url="https://api.deepseek.com",
         model="deepseek-chat",
         temperature=0.7,
         max_tokens=4096,
     )
-    save_active_config(SERVICE, config)
+    _save(SERVICE, config)
 
 
 def dev_main() -> None:
