@@ -106,15 +106,15 @@ Then look at $2 area specifically.' > ~/.config/semantika/commands/weekly.md
 
 ### LLM System Prompt Customization
 
-The LLM's system prompt is a user-editable Markdown file at
-``~/.config/semantika/system_prompt.md``:
+Semantika uses a **two-file model** for LLM system prompt customisation:
 
-- **Auto-seeded** on first run with the shipped default Semantika AI prompt
-- **Same file** used by both the chat endpoint and prompt commands
+- **`~/.config/semantika/system_prompt.md`** — the base prompt (app's operational
+  instructions). Auto-seeded on first access. Edit for deep customisation.
+- **`~/.config/semantika/AGENTS.md`** — your personal style instructions (naming
+  conventions, language preferences, workflow rules). Auto-seeded and always
+  **appended** to the base prompt. This is the primary customisation point.
 - **Reload at runtime**: ``POST /api/v1/llm/reload-prompt`` (no server restart)
 - **View current prompt**: ``GET /api/v1/llm/prompt``
-- **Legacy migration**: If you had an ``~/.config/semantika/AGENTS.md`` from a
-  previous version, its content is automatically merged on first access.
 
 ### Backup & Recovery
 - `!backup now/list/restore/prune/config` — database backup with multi-strategy support
