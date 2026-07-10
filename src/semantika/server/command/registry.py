@@ -315,6 +315,19 @@ def get_command_definitions(tree: list[dict] | None = None) -> list[dict]:
     def _walk(nodes: list[dict], prefix: list[str] | None = None) -> None:
         for node in nodes:
             path = (prefix or []) + [node["name"]]
+            path_str = ".".join(path)
+
+            # Skip group-only nodes (non-leaf, no handler registered).
+            # These have no executable command and serve only as tree
+            # branches — they add noise to the LLM tool list and may
+            # trigger provider-side validation issues.
+            has_children = bool(node.get("children"))
+            has_handler = get_handler_metadata(path_str) is not None
+            if has_children and not has_handler:
+                # Walk children anyway (to pick up leaf commands)
+                _walk(node["children"], path)
+                continue
+
             desc = node.get("description", "")
             entry: dict[str, Any] = {
                 "path": path,
