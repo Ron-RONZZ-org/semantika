@@ -20,10 +20,23 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
+import re
+
 from lightercore.prompt_commands import (
+    _ARGUMENTS_RE,
+    _PARAM_RE,
     expand_prompt_template,
     list_prompt_commands,
     load_prompt_command,
+)
+
+from semantika.server.routes.prompt_commands_helpers import (
+    _commands_dir,
+    _execute_with_tools,
+    _parse_tool_domains,
+    _render_markdown,
+    execute_template_flow,
+    resume_execution,
 )
 
 from semantika.server.llm.provider import get_provider
@@ -85,6 +98,17 @@ async def expand_endpoint(data: dict[str, Any]) -> dict[str, Any]:
         )
 
     expanded = expand_prompt_template(cmd.template, args)
+
+    # If the template has no $N / $ARGUMENTS placeholders but the user
+    # provided args, append the args as free-form text so the preview
+    # shows the full message the LLM will receive.
+    if args and not _PARAM_RE.search(cmd.template) and not _ARGUMENTS_RE.search(cmd.template):
+        user_text = " ".join(args)
+        if user_text:
+            if expanded.endswith((".", "!", "?", "\n")):
+                expanded += "\n\n" + user_text
+            else:
+                expanded += "\n\n" + user_text
 
     return {
         "name": cmd.name,
