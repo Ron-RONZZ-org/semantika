@@ -26,6 +26,8 @@
    *   raw: string,
    * } | null} */
   let expandedPrompt = $state(null);
+  /** Index of the user message in `messages` that triggered the expand dialog. */
+  let expandedPromptMsgIdx = $state(-1);
 
   /** @type {{
    *   tokens?: string[],
@@ -137,13 +139,10 @@
           expanded: expandData.expanded,
           raw: trimmed,
         };
-
-        // Show "reviewing" state in conversation
-        messages = messages.map((m, i) =>
-          i === messages.length - 1
-            ? { ...m, html: `<p><em>Reviewing expanded prompt…</em></p>`, _streaming: false }
-            : m,
-        );
+        // Track which user message this expand dialog relates to.
+        // The original user message (index messages.length - 1) shows the
+        // raw `/command` — we'll update it to the expanded text after sending.
+        expandedPromptMsgIdx = messages.length - 1;
       } catch (err) {
         messages = messages.map((m, i) =>
           i === messages.length - 1
@@ -307,6 +306,21 @@
     });
   }
 
+  /** Update the user message at `expandedPromptMsgIdx` to show the final expanded text. */
+  function _updateExpandedUserMsg(expandedText) {
+    if (expandedPromptMsgIdx < 0 || expandedPromptMsgIdx >= messages.length) return;
+    messages = messages.map((m, i) =>
+      i === expandedPromptMsgIdx
+        ? { ...m, text: expandedText, html: `<pre class="expanded-msg">${escapeHtml(expandedText)}</pre>` }
+        : m,
+    );
+    expandedPromptMsgIdx = -1;
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
   /** Send the expanded prompt to the LLM as a normal chat message. */
   async function handleExpandConfirm(expandedText) {
     if (!expandedText || !expandedPrompt) return;
@@ -335,6 +349,7 @@
             ? { ...m, html: `<p>Error: ${errMsg}</p>`, text: errMsg, _streaming: false }
             : m,
         );
+        _updateExpandedUserMsg(expandedText);
         isLoadingLlm = false;
         scrollToBottom();
         return;
@@ -354,6 +369,7 @@
             ? { ...m, html: `<p><em>Waiting for confirmation…</em></p>`, _streaming: false }
             : m,
         );
+        _updateExpandedUserMsg(expandedText);
         isLoadingLlm = false;
         scrollToBottom();
         return;
@@ -366,12 +382,14 @@
           ? { ...m, html, text: reply, _streaming: false, actions: [] }
           : m,
       );
+      _updateExpandedUserMsg(expandedText);
     } catch (err) {
       messages = messages.map((m, i) =>
         i === msgIdx
           ? { ...m, html: `<p>Network error: ${err.message}</p>`, _streaming: false }
           : m,
       );
+      _updateExpandedUserMsg(expandedText);
     }
 
     isLoadingLlm = false;
@@ -380,11 +398,7 @@
 
   function handleExpandDismiss() {
     expandedPrompt = null;
-    // Remove the "reviewing" message
-    messages = messages.filter((m) => {
-      const html = m.html || "";
-      return !html.includes("Reviewing expanded prompt");
-    });
+    expandedPromptMsgIdx = -1;
   }
 
   $effect(() => {
@@ -688,4 +702,20 @@
     background: #2a4a5a; color: #e0e0e0; border-color: #3a6a7a;
   }
   .btn-primary:hover { background: #3a5a6a; }
+
+  /* ── Expanded message in conversation history ── */
+  :global(.expanded-msg) {
+    background: #16162a;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 0.6rem 0.8rem;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-x: auto;
+    color: #c8c8e0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    margin: 0.25rem 0;
+  }
 </style>

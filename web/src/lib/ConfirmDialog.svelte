@@ -112,9 +112,9 @@
 </script>
 
 <div class="confirm-overlay" role="alertdialog" aria-modal="true" aria-label="Confirm"
-     onclick={onDismiss}
+     onclick|self={onDismiss}
      onkeydown={trapKeydown} bind:this={overlay} tabindex="0">
-  <div class="confirm-box" onclick={(e) => e.stopPropagation()}>
+  <div class="confirm-box">
     <p class="confirm-message">{message}</p>
 
     {#if batch.length > 0}
@@ -151,7 +151,7 @@
                   &#10003; Approve
                 </button>
                 <button class="btn btn-reject" onclick={() => handleItemReject(idx)}>
-                  Tell LLM what to do instead&#8230;
+                  Tell LLM what to do instead…
                 </button>
               {/if}
             </div>
@@ -176,7 +176,7 @@
           &#10003; Approve All
         </button>
         <button class="btn btn-global-feedback" onclick={handleGlobalFeedbackToggle}>
-          {showGlobalFeedback ? "Hide global feedback" : "Tell LLM what to do instead (global)&#8230;"}
+          {showGlobalFeedback ? "Hide global feedback" : "Tell LLM what to do instead (global)\u2026"}
         </button>
       </div>
 

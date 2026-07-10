@@ -226,7 +226,7 @@ def dev_main() -> None:
             "semantika.server.app:create_app",
             host="127.0.0.1",
             port=port,
-            reload=True,
+            reload=False,
             factory=True,
         )
     finally:
