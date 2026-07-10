@@ -13,6 +13,7 @@
   import NodeListTab from "./NodeListTab.svelte";
   import PredicateListTab from "./PredicateListTab.svelte";
   import TripleListTab from "./TripleListTab.svelte";
+  import PromptListTab from "./PromptListTab.svelte";
   import TemplateYamlPopup from "./TemplateYamlPopup.svelte";
 
   let showGlobalHelp = $state(false);
@@ -162,6 +163,8 @@
         <PredicateListTab data={tabStore.active.data} />
       {:else if tabStore.active.type === "triple-list"}
         <TripleListTab data={tabStore.active.data} />
+      {:else if tabStore.active.type === "prompt-list"}
+        <PromptListTab data={tabStore.active.data} />
       {:else if tabStore.active.type === "template_yaml"}
         <TemplateYamlPopup data={tabStore.active.data} />
       {:else}
@@ -247,6 +250,7 @@
       "predicate-list": "\u25ce",
       "triple-list": "\u25c8",
       graph: "\ud83c\udf10",
+      "prompt-list": "\ud83d\udcdd",
       error: "\u26a0",
       help: "?",
       loading: "\u23f3",

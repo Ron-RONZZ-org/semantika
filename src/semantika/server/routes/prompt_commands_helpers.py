@@ -576,16 +576,9 @@ async def execute_template_flow(data: dict[str, Any]) -> dict[str, Any]:
     # ── Turn 1: Predicate discovery via tool calling ──────────────────────
     turn1_text = _load_and_expand_turn("turn1", args)
     if turn1_text is None:
-        # Fallback hardcoded prompt if file is missing
-        turn1_text = (
-            "Your task is to find relevant predicates in the Semantika "
-            "knowledge graph for creating a triple template.\n\n"
-            "User description:\n" + user_description + "\n\n"
-            "Use the **predicate.search** tool with different keywords "
-            "to find predicates relevant to the user's description. "
-            "Try multiple searches. Once you have a good set, summarise "
-            "what predicates you found and what they are for."
-        )
+        # Fallback if file is missing — use shipped default
+        from semantika.server.llm.prompt_defaults import DEFAULT_TURN1
+        turn1_text = _expand_turn_prompt(DEFAULT_TURN1, args)
 
     turn1_messages = [
         {
@@ -633,44 +626,9 @@ async def execute_template_flow(data: dict[str, Any]) -> dict[str, Any]:
     turn2_expand_args = [predicate_summary, user_description] if predicate_summary else [user_description]
     turn2_text = _load_and_expand_turn("turn2", turn2_expand_args)
     if turn2_text is None:
-        # Fallback hardcoded prompt
-        turn2_text = (
-            "## Objective\n"
-            "Generate a valid YAML triple template from the user's description "
-            "and predicates found, then **save it** using the ``template.save`` "
-            "tool.\n\n"
-            "## Template schema\n"
-            "```yaml\n"
-            "name: <short-name>\n"
-            "description: <short-description>\n"
-            "params:\n"
-            "  - name: <variable-name>\n"
-            "    label: <human-label>\n"
-            "    type: node | string | number\n"
-            "    required: true\n"
-            "triples:\n"
-            '  - "{var1} {predicate1} {var2}"           # URI (node ref)\n'
-            '  - "{var1} {predicate2} {var3} --str"     # string literal\n'
-            '  - "{var1} {predicate3} {var4} --int"     # number literal\n'
-            "```\n\n"
-            "## Rules\n"
-            "- No flag = URI reference (object is another node)\n"
-            "- `--str` = string literal, `--int` = number literal\n"
-            "- Optional params: if not filled, the triple is auto-skipped\n"
-            "- Use PREDICATE IDs that already exist in your graph\n\n"
-            "## Predicates found\n"
-            + (predicate_summary or "No predicates found.") + "\n\n"
-            "## User description\n" + user_description + "\n\n"
-            "## Instructions\n"
-            "1. Generate the YAML template content in your response.\n"
-            "2. Then call **template.save** with ``--yaml`` set to the full YAML "
-            "content to persist it to disk.\n"
-            "3. The user will be asked to confirm — explain what the template "
-            "contains so they can make an informed decision.\n"
-            "4. After the tool completes, provide a brief summary of what was created.\n\n"
-            "You may also call **template.list** to check which templates already "
-            "exist, or **predicate.search** if you need to verify predicate IDs."
-        )
+        # Fallback if file is missing — use shipped default expanded with args
+        from semantika.server.llm.prompt_defaults import DEFAULT_TURN2
+        turn2_text = _expand_turn_prompt(DEFAULT_TURN2, turn2_expand_args)
 
     turn2_messages = [
         {

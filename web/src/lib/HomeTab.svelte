@@ -11,6 +11,7 @@
   import { parseCommand, parsePromptCommand } from "./parser.js";
   import { commandTree, findNode } from "./commandTree.js";
   import { shouldIntercept } from "./commandRouter.js";
+  import { banner } from "./bannerStore.svelte.js";
 
   let hasSentLlmMessage = $state(false);
   let showLlmSetup = $state(false);
@@ -444,7 +445,30 @@
   }
 
   $effect(() => {
-    refreshDataCache();
+    if (tabStore.isHome) {
+      requestAnimationFrame(() => {
+        document.querySelector(".input-field")?.focus();
+      });
+    }
+  });
+
+  // Check for modified prompt files on mount and show banner
+  let bannerShown = $state(false);
+  $effect(() => {
+    if (bannerShown) return;
+    bannerShown = true;
+    fetch("/api/v1/llm/prompts/modified-count")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.modified_count > 0) {
+          banner.show(
+            `Custom LLM prompts active (${data.modified_count}/${data.total} modified). Run !llm prompt list to see details.`,
+            "warning",
+            0, // persistent until dismissed
+          );
+        }
+      })
+      .catch(() => {});
   });
 
   async function refreshDataCache() {
