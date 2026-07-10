@@ -178,8 +178,13 @@ def dev_main() -> None:
     By default creates a temporary data directory (``/tmp/semantika-dev-*``)
     and optionally seeds it with test data before starting the server.
 
-    Use ``--data-dir PATH`` to keep data persistent across restarts.
-    Seeding only runs when the data directory is empty.
+    Flags:
+    - ``--data-dir PATH`` — keep data persistent across restarts.
+    - ``--local-config PATH`` — use a custom config directory for testing
+      prompt command / AGENTS.md / hooks changes.  Overrides any config
+      dir set by ``--data-dir``.  Useful for iterating on config files
+      stored in a git checkout.
+    - ``--no-hooks`` — skip loading user hooks.
     """
     parser = standard_dev_parser(
         "Run an isolated Semantika development server.",
@@ -187,6 +192,11 @@ def dev_main() -> None:
     )
     parser.add_argument("--no-hooks", action="store_true",
                         help="Skip loading user-defined hooks from ~/.config/semantika/hooks.py")
+    parser.add_argument("--local-config", type=str, default=None,
+                        help="Use a local config directory (e.g. a git checkout) "
+                             "for prompt commands, AGENTS.md, user hooks, and "
+                             "template turn prompts. Overrides the config dir "
+                             "from --data-dir if both are given.")
     args = parser.parse_args()
 
     validate_seed_sources(args)
@@ -205,8 +215,20 @@ def dev_main() -> None:
         args.data_dir, app_name="semantika",
     )
 
+    # --local-config overrides the config dir set by --data-dir or the
+    # default temp dir.  This lets you test config changes (prompt commands,
+    # AGENTS.md, hooks, template turn prompts) from a working directory
+    # without touching your real ~/.config/semantika/.
+    if args.local_config:
+        local_config = Path(args.local_config).expanduser().resolve()
+        local_config.mkdir(parents=True, exist_ok=True)
+        os.environ["SEMANTIKA_CONFIG_DIR"] = str(local_config)
+        config_dir = local_config
+        _log(f"Local config dir: {config_dir} (overrides configured config dir)")
+    else:
+        _log(f"Config dir: {config_dir}")
+
     _log(f"Data dir: {data_dir}")
-    _log(f"Config dir: {config_dir}")
 
     already_seeded = is_seeded(data_dir)
 
