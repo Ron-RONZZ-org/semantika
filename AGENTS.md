@@ -329,8 +329,31 @@ The command is immediately available — no restart needed. The frontend fetches
 Prompt commands are served by `GET/POST /api/v1/prompt-commands/*`:
 - `GET /list` — autocomplete source
 - `POST /expand` — preview expanded template
-- `POST /execute` — expand + send to LLM (sync JSON)
+- `POST /execute` — expand + send to LLM with multi-round tool-calling (sync JSON)
 - `POST /execute/stream` — SSE streaming variant
+- `POST /execute/resume` — resume after HITL confirmation
+
+The frontend **always calls `/expand` first** to show the expanded template in a preview dialog before sending to the LLM.
+
+### LLM Action Approval (HITL)
+
+When the LLM issues write-level tool calls, the tool loop gates them behind user confirmation:
+
+1. The backend returns `{"type": "confirm_tool", "session_id", "batch": [...]}`
+2. The frontend shows a per-item approval dialog (`ConfirmDialog.svelte`) with:
+   - Full command display (no truncation, includes flags)
+   - Per-item **[Approve]** / **[Tell LLM what to do instead…]** buttons
+   - Global **[Approve All]** / **[Tell LLM what to do instead (global)…]** buttons
+3. On submit, `POST .../resume` receives `{session_id, decisions, feedback}`
+4. The backend injects user feedback as a conversation message and includes it in rejected tool results
+
+### Resume endpoints with feedback support
+
+- **Chat**: `POST /api/v1/llm/chat/resume` — accepts `feedback` (dict per-index or global string)
+- **Prompt commands**: `POST /api/v1/prompt-commands/execute/resume` — same `feedback` support
+- **lightercore**: `resume_execution()` accepts `feedback: dict[int, str] | str | None`
+- Feedback is injected as a user message summarising rejected tools + reason
+- Individual rejected tool results include: `"User rejected {cmd}, with the feedback: {fb}"`
 
 The `--seed` flag on `semantika-dev` creates a demo prompt command for testing.
 

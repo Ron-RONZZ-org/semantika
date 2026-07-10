@@ -8,7 +8,7 @@
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import HomeHeader from "./HomeHeader.svelte";
   import MessageList from "./MessageList.svelte";
-  import { parseCommand } from "./parser.js";
+  import { parseCommand, parsePromptCommand } from "./parser.js";
   import { commandTree, findNode } from "./commandTree.js";
   import { shouldIntercept } from "./commandRouter.js";
 
@@ -19,6 +19,13 @@
   let messages = $state([]);
   let convoEl = $state(null);
   let isLoadingLlm = $state(false);
+
+  /** @type {{
+   *   name: string,
+   *   expanded: string,
+   *   raw: string,
+   * } | null} */
+  let expandedPrompt = $state(null);
 
   /** @type {{
    *   tokens?: string[],
@@ -74,7 +81,10 @@
     messages = [...messages, { role: "user", text: trimmed }];
     hasSentLlmMessage = true;
 
-    // ── Prompt commands (/ prefix) → show in conversation, not popup ───
+    // ── Prompt commands (/ prefix) ────────────────────────────────────
+    // Step 1: Expand the template via /expand endpoint
+    // Step 2: Show expanded text in a preview dialog
+    // Step 3: On user confirm, send expanded text to LLM as a normal message
     if (trimmed.startsWith("/")) {
       // Prompt commands always need an LLM — show setup modal if not configured
       if (llmAvailable === null) {
@@ -88,51 +98,55 @@
         return;
       }
 
-      isLoadingLlm = true;
-      const msgIdx = messages.length;
-      messages = [...messages, { role: "assistant", html: "", text: "", actions: [], _streaming: true }];
-      scrollToBottom();
+      const parsed = parsePromptCommand(trimmed);
+      if (!parsed || !parsed.name) {
+        messages = messages.map((m, i) =>
+          i === messages.length - 1
+            ? { ...m, html: "<p>Usage: /command-name [args...]</p>", _streaming: false }
+            : m,
+        );
+        isLoadingLlm = false;
+        scrollToBottom();
+        return;
+      }
 
+      // Call expand endpoint to preview the template
       try {
-        const result = await execute(trimmed);
+        const expandResp = await fetch("/api/v1/prompt-commands/expand", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: parsed.name, args: parsed.args }),
+        });
 
-        if (result.type === "error") {
-          const errMsg = result.data?.message || "Command failed";
+        if (!expandResp.ok) {
+          const detail = await expandResp.json().catch(() => ({}));
+          const errMsg = detail.detail?.error || detail.detail || `HTTP ${expandResp.status}`;
           messages = messages.map((m, i) =>
-            i === msgIdx
-              ? { ...m, html: `<p>${errMsg}</p>`, text: errMsg, _streaming: false }
+            i === messages.length - 1
+              ? { ...m, html: `<p>Error: ${errMsg}</p>`, _streaming: false }
               : m,
           );
-        } else if (result.type === "confirm_tool") {
-          // Batch confirmation for write-level tools
-          confirmRequest = {
-            session_id: result.session_id,
-            batch: result.batch || [],
-            resumeUrl: "/api/v1/prompt-commands/execute/resume",
-            message: result.message || "Confirm command?",
-          };
-          messages = messages.map((m, i) =>
-            i === msgIdx
-              ? { ...m, html: `<p><em>Waiting for confirmation…</em></p>`, _streaming: false }
-              : m,
-          );
-        } else {
-          const replyHtml =
-            result.data?.html ||
-            (result.data?.message ? renderMarkdown(result.data.message) : "") ||
-            (result.data?.reply ? renderMarkdown(result.data.reply) : "") ||
-            (result.html ? renderMarkdown(result.html) : "") ||
-            (result.message ? renderMarkdown(result.message) : "");
-          const replyText = result.data?.message || result.data?.reply || result.message || "";
-          messages = messages.map((m, i) =>
-            i === msgIdx
-              ? { ...m, html: replyHtml, text: replyText, _streaming: false }
-              : m,
-          );
+          isLoadingLlm = false;
+          scrollToBottom();
+          return;
         }
+
+        const expandData = await expandResp.json();
+        expandedPrompt = {
+          name: expandData.name,
+          expanded: expandData.expanded,
+          raw: trimmed,
+        };
+
+        // Show "reviewing" state in conversation
+        messages = messages.map((m, i) =>
+          i === messages.length - 1
+            ? { ...m, html: `<p><em>Reviewing expanded prompt…</em></p>`, _streaming: false }
+            : m,
+        );
       } catch (err) {
         messages = messages.map((m, i) =>
-          i === msgIdx
+          i === messages.length - 1
             ? { ...m, html: `<p>Error: ${err.message}</p>`, _streaming: false }
             : m,
         );
@@ -293,6 +307,86 @@
     });
   }
 
+  /** Send the expanded prompt to the LLM as a normal chat message. */
+  async function handleExpandConfirm(expandedText) {
+    if (!expandedText || !expandedPrompt) return;
+    const promptName = expandedPrompt.name;
+    expandedPrompt = null;
+
+    isLoadingLlm = true;
+    const msgIdx = messages.length;
+    messages = [...messages, { role: "assistant", html: "", text: "", actions: [], _streaming: true }];
+    scrollToBottom();
+
+    const context = buildContext();
+
+    try {
+      const resp = await fetch("/api/v1/llm/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: expandedText, context }),
+      });
+
+      if (!resp.ok) {
+        const detail = await resp.json().catch(() => ({}));
+        const errMsg = detail.detail?.error || detail.detail || `HTTP ${resp.status}`;
+        messages = messages.map((m, i) =>
+          i === msgIdx
+            ? { ...m, html: `<p>Error: ${errMsg}</p>`, text: errMsg, _streaming: false }
+            : m,
+        );
+        isLoadingLlm = false;
+        scrollToBottom();
+        return;
+      }
+
+      const data = await resp.json();
+
+      if (data.type === "confirm_tool") {
+        confirmRequest = {
+          session_id: data.session_id,
+          batch: data.batch || [],
+          resumeUrl: "/api/v1/llm/chat/resume",
+          message: data.message || "Confirm command?",
+        };
+        messages = messages.map((m, i) =>
+          i === msgIdx
+            ? { ...m, html: `<p><em>Waiting for confirmation…</em></p>`, _streaming: false }
+            : m,
+        );
+        isLoadingLlm = false;
+        scrollToBottom();
+        return;
+      }
+
+      const reply = data.reply || data.data?.reply || (data.type === "chat" ? data.data?.html || "" : "");
+      const html = renderMarkdown(reply);
+      messages = messages.map((m, i) =>
+        i === msgIdx
+          ? { ...m, html, text: reply, _streaming: false, actions: [] }
+          : m,
+      );
+    } catch (err) {
+      messages = messages.map((m, i) =>
+        i === msgIdx
+          ? { ...m, html: `<p>Network error: ${err.message}</p>`, _streaming: false }
+          : m,
+      );
+    }
+
+    isLoadingLlm = false;
+    scrollToBottom();
+  }
+
+  function handleExpandDismiss() {
+    expandedPrompt = null;
+    // Remove the "reviewing" message
+    messages = messages.filter((m) => {
+      const html = m.html || "";
+      return !html.includes("Reviewing expanded prompt");
+    });
+  }
+
   $effect(() => {
     refreshDataCache();
   });
@@ -319,13 +413,21 @@
     } catch { llmAvailable = false; }
   }
 
-  async function handleConfirmCommand() {
+  /** Unified handler for per-item decisions + feedback from ConfirmDialog. */
+  async function handleConfirmSubmit(decisions, feedback) {
     if (!confirmRequest) return;
 
     // ── Batch confirmation (LLM multi-tool) ────────────────────────────
     if (confirmRequest.session_id && confirmRequest.batch) {
       const { session_id, batch, resumeUrl } = confirmRequest;
       confirmRequest = null;
+      rejectFeedback = "";
+
+      // Remove "Waiting for confirmation" messages
+      messages = messages.filter((m) => {
+        const html = m.html || "";
+        return !html.includes("Waiting for confirmation");
+      });
 
       try {
         const resp = await fetch(resumeUrl, {
@@ -333,7 +435,8 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             session_id,
-            decisions: Object.fromEntries(batch.map((b) => [b.index, true])),
+            decisions,
+            feedback,
           }),
         });
 
@@ -357,13 +460,7 @@
           return;
         }
 
-        // Show result in conversation: remove "Waiting for confirmation" message
-        // and append the final answer as a new assistant message.
-        messages = messages.filter((m) => {
-          const html = m.html || "";
-          return !html.includes("Waiting for confirmation");
-        });
-
+        // Show result in conversation
         const replyHtml =
           data.data?.html ||
           (data.data?.message ? renderMarkdown(data.data.message) : "") ||
@@ -401,110 +498,6 @@
     } catch (err) {
       popup.show("error", "Connection Error", { message: `Confirm failed: ${err.message}` });
     }
-  }
-
-  async function handleRejectFeedback(feedback) {
-    if (!confirmRequest) return;
-
-    // ── Batch rejection: call resume with confirmed=false ──────────────
-    if (confirmRequest.session_id && confirmRequest.batch) {
-      const { session_id, batch, resumeUrl } = confirmRequest;
-      confirmRequest = null;
-      rejectFeedback = "";
-      messages = messages.filter((m) => {
-        const html = m.html || "";
-        return !html.includes("Waiting for confirmation");
-      });
-
-      // Call resume with confirmed=false so the LLM sees the rejection and
-      // can suggest an alternative in the same tool loop.
-      try {
-        const resp = await fetch(resumeUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            session_id,
-            decisions: Object.fromEntries(batch.map((b) => [b.index, false])),
-          }),
-        });
-
-        if (!resp.ok) {
-          const detail = await resp.json().catch(() => ({}));
-          const errMsg = detail.detail?.error || detail.detail || `HTTP ${resp.status}`;
-          popup.show("error", "Command Failed", { message: errMsg });
-          return;
-        }
-
-        const data = await resp.json();
-
-        // Handle nested confirm_tool
-        if (data.type === "confirm_tool") {
-          confirmRequest = {
-            session_id: data.session_id,
-            batch: data.batch || [],
-            resumeUrl,
-            message: data.message || "Confirm command?",
-          };
-          return;
-        }
-
-        // Show result in conversation
-        const replyHtml =
-          data.data?.html ||
-          (data.data?.message ? renderMarkdown(data.data.message) : "") ||
-          (data.reply ? renderMarkdown(data.reply) : "") ||
-          data.html ||
-          "";
-        const replyText = data.data?.message || data.reply || data.message || "";
-        messages = [
-          ...messages,
-          { role: "assistant", html: replyHtml, text: replyText, _streaming: false, actions: [] },
-        ];
-        scrollToBottom();
-      } catch (err) {
-        popup.show("error", "Connection Error", { message: `Reject failed: ${err.message}` });
-      }
-      return;
-    }
-
-    // ── Legacy single-command rejection ────────────────────────────────
-    const { tokens } = confirmRequest;
-    confirmRequest = null;
-    rejectFeedback = "";
-    messages = messages.filter((m) => {
-      const html = m.html || "";
-      return !html.includes("Waiting for confirmation");
-    });
-
-    const contextMsg = `The LLM suggested running \`!${tokens.join(" ")}\` but the user rejected it with this feedback: "${feedback}". Please suggest an alternative approach.`;
-    messages = [...messages, { role: "user", text: contextMsg }];
-    hasSentLlmMessage = true;
-
-    const cleanContext = buildContext();
-    isLoadingLlm = true;
-    const msgIdx = messages.length;
-    messages = [...messages, { role: "assistant", html: "", text: "", actions: [], _streaming: true }];
-    scrollToBottom();
-
-    try {
-      const resp = await fetch("/api/v1/llm/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: contextMsg, context: cleanContext }),
-      });
-      const data = await resp.ok ? await resp.json() : { reply: "Sorry, something went wrong." };
-      const reply = data.reply || data.data?.reply || "";
-      const html = renderMarkdown(reply);
-      messages = messages.map((m, i) =>
-        i === msgIdx ? { ...m, html, text: reply, _streaming: false, actions: [] } : m,
-      );
-    } catch (err) {
-      messages = messages.map((m, i) =>
-        i === msgIdx ? { ...m, html: `<p>Network error: ${err.message}</p>`, _streaming: false } : m,
-      );
-    }
-    isLoadingLlm = false;
-    scrollToBottom();
   }
 
   let _configuring = false;
@@ -590,13 +583,30 @@
   <LlmSetupModal onConfigured={handleLlmConfigured} onDismiss={handleLlmDismiss} />
 {/if}
 
+{#if expandedPrompt}
+  <!-- Expanded prompt preview dialog -->
+  <div class="confirm-overlay" role="alertdialog" aria-modal="true" aria-label="Expanded Prompt"
+       onclick={handleExpandDismiss} onkeydown={() => {}} tabindex="0">
+    <div class="expand-box" onclick={(e) => e.stopPropagation()}>
+      <h3 class="expand-heading">Expanded Prompt: /{expandedPrompt.name}</h3>
+      <div class="expand-preview">{expandedPrompt.expanded}</div>
+      <p class="expand-hint">This is the expanded prompt that will be sent to the LLM.</p>
+      <div class="actions">
+        <button class="btn btn-primary" onclick={() => handleExpandConfirm(expandedPrompt.expanded)}>
+          Send to LLM
+        </button>
+        <button class="btn" onclick={handleExpandDismiss}>Cancel</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 {#if confirmRequest}
   <ConfirmDialog
     message={confirmRequest.message}
     batch={confirmRequest.batch || []}
-    onConfirm={handleConfirmCommand}
+    onSubmit={handleConfirmSubmit}
     onDismiss={() => { confirmRequest = null; }}
-    onFeedback={handleRejectFeedback}
   />
 {/if}
 
@@ -623,4 +633,59 @@
     border-top: 1px solid #333;
     background: #1a1a2e;
   }
+
+  /* ── Expanded prompt preview dialog ────────── */
+  .confirm-overlay {
+    position: absolute; inset: 0; background: rgba(0,0,0,0.6);
+    display: flex; align-items: center; justify-content: center; z-index: 100;
+  }
+  .expand-box {
+    background: #1e1e32; border: 1px solid #444; border-radius: 8px;
+    padding: 1.5rem 2rem;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    max-width: 680px;
+    width: 90%;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+  }
+  .expand-heading {
+    margin: 0 0 0.75rem 0;
+    color: #c0c0e0;
+    font-size: 1rem;
+  }
+  .expand-preview {
+    background: #16162a;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    color: #d0d0e0;
+    font-size: 0.88rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-y: auto;
+    max-height: 55vh;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .expand-hint {
+    color: #888;
+    font-size: 0.8rem;
+    margin: 0.5rem 0 0.75rem 0;
+  }
+  .actions {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .btn {
+    padding: 0.4rem 1rem; border: 1px solid #555; border-radius: 4px;
+    background: #2a2a3e; color: #e0e0e0; cursor: pointer; font-size: 0.85rem;
+  }
+  .btn:hover { background: #3a3a5a; }
+  .btn-primary {
+    background: #2a4a5a; color: #e0e0e0; border-color: #3a6a7a;
+  }
+  .btn-primary:hover { background: #3a5a6a; }
 </style>

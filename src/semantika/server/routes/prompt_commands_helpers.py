@@ -398,10 +398,81 @@ async def _execute_with_tools(
     return await _run_tool_loop(messages, tools, name, max_rounds)
 
 
+def _format_command_str(tokens: list[str], flags: dict[str, str]) -> str:
+    """Format a command with flags into a human-readable string.
+
+    E.g. ``["node", "add"]`` + ``{"label": "Alice"}`` → ``!node add --label Alice``
+    """
+    cmd = "!" + " ".join(tokens)
+    for k, v in flags.items():
+        if v:
+            cmd += f" --{k} {v}"
+        else:
+            cmd += f" --{k}"
+    return cmd
+
+
+def _resolve_feedback(
+    idx: int,
+    resolved: dict[int, bool],
+    feedback: dict[int, str] | str | None,
+) -> str | None:
+    """Resolve user feedback for a specific tool index.
+
+    Returns the feedback string if the tool was rejected and feedback
+    was provided, otherwise ``None``.
+    """
+    if not feedback:
+        return None
+    if resolved.get(idx, False):
+        return None  # approved — no feedback needed
+    if isinstance(feedback, dict):
+        return feedback.get(idx)
+    return feedback  # global feedback string
+
+
+def _inject_feedback_summary(
+    messages: list[dict],
+    tool_calls: list[ToolCall],
+    resolved: dict[int, bool],
+    feedback: dict[int, str] | str | None,
+) -> None:
+    """Inject a single summary user message for rejected tools.
+
+    Creates one ``user`` message that summarises rejected tools
+    + feedback, placed before the tool results so the LLM has context.
+    """
+    if not feedback:
+        return
+
+    parts: list[str] = []
+    for idx, tc in enumerate(tool_calls):
+        path, flags = _tc_path(tc)
+        approved = resolved.get(idx, False)
+        if approved:
+            continue
+        fb = _resolve_feedback(idx, resolved, feedback)
+        if not fb:
+            continue
+        cmd_str = _format_command_str(path.split("."), flags)
+        parts.append(f"- Rejected {cmd_str}: {fb}")
+
+    if not parts:
+        return
+
+    summary = "The user reviewed the proposed operations and provided the following feedback:\n\n" + "\n".join(parts) + \
+        "\n\nThe user is waiting for you to adjust your approach based on this feedback."
+    messages.append({
+        "role": "user",
+        "content": summary,
+    })
+
+
 async def resume_execution(
     session_id: str,
     decisions: dict | None = None,
     confirmed: bool | None = None,
+    feedback: dict | str | None = None,
 ) -> dict[str, Any]:
     """Resume a paused prompt command execution after user confirmation.
 
@@ -409,6 +480,8 @@ async def resume_execution(
         session_id: The session UUID from ``confirm_tool`` response.
         decisions: Per-tool-index approval dict (overrides confirmed).
         confirmed: Blanket approve/reject all tools.
+        feedback: User feedback for rejected tools. A dict maps tool
+            index to feedback string; a string is applied globally.
 
     Returns:
         Either a final ``{"type": "chat", ...}`` response, or another
@@ -434,6 +507,9 @@ async def resume_execution(
         blanket = confirmed or False
         resolved_decisions = {idx: blanket for idx in write_indices}
 
+    # Inject user feedback summary for rejected tools
+    _inject_feedback_summary(messages, tool_calls, resolved_decisions, feedback)
+
     # Process ALL tools in the batch
     for idx, tc in enumerate(tool_calls):
         path, flags = _tc_path(tc)
@@ -446,7 +522,12 @@ async def resume_execution(
                 except CommandError as exc:
                     cmd_result = {"error": str(exc), "suggestion": getattr(exc, "suggestion", "")}
             else:
-                cmd_result = {"error": f"User rejected !{' '.join(path.split('.'))}"}
+                fb = _resolve_feedback(idx, resolved_decisions, feedback)
+                if fb:
+                    cmd_str = _format_command_str(path.split("."), flags)
+                    cmd_result = {"error": f"User rejected {cmd_str}, with the feedback: {fb}"}
+                else:
+                    cmd_result = {"error": f"User rejected !{' '.join(path.split('.'))}"}
         else:
             continue
 
