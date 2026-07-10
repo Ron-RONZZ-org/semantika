@@ -22,7 +22,11 @@
 
   /** @type {{
    *   name: string,
+   *   description: string,
+   *   template: string,
    *   expanded: string,
+   *   args: string[],
+   *   param_count: number,
    *   raw: string,
    * } | null} */
   let expandedPrompt = $state(null);
@@ -136,7 +140,11 @@
         const expandData = await expandResp.json();
         expandedPrompt = {
           name: expandData.name,
+          description: expandData.description || "",
+          template: expandData.template || "",
           expanded: expandData.expanded,
+          args: parsed.args || [],
+          param_count: expandData.param_count || 0,
           raw: trimmed,
         };
         // Track which user message this expand dialog relates to.
@@ -319,6 +327,40 @@
 
   function escapeHtml(str) {
     return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  /**
+   * Build a substitution map from a template like "Review $1 in $2" and args.
+   * Returns [{placeholder: "$1", value: "7 days"}, {placeholder: "$2", value: "productivity"}].
+   * Also handles $ARGUMENTS as a catch-all for all remaining args.
+   */
+  function buildSubstitutionMap(template, args) {
+    if (!template || !args || args.length === 0) return [];
+    const map = [];
+    const used = new Set();
+    // Find $N markers in order of appearance
+    const markerRe = /\$(\d+|\bARGUMENTS\b)/g;
+    let match;
+    while ((match = markerRe.exec(template)) !== null) {
+      const key = match[0];
+      if (used.has(key)) continue;
+      used.add(key);
+      if (key === "$ARGUMENTS") {
+        map.push({ placeholder: "$ARGUMENTS", value: args.join(" ") });
+      } else {
+        const n = parseInt(match[1], 10);
+        if (n >= 1 && n <= args.length) {
+          map.push({ placeholder: `$${n}`, value: args[n - 1] });
+        } else {
+          map.push({ placeholder: `$${n}`, value: "(no argument)" });
+        }
+      }
+    }
+    // If no markers found in the template, show the args as-is
+    if (map.length === 0 && args.length > 0) {
+      map.push({ placeholder: "args", value: args.join(" ") });
+    }
+    return map;
   }
 
   /** Send the expanded prompt to the LLM as a normal chat message. */
@@ -599,12 +641,37 @@
 
 {#if expandedPrompt}
   <!-- Expanded prompt preview dialog -->
+  {@const subs = buildSubstitutionMap(expandedPrompt.template, expandedPrompt.args)}
   <div class="confirm-overlay" role="alertdialog" aria-modal="true" aria-label="Expanded Prompt"
        onclick={handleExpandDismiss} onkeydown={() => {}} tabindex="0">
     <div class="expand-box" onclick={(e) => e.stopPropagation()}>
-      <h3 class="expand-heading">Expanded Prompt: /{expandedPrompt.name}</h3>
-      <div class="expand-preview">{expandedPrompt.expanded}</div>
-      <p class="expand-hint">This is the expanded prompt that will be sent to the LLM.</p>
+      <div class="expand-header">
+        <h3 class="expand-heading">/{expandedPrompt.name}</h3>
+        {#if expandedPrompt.description}
+          <p class="expand-desc">{expandedPrompt.description}</p>
+        {/if}
+      </div>
+
+      {#if subs.length > 0}
+        <div class="expand-section">
+          <h4 class="expand-section-title">Substitutions</h4>
+          <table class="expand-map">
+            {#each subs as s}
+              <tr>
+                <td class="expand-ph">{s.placeholder}</td>
+                <td class="expand-arrow">&rarr;</td>
+                <td class="expand-val">{s.value}</td>
+              </tr>
+            {/each}
+          </table>
+        </div>
+      {/if}
+
+      <div class="expand-section">
+        <h4 class="expand-section-title">Final message sent to LLM</h4>
+        <div class="expand-preview">{expandedPrompt.expanded}</div>
+      </div>
+
       <div class="actions">
         <button class="btn btn-primary" onclick={() => handleExpandConfirm(expandedPrompt.expanded)}>
           Send to LLM
@@ -655,18 +722,59 @@
   }
   .expand-box {
     background: #1e1e32; border: 1px solid #444; border-radius: 8px;
-    padding: 1.5rem 2rem;
+    padding: 1.25rem 1.5rem;
     box-shadow: 0 4px 20px rgba(0,0,0,0.4);
     max-width: 680px;
     width: 90%;
-    max-height: 80vh;
+    max-height: 85vh;
     display: flex;
     flex-direction: column;
+    gap: 0.75rem;
+  }
+  .expand-header {
+    border-bottom: 1px solid #333;
+    padding-bottom: 0.5rem;
   }
   .expand-heading {
-    margin: 0 0 0.75rem 0;
+    margin: 0;
     color: #c0c0e0;
-    font-size: 1rem;
+    font-size: 1.05rem;
+    font-weight: 600;
+  }
+  .expand-desc {
+    margin: 0.2rem 0 0 0;
+    color: #888;
+    font-size: 0.82rem;
+  }
+  .expand-section-title {
+    margin: 0 0 0.35rem 0;
+    color: #aaa;
+    font-size: 0.85rem;
+    font-weight: 500;
+  }
+  .expand-map {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: monospace;
+    font-size: 0.82rem;
+  }
+  .expand-map td {
+    padding: 0.2rem 0.4rem;
+    border-bottom: 1px solid #2a2a2a;
+  }
+  .expand-ph {
+    color: #d0a070;
+    min-width: 5rem;
+    font-weight: 600;
+  }
+  .expand-arrow {
+    color: #555;
+    width: 1.5rem;
+    text-align: center;
+  }
+  .expand-val {
+    color: #b0c0b0;
+    word-break: break-all;
   }
   .expand-preview {
     background: #16162a;
