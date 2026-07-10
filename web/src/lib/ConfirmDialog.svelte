@@ -112,9 +112,9 @@
 </script>
 
 <div class="confirm-overlay" role="alertdialog" aria-modal="true" aria-label="Confirm"
-     onclick|self={onDismiss}
+     onclick={(e) => { if (e.target === e.currentTarget) onDismiss(); }}
      onkeydown={trapKeydown} bind:this={overlay} tabindex="0">
-  <div class="confirm-box">
+  <div class="confirm-box" onclick={(e) => e.stopPropagation()}>
     <p class="confirm-message">{message}</p>
 
     {#if batch.length > 0}
