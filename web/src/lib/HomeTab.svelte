@@ -13,6 +13,7 @@
   import { shouldIntercept } from "./commandRouter.js";
   import { banner } from "./bannerStore.svelte.js";
   import { splitCommands, isMultiCommand } from "@lightercore/ui/multiCommand.js";
+  import { formatConversationText, copyToClipboard } from "@lightercore/ui/conversationUtils.js";
 
   let hasSentLlmMessage = $state(false);
   let showLlmSetup = $state(false);
@@ -50,6 +51,8 @@
   let saveCommand = $state("");
   let saveHint = $state("");
   let copiedIndex = $state(-1);
+  let copiedConversation = $state(false);
+  let clearConfirm = $state(false);
 
   let stats = $state(null);
 
@@ -653,6 +656,19 @@
     }
   }
 
+  // ── Conversation toolbar ───────────────────────────────────────
+  async function handleCopyConversation() {
+    const text = formatConversationText(messages, { userLabel: "You", assistantLabel: "Semantika" });
+    await copyToClipboard(text);
+    copiedConversation = true;
+    setTimeout(() => { copiedConversation = false; }, 1500);
+  }
+
+  function handleClearConversation() {
+    messages = [];
+    clearConfirm = false;
+  }
+
   // MessageList callbacks
   function handleCopy(index) {
     copiedIndex = index;
@@ -698,8 +714,36 @@
     />
   </div>
 
-  <div class="input-container" class:at-bottom={hasSentLlmMessage}>
-    <ChatInput centered={!hasSentLlmMessage} onSubmit={handleSubmit} />
+  {#if messages.length > 0}
+    <div class="conversation-toolbar">
+      <button class="toolbar-btn" onclick={handleCopyConversation} title="Copy conversation to clipboard">
+        {#if copiedConversation}
+          &#10003; Copied
+        {:else}
+          &#128203; Copy conversation
+        {/if}
+      </button>
+      <button class="toolbar-btn toolbar-btn-danger" onclick={() => { clearConfirm = true; }} title="Clear all messages">
+        &#128465; Clear chat
+      </button>
+    </div>
+  {/if}
+
+  {#if clearConfirm}
+    <div class="clear-overlay" role="alertdialog" aria-label="Clear conversation"
+         onclick={() => { clearConfirm = false; }}>
+      <div class="clear-box" role="presentation" onclick={(e) => e.stopPropagation()}>
+        <p class="clear-message">Clear all conversation messages? This cannot be undone.</p>
+        <div class="actions">
+          <button class="btn btn-danger" onclick={handleClearConversation}>Clear</button>
+          <button class="btn" onclick={() => { clearConfirm = false; }}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <div class="input-container" class:at-bottom={hasSentLlmMessage || messages.length > 0}>
+    <ChatInput centered={!hasSentLlmMessage && messages.length === 0} onSubmit={handleSubmit} />
   </div>
 </div>
 
@@ -773,6 +817,53 @@
     overflow-y: auto;
     min-height: 0;
   }
+  /* ── Conversation toolbar ───────────────────── */
+  .conversation-toolbar {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    padding: 0.25rem 1rem 0.5rem;
+    flex-shrink: 0;
+  }
+  .toolbar-btn {
+    background: transparent;
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 0.25rem 0.6rem;
+    font-family: monospace;
+    font-size: 0.75rem;
+    color: #7c7c9a;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .toolbar-btn:hover { background: #2a2a44; color: #b0b0c0; border-color: #6a6a8a; }
+  .toolbar-btn-danger:hover { background: #3a1a1a; color: #ba6a6a; border-color: #8a3a3a; }
+
+  /* ── Clear chat confirm dialog ──────────────── */
+  .clear-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100;
+  }
+  .clear-box {
+    background: #1e1e32;
+    border: 1px solid #444;
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem;
+    max-width: 400px;
+    width: 90%;
+  }
+  .clear-message {
+    margin: 0 0 0.75rem 0;
+    color: #e0e0e0;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    text-align: center;
+  }
+  .btn-danger { background: #4a2a2a; border-color: #7a3a3a; color: #e0e0e0; }
+  .btn-danger:hover { background: #6a3a3a; }
+
   .input-container {
     padding: 0.75rem 1rem;
     flex-shrink: 0;
