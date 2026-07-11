@@ -70,6 +70,26 @@ def _load_user_prompt() -> str:
     return load_system_prompt()
 
 
+# ── Template flow session tracking ──────────────────────────────────
+
+# Separate tracking for /template two-turn flow, kept outside lightercore's
+# _pending_executions because lightercore.resume_execution pops the session
+# state and does not preserve custom annotations.
+_template_flow_sessions: dict[str, dict] = {}
+
+
+def _annotate_template_flow(session_id: str, user_description: str) -> None:
+    """Annotate a pending execution session with template flow context.
+
+    Called when turn 1 returns ``confirm_tool``, signalling that after
+    the tool loop resumes and completes, turn 2 should be started
+    automatically via :func:`_run_template_turn2`.
+    """
+    _template_flow_sessions[session_id] = {
+        "user_description": user_description,
+    }
+
+
 # ── Resume (wrapper around lightercore) ──────────────────────────────
 
 
@@ -84,7 +104,7 @@ async def resume_execution(
     Thin wrapper around :func:`lightercore.llm.tool_loop.resume_execution`
     that adds semantika-specific features:
     - ``CommandError``/``suggestion`` in dispatch results
-    - ``/template`` two-turn flow continuation
+    - ``/template`` two-turn flow continuation (via ``_template_flow_sessions``)
 
     Returns:
         Either a final ``{"type": "chat", ...}`` response, or another
@@ -93,6 +113,9 @@ async def resume_execution(
     from fastapi import HTTPException
 
     from lightercore.llm.tool_loop import resume_execution as _lc_resume
+
+    # Save template flow context before _lc_resume consumes the session
+    template_flow = _template_flow_sessions.pop(session_id, None)
 
     # Dispatch wrapper that catches CommandError and extracts suggestion
     def _dispatch_wrapper(path: str, flags: dict) -> dict:
@@ -119,36 +142,19 @@ async def resume_execution(
 
     # Post-processing: confirm_tool (nested) or template flow or chat
     if isinstance(raw_result, dict) and raw_result.get("type") == "confirm_tool":
+        # Nested confirm_tool — preserve template flow annotation for next resume
+        if template_flow and "session_id" in raw_result:
+            _template_flow_sessions[raw_result["session_id"]] = template_flow
         return raw_result
 
     # ── Template flow: turn 1 completed → proceed to turn 2 ──────────
-    from lightercore.llm.tool_loop import _pending_executions
-    from semantika.server.routes.prompt_commands_helpers import (
-        _annotate_template_flow,
-        _run_template_turn2,
-    )
+    if template_flow and isinstance(raw_result, str) and raw_result.strip():
+        return await _run_template_turn2(
+            predicate_summary=raw_result,
+            user_description=template_flow["user_description"],
+        )
 
-    # Check if the original session had template_flow annotation.
-    # We need a way to know — simplest: the \_lc_resume consumed the
-    # session from \_pending_executions, but we stored template_flow
-    # separately via \_annotate_template_flow.  Since \_pending_executions
-    # is shared (both lightcore and semantika use the same in-memory
-    # store), we cannot recover the annotation after pop.
-
-    # For now, template flow HITL continuation uses the existing
-    # mechanism: \_annotate_template_flow adds the annotation *before*
-    # the confirm_tool return, so when \_lc_resume processes it, the
-    # annotation is in the session state — but \_lc_resume ignores it.
-    # This means: \_annotate_template_flow + \_pending_executions need
-    # to stay in sync.
-    #
-    # The annotation is consumed by the callers of \_run_template_turn2
-    # after \_lc_resume returns.  Since we can't get it back from the
-    # popped state, we instead handle template flow continuation
-    # entirely in \_execute_with_tools_flow below.
-
-    # ---
-    # Fallback: format as chat response
+    # ── Fallback: format as chat response ─────────────────────────────
     reply = raw_result if isinstance(raw_result, str) and raw_result.strip() else None
     if reply:
         return {
@@ -156,6 +162,12 @@ async def resume_execution(
             "title": "Prompt Command",
             "data": {"html": _render_markdown(reply), "actions": []},
         }
+
+    return {
+        "type": "chat",
+        "title": "Prompt Command",
+        "data": {"html": "<p><em>(command completed)</em></p>", "actions": []},
+    }
 
     return {
         "type": "chat",
@@ -380,21 +392,6 @@ async def _run_template_turn2(
         "title": "/template",
         "data": {"html": "<p><em>Template generation produced no output.</em></p>", "actions": []},
     }
-
-
-def _annotate_template_flow(session_id: str, user_description: str) -> None:
-    """Annotate a pending execution session with template flow context.
-
-    Called when turn 1 returns ``confirm_tool``, so that
-    :func:`resume_execution` knows to continue to turn 2 after
-    turn 1's tool loop finishes.
-    """
-    from lightercore.llm.tool_loop import _pending_executions
-
-    if session_id in _pending_executions:
-        _pending_executions[session_id]["template_flow"] = {
-            "user_description": user_description,
-        }
 
 
 async def execute_template_flow(data: dict[str, Any]) -> dict[str, Any]:
