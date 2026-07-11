@@ -20,7 +20,7 @@ from lightercore.llm.base import ChatResult, ToolCall
 from semantika.server.app import create_app
 
 
-@pytest.fixture(scope="class")
+@pytest.fixture
 def client() -> TestClient:
     """Return a TestClient with an isolated test DB."""
     app = create_app()
@@ -167,8 +167,16 @@ class TestConfirmationGate:
 
     @pytest.fixture(autouse=True)
     def _setup(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        # Isolate both config and data directories per test.
         monkeypatch.setenv("SEMANTIKA_CONFIG_DIR", str(tmp_path))
+        monkeypatch.setenv("SEMANTIKA_DATA_DIR", str(tmp_path))
         _create_prompt_command(tmp_path, "merge-nodes", self.MERGE_TEMPLATE)
+        # Reset DB/services singletons so this test starts clean regardless
+        # of state left by previous test classes.
+        from semantika.graph.db import close_db, reset_services
+        close_db()
+        reset_services()
+        yield
 
     @staticmethod
     def _make_nodes(**ids: str) -> None:

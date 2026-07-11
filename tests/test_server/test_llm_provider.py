@@ -354,9 +354,10 @@ class TestGetCommandDefinitions:
             }
         ]
         defs = get_command_definitions(tree)
-        assert len(defs) == 3
+        # Bare group node "node" (no handler, only children) is correctly
+        # excluded — only leaf commands appear in the flattened list.
+        assert len(defs) == 2
         by_path = {tuple(d["path"]): d for d in defs}
-        assert ("node",) in by_path
         assert ("node", "list") in by_path
         assert ("node", "add") in by_path
         assert "flags" in by_path[("node", "add")]
