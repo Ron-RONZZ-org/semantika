@@ -128,10 +128,22 @@ def cmd_template_save(remaining: list[str], flags: dict[str, str]) -> dict:
         raise CommandValidationError(f"Failed to save template '{name}': {e}")
 
     logger.info("Template '%s' saved to %s", name, dest)
+
+    # Build usage string for LLM to include in its final answer
+    params_list = parsed.get("params", [])
+    param_names = [
+        p["name"] for p in params_list
+        if isinstance(p, dict) and isinstance(p.get("name"), str) and p["name"].strip()
+    ]
+    usage_parts = [f"!triple add --template {name}"]
+    usage_parts += [f"--{p} <{p}>" for p in param_names]
+    usage = " \\\n    ".join(usage_parts)
+
     return {
         "message": f"Template '{name}' saved to {dest}",
         "path": str(dest),
         "name": name,
-        "param_count": len(parsed.get("params", [])),
+        "param_count": len(params_list),
         "triple_count": len(parsed.get("triples", [])),
+        "usage": usage,
     }
