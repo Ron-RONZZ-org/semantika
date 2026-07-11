@@ -83,13 +83,8 @@ describe("popup", () => {
     expect(popup.current.data).toEqual({ msgs: [1, 2] });
   });
 
-  it("cache is initially empty arrays", () => {
-    expect(popup.cache).toEqual({
-      nodes: [],
-      predicates: [],
-      triples: [],
-      units: [],
-    });
+  it("cache is initially empty", () => {
+    expect(popup.cache).toEqual({});
   });
 
   it("cache is populated after show with data", () => {
@@ -104,7 +99,8 @@ describe("popup", () => {
     });
     expect(popup.cache.nodes).toEqual([{ id: "n1" }]);
     expect(popup.cache.triples).toEqual([{ s: "n1", p: "p1", o: "n2" }]);
-    expect(popup.cache.predicates).toEqual([]);
+    // predicates was never set — only keys present after updateCache
+    expect(popup.cache.predicates).toBeUndefined();
   });
 
   it("updateCache merges new data into cache", () => {
