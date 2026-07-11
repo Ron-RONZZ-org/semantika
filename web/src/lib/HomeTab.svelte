@@ -730,8 +730,9 @@
   {/if}
 
   {#if clearConfirm}
-    <div class="clear-overlay" role="alertdialog" aria-label="Clear conversation"
-         onclick={() => { clearConfirm = false; }}>
+    <div class="clear-overlay" role="alertdialog" aria-modal="true" aria-label="Clear conversation"
+         onclick={() => { clearConfirm = false; }}
+         onkeydown={(e) => { if (e.key === 'Escape') clearConfirm = false; }} tabindex="0">
       <div class="clear-box" role="presentation" onclick={(e) => e.stopPropagation()}>
         <p class="clear-message">Clear all conversation messages? This cannot be undone.</p>
         <div class="actions">
