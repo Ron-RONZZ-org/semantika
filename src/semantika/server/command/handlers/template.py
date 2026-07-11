@@ -121,12 +121,13 @@ def cmd_template_save(remaining: list[str], flags: dict[str, str]) -> dict:
         if not isinstance(t, str):
             raise CommandValidationError(
                 f"Triple #{i + 1} must be a string, got {type(t).__name__}. "
-                f"Expected format: '{{subject}} rs:predicate {{object}} --str'\n"
+                f"Expected format: '{{subject}} rs:predicate {{object}} [--flag]'\n"
                 f"Instead of dict format:\n"
                 f"  bad:  - subject: '{{subject}}'\n"
                 f"        - predicate: 'rs:predicate'\n"
                 f"        - object: '{{object}}'\n"
-                f"  good: - '{{subject}} rs:predicate {{object}} --str'"
+                f"  good: - '{{subject}} rs:predicate {{object}}'       # URI ref (no flag)\n"
+                f"  good: - '{{subject}} rs:predicate {{object}} --str' # string literal"
             )
 
     name = parsed["name"]
