@@ -364,31 +364,30 @@ def _inject_feedback_summary(
     resolved: dict[int, bool],
     feedback: dict[int, str] | str | None,
 ) -> None:
-    """Inject a single summary user message for rejected tools.
+    """Inject a user message summarising the user's decisions on proposed tool calls.
 
-    Creates one ``user`` message that summarises rejected tools
-    + feedback, placed before the tool results so the LLM has context.
+    Creates one ``user`` message listing each tool call and whether it was
+    approved or rejected, with any user-provided feedback text. Placed before
+    the tool results so the LLM has context on the next round.
     """
-    if not feedback:
-        return
-
     parts: list[str] = []
     for idx, tc in enumerate(tool_calls):
         path, flags = _tc_path(tc)
         approved = resolved.get(idx, False)
-        if approved:
-            continue
-        fb = _resolve_feedback(idx, resolved, feedback)
-        if not fb:
-            continue
         cmd_str = _format_command_str(path.split("."), flags)
-        parts.append(f"- Rejected {cmd_str}: {fb}")
+        if approved:
+            parts.append(f"- Approved: {cmd_str}")
+        else:
+            fb = _resolve_feedback(idx, resolved, feedback)
+            if fb:
+                parts.append(f"- Rejected: {cmd_str} (feedback: {fb})")
+            else:
+                parts.append(f"- Rejected: {cmd_str}")
 
     if not parts:
         return
 
-    summary = "The user reviewed the proposed operations and provided the following feedback:\n\n" + "\n".join(parts) + \
-        "\n\nThe user is waiting for you to adjust your approach based on this feedback."
+    summary = "The user reviewed the proposed operations:\n\n" + "\n".join(parts)
     messages.append({
         "role": "user",
         "content": summary,
@@ -598,23 +597,24 @@ async def _run_template_turn2(
         from semantika.server.llm.prompt_defaults import DEFAULT_TURN2
         turn2_text = _expand_turn_prompt(DEFAULT_TURN2, turn2_vars)
 
+    turn2_system = (
+        "You are a YAML template generator for the Semantika knowledge graph. "
+        "Your job is to generate valid YAML triple templates and save them "
+        "using the available tools.\n\n"
+        "Available tools:\n"
+        "- **template.save** — Save a YAML template file to disk "
+        "(WRITE-level, requires user confirmation).\n"
+        "- **template.list** — Check existing template names (no confirmation).\n"
+        "- **template.view** — Inspect a template's full structure (no confirmation).\n"
+        "- **predicate.search** — Find predicate IDs by keyword (no confirmation).\n\n"
+        "Important: Always generate the YAML content first, then call "
+        "``template.save --yaml <content>`` to persist it. The user will "
+        "be prompted to approve the save operation."
+    )
     turn2_messages = [
         {
             "role": "system",
-            "content": (
-                "You are a YAML template generator for the Semantika knowledge graph. "
-                "Your job is to generate valid YAML triple templates and save them "
-                "using the available tools.\n\n"
-                "Available tools:\n"
-                "- **template.save** — Save a YAML template file to disk "
-                "(WRITE-level, requires user confirmation).\n"
-                "- **template.list** — Check existing template names (no confirmation).\n"
-                "- **template.view** — Inspect a template's full structure (no confirmation).\n"
-                "- **predicate.search** — Find predicate IDs by keyword (no confirmation).\n\n"
-                "Important: Always generate the YAML content first, then call "
-                "``template.save --yaml <content>`` to persist it. The user will "
-                "be prompted to approve the save operation."
-            ),
+            "content": load_system_prompt() + "\n\n" + turn2_system,
         },
         {"role": "user", "content": turn2_text},
     ]
@@ -741,22 +741,22 @@ async def execute_template_flow(data: dict[str, Any]) -> dict[str, Any]:
         from semantika.server.llm.prompt_defaults import DEFAULT_TURN1
         turn1_text = _expand_turn_prompt(DEFAULT_TURN1, {"ARGUMENTS": user_description})
 
+    turn1_system = (
+        "You are a predicate discovery assistant for the Semantika "
+        "knowledge graph.\n\n"
+        "Use the **predicate.search** tool to find existing predicates. "
+        "Each call returns matching predicate IDs and labels. "
+        "Try different keyword variations to get broad coverage.\n\n"
+        "If a predicate you need does not exist, create it with "
+        "**predicate.add**.\n\n"
+        "Once you have a good set of predicates (both existing and "
+        "newly created), provide a concise summary listing the "
+        "predicate IDs you found or created."
+    )
     turn1_messages = [
         {
             "role": "system",
-            "content": (
-                "You are a predicate discovery assistant for the Semantika "
-                "knowledge graph.\n\n"
-                "Use the **predicate.search** tool to find existing predicates. "
-                "Each call returns matching predicate IDs and labels. "
-                "Try different keyword variations to get broad coverage.\n\n"
-                "If a predicate you need does not exist, create it with "
-                "**predicate.add**.  Follow the naming conventions from "
-                "the user's AGENTS.md style file.\n\n"
-                "Once you have a good set of predicates (both existing and "
-                "newly created), provide a concise summary listing the "
-                "predicate IDs you found or created."
-            ),
+            "content": load_system_prompt() + "\n\n" + turn1_system,
         },
         {"role": "user", "content": turn1_text},
     ]
