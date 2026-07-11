@@ -1,50 +1,44 @@
 """API routes for file-based prompt commands (/ prefix).
 
-Provides four endpoints:
+Endpoints:
 - GET  /api/v1/prompt-commands/list      — autocomplete source
 - POST /api/v1/prompt-commands/expand    — preview expanded template
-- POST /api/v1/prompt-commands/execute   — expand + send to LLM (sync JSON)
+- POST /api/v1/prompt-commands/execute   — expand + multi-round tool loop
 - POST /api/v1/prompt-commands/execute/stream — SSE streaming
 - POST /api/v1/prompt-commands/execute/resume — resume after HITL confirm
 
-All heavy logic is in ``prompt_commands_helpers.py``.
+The execute endpoint uses lightercore's unified ``execute_prompt_command()``
+for the full pipeline.  The ``/template`` special case redirects to the
+semantika-specific two-turn template flow.
 """
 
 from __future__ import annotations
 
-import inspect
-import json
 import logging
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-import re
-
+from lightercore.llm.base import defs_to_tools
 from lightercore.prompt_commands import (
-    _ARGUMENTS_RE,
-    _PARAM_RE,
+    execute_prompt_command,
     expand_prompt_template,
     list_prompt_commands,
     load_prompt_command,
+    prompt_command_event_stream,
 )
 
-from semantika.server.routes.prompt_commands_helpers import (
-    _commands_dir,
-    _execute_with_tools,
-    _parse_tool_domains,
-    _render_markdown,
-    execute_template_flow,
-    resume_execution,
+from semantika.server.command.registry import (
+    dispatch_path,
+    get_command_definitions,
+    get_command_level,
+    get_handler_metadata,
 )
-
 from semantika.server.llm.provider import get_provider
+from semantika.server.llm.system_prompt import load_system_prompt
 from semantika.server.routes.prompt_commands_helpers import (
-    _build_prompt_messages,
     _commands_dir,
-    _execute_with_tools,
-    _parse_tool_domains,
     _render_markdown,
     execute_template_flow,
     resume_execution,
@@ -61,7 +55,6 @@ router = APIRouter(prefix="/api/v1/prompt-commands", tags=["prompt-commands"])
 @router.get("/list")
 async def list_commands_endpoint() -> list[dict[str, Any]]:
     """Return all available prompt commands (name + description).
-
     Used by the frontend for autocomplete.
     """
     cmds = list_prompt_commands(Path(_commands_dir()))
@@ -77,7 +70,6 @@ async def list_commands_endpoint() -> list[dict[str, Any]]:
 @router.post("/expand")
 async def expand_endpoint(data: dict[str, Any]) -> dict[str, Any]:
     """Expand a prompt command template with positional args.
-
     Returns 404 if the command file does not exist.
     """
     name = data.get("name", "").strip()
@@ -99,17 +91,6 @@ async def expand_endpoint(data: dict[str, Any]) -> dict[str, Any]:
 
     expanded = expand_prompt_template(cmd.template, args)
 
-    # If the template has no $N / $ARGUMENTS placeholders but the user
-    # provided args, append the args as free-form text so the preview
-    # shows the full message the LLM will receive.
-    if args and not _PARAM_RE.search(cmd.template) and not _ARGUMENTS_RE.search(cmd.template):
-        user_text = " ".join(args)
-        if user_text:
-            if expanded.endswith((".", "!", "?", "\n")):
-                expanded += "\n\n" + user_text
-            else:
-                expanded += "\n\n" + user_text
-
     return {
         "name": cmd.name,
         "description": cmd.description,
@@ -124,7 +105,12 @@ async def expand_endpoint(data: dict[str, Any]) -> dict[str, Any]:
 
 @router.post("/execute")
 async def execute_endpoint(data: dict[str, Any]) -> dict[str, Any]:
-    """Expand a prompt command and execute with multi-round tool-calling."""
+    """Expand a prompt command and execute with multi-round tool-calling.
+
+    Delegates to :func:`~lightercore.prompt_commands.execute_prompt_command`
+    for the standard pipeline.  The ``/template`` command has its own
+    two-turn flow.
+    """
     name = data.get("name", "").strip()
     args = data.get("args", [])
 
@@ -135,55 +121,35 @@ async def execute_endpoint(data: dict[str, Any]) -> dict[str, Any]:
     if name.lower() == "template":
         return await execute_template_flow(data)
 
-    # Standard flow: expand template + multi-round tool-calling
-    cmd = load_prompt_command(Path(_commands_dir()), name)
-    if cmd is None:
-        available = [c.name for c in list_prompt_commands(Path(_commands_dir()))]
+    # Dispatch wrapper that catches CommandError and extracts suggestion
+    def _dispatch_path(path: str, flags: dict) -> dict:
+        try:
+            return dispatch_path(path, flags)
+        except Exception as exc:
+            from semantika.server.command.errors import CommandError
+            if isinstance(exc, CommandError):
+                return {"error": str(exc), "suggestion": getattr(exc, "suggestion", "")}
+            return {"error": str(exc)}
+
+    result = await execute_prompt_command(
+        name=name,
+        args=args,
+        commands_dir=Path(_commands_dir()),
+        provider=get_provider(),
+        system_prompt_loader=load_system_prompt,
+        definitions_loader=get_command_definitions,
+        dispatch_fn=_dispatch_path,
+        get_handler_metadata_fn=get_handler_metadata,
+        get_command_level_fn=get_command_level,
+        title_prefix="/",
+    )
+
+    if result.get("status_code"):
         raise HTTPException(
-            status_code=404,
-            detail=(
-                f"Prompt command '{name}' not found. "
-                f"Available: {', '.join(available) or '(none)'}"
-            ),
+            status_code=result["status_code"],
+            detail=result.get("detail", ""),
         )
-
-    expanded = expand_prompt_template(cmd.template, args)
-
-    # Parse tool domain declaration
-    allowed_domains = _parse_tool_domains(cmd.template, frontmatter_tools=cmd.tools)
-
-    provider = get_provider()
-    if not provider.available:
-        return {
-            "type": "status",
-            "title": f"/{name}",
-            "data": {
-                "message": (
-                    "LLM not configured. "
-                    "Use !llm configure or set up a provider in Settings."
-                ),
-            },
-        }
-
-    result = await _execute_with_tools(expanded, name, allowed_domains=allowed_domains)
-
-    if isinstance(result, dict) and result.get("type") == "confirm_tool":
-        return result
-
-    reply = result if isinstance(result, str) and result.strip() else None
-    if reply:
-        html = _render_markdown(reply)
-        return {
-            "type": "chat",
-            "title": f"/{name}",
-            "data": {"html": html, "actions": []},
-        }
-
-    return {
-        "type": "chat",
-        "title": f"/{name}",
-        "data": {"html": "<p><em>(empty response)</em></p>", "actions": []},
-    }
+    return result
 
 
 # ── POST /execute/resume ───────────────────────────────────────────────
@@ -219,10 +185,10 @@ async def resume_execution_endpoint(data: dict[str, Any]) -> dict[str, Any]:
 
 @router.post("/execute/stream")
 async def execute_stream_endpoint(data: dict[str, Any]) -> StreamingResponse:
-    """Streaming variant of ``/execute`` — returns SSE.
+    """Streaming variant of ``/execute`` — SSE without tool-calling.
 
-    Streams tokens as ``data: {"token": "..."}`` events, terminated by
-    ``data: [DONE]``.
+    Delegates to :func:`~lightercore.prompt_commands.prompt_command_event_stream`
+    for the shared SSE generation.
     """
     name = data.get("name", "").strip()
     args = data.get("args", [])
@@ -230,48 +196,14 @@ async def execute_stream_endpoint(data: dict[str, Any]) -> StreamingResponse:
     if not name:
         raise HTTPException(status_code=400, detail="'name' is required.")
 
-    cmd = load_prompt_command(Path(_commands_dir()), name)
-
-    async def event_stream():
-        if cmd is None:
-            available = [c.name for c in list_prompt_commands(Path(_commands_dir()))]
-            msg = (
-                f"Prompt command '{name}' not found. "
-                f"Available: {', '.join(available) or '(none)'}"
-            )
-            yield f"data: {json.dumps({'token': msg})}\n\n"
-            yield "data: [DONE]\n\n"
-            return
-
-        expanded = expand_prompt_template(cmd.template, args)
-
-        provider = get_provider()
-        if not provider.available:
-            yield f"data: {json.dumps({'token': 'LLM not configured. Use !llm configure or set up a provider in Settings.'})}\n\n"
-            yield "data: [DONE]\n\n"
-            return
-
-        try:
-            messages = _build_prompt_messages(expanded)
-            result = await provider.chat(messages, stream=True)
-            if inspect.isasyncgen(result):
-                # Wrap in timeout to prevent hanging LLM connections
-                import asyncio
-                try:
-                    async with asyncio.timeout(120):
-                        async for token in result:
-                            yield f"data: {json.dumps({'token': token})}\n\n"
-                except TimeoutError:
-                    yield f"data: {json.dumps({'token': 'Error: LLM streaming timed out after 120s'})}\n\n"
-            else:
-                yield f"data: {json.dumps({'token': str(result)})}\n\n"
-        except Exception as exc:
-            yield f"data: {json.dumps({'token': f'Error: {exc}'})}\n\n"
-        finally:
-            yield "data: [DONE]\n\n"
-
     return StreamingResponse(
-        event_stream(),
+        prompt_command_event_stream(
+            name=name,
+            args=args,
+            commands_dir=Path(_commands_dir()),
+            provider=get_provider(),
+            system_prompt_loader=load_system_prompt,
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
