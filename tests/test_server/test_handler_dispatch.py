@@ -401,6 +401,7 @@ class TestRegistryReset:
             "_group_descriptions": dict(reg._group_descriptions),
             "_interactive_forms": dict(reg._interactive_forms),
             "_system_commands": dict(reg._system_commands),
+            "_hook_sources": dict(reg._hook_sources),
             "_command_tree_cache": reg._command_tree_cache,
             "_command_defs_cache": reg._command_defs_cache,
         }
@@ -414,6 +415,8 @@ class TestRegistryReset:
             reg._interactive_forms.update(saved["_interactive_forms"])
             reg._system_commands.clear()
             reg._system_commands.update(saved["_system_commands"])
+            reg._hook_sources.clear()
+            reg._hook_sources.update(saved["_hook_sources"])
             reg._command_tree_cache = saved["_command_tree_cache"]
             reg._command_defs_cache = saved["_command_defs_cache"]
 

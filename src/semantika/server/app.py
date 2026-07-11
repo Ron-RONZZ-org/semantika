@@ -66,8 +66,8 @@ def create_app(no_hooks: bool = False) -> FastAPI:
 
     Args:
         no_hooks: If True, skip loading user-defined hooks from
-            ``~/.config/semantika/hooks.py``.  Useful for debugging
-            or when the hooks file is known to be problematic.
+            ``~/.config/semantika/hooks/``.  Useful for debugging
+            or when the hooks directory is known to be problematic.
 
             When called via a uvicorn import string (``factory=True``),
             the caller should set ``SEMANTIKA_NO_HOOKS=1`` in the
@@ -110,10 +110,7 @@ def create_app(no_hooks: bool = False) -> FastAPI:
     # Freeze system handlers, then load user hooks (unless --no-hooks)
     from semantika.server.command.registry import freeze_system_commands, load_user_hooks
     freeze_system_commands()
-    if not no_hooks:
-        load_user_hooks()
-    else:
-        logger.info("User hooks disabled by --no-hooks flag")
+    load_user_hooks(no_hooks=no_hooks)
 
     # Catch-all API 404 handler: unknown /api/* paths return JSON,
     # not index.html (which the static mount would otherwise serve).

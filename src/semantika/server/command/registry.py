@@ -11,7 +11,9 @@ The command tree for frontend autocomplete is auto-generated from registrations.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from lightercore.permissions import PermissionLevel
@@ -163,6 +165,7 @@ def reset_registry() -> None:
     _group_descriptions.clear()
     _interactive_forms.clear()
     _system_commands.clear()
+    _hook_sources.clear()
     _invalidate_cache()
 
 
@@ -393,6 +396,11 @@ _system_commands: dict[str, tuple[Callable, dict[str, Any]]] = {}
 """Snapshot of system commands taken before user hooks are loaded.
 Used by :func:`call_system_command` for delegation."""
 
+_hook_sources: dict[str, str] = {}
+"""Maps registered command path -> source filename for conflict detection."""
+
+_logger = logging.getLogger(__name__)
+
 
 def freeze_system_commands() -> None:
     """Snapshot all currently registered commands as the "system" baseline.
@@ -414,10 +422,6 @@ def call_system_command(
 
     Useful inside user-defined hook handlers that want to extend rather
     than fully replace a system command::
-
-        from semantika.server.command.registry import (
-            command, call_system_command,
-        )
 
         @command("node.add", ...)
         def my_node_add(remaining, flags):
@@ -442,34 +446,138 @@ def call_system_command(
     return handler_fn(remaining or [], flags or {})
 
 
-def load_user_hooks() -> None:
-    """Load and register user-defined command hooks from the config dir.
+# ── Hook snippet loading ────────────────────────────────────────────────────
 
-    Scans ``~/.config/semantika/hooks.py`` (or ``SEMANTIKA_CONFIG_DIR``)
-    and imports it.  Any ``@command`` / ``@group_command`` decorators in
-    that file will register (or override) handlers in the command registry.
+
+def _build_hook_namespace() -> dict[str, Any]:
+    """Build the pre-populated namespace for user hook snippets.
+
+    Returns a dict of symbols that are automatically available in every
+    hook snippet without explicit imports.
+    """
+    # Lazy imports to avoid circular dependencies at module level
+    from semantika.graph.db import get_services
+    from semantika.server.command.errors import CommandError, CommandValidationError
+
+    return {
+        "command": command,
+        "group_command": group_command,
+        "call_system_command": call_system_command,
+        "dispatch": dispatch,
+        "get_services": get_services,
+        "PermissionLevel": PermissionLevel,
+        "CommandError": CommandError,
+        "CommandValidationError": CommandValidationError,
+    }
+
+
+def _load_hook_file(path: Path, namespace: dict[str, Any]) -> bool:
+    """Execute a single user hook snippet in a prepared namespace.
+
+    Each file runs in its own namespace dict (no cross-file pollution),
+    but shares the same pre-imported objects so registrations accumulate
+    in the global ``_commands`` registry.
+
+    Args:
+        path: Absolute path to the ``.py`` snippet.
+        namespace: The pre-populated namespace from :func:`_build_hook_namespace`.
+
+    Returns:
+        ``True`` if the hook loaded successfully, ``False`` on error.
+    """
+    source = path.read_text(encoding="utf-8")
+
+    # Snapshot command entries before loading to detect changes
+    pre = dict(_commands)
+
+    file_ns: dict[str, Any] = {
+        **namespace,
+        "__name__": f"__semantika_hook__.{path.stem}",
+        "__file__": str(path),
+        "__builtins__": __builtins__,
+    }
+    try:
+        exec(compile(source, str(path), "exec"), file_ns)
+    except SyntaxError as e:
+        _logger.error(
+            "Syntax error in hook '%s' (line %d): %s",
+            path.name, e.lineno or 0, e.msg,
+        )
+        return False
+    except Exception:
+        _logger.exception("Error loading hook '%s'", path.name)
+        return False
+
+    # Detect registrations made by this file: new keys or changed handler+metadata
+    for cmd, entry in _commands.items():
+        if cmd not in pre or pre[cmd] is not entry:
+            if cmd in _hook_sources and _hook_sources[cmd] != path.name:
+                _logger.warning(
+                    "Command '!%s' already registered by hook '%s'. "
+                    "Hook '%s' is overriding it.",
+                    cmd.replace(".", " "), _hook_sources[cmd], path.name,
+                )
+            _hook_sources[cmd] = path.name
+            if cmd not in pre:
+                _logger.info(
+                    "Hook '%s' registered command: !%s",
+                    path.name, cmd.replace(".", " "),
+                )
+
+    return True
+
+
+def load_user_hooks(no_hooks: bool = False) -> int:
+    """Load and register user-defined command hooks from the config directory.
+
+    Scans ``~/.config/semantika/hooks/*.py`` (or ``SEMANTIKA_CONFIG_DIR/hooks/``)
+    and executes each file using :func:`_load_hook_file`.  Any ``@command`` /
+    ``@group_command`` decorators in those files will register (or override)
+    handlers in the command registry.
+
+    Files are loaded in alphabetical order. One bad file does **not** block
+    the others — errors are logged and skipped.
 
     This function should be called **once** during application startup,
     **after** all system handlers are registered and
     :func:`freeze_system_commands` has been called.
-    """
-    import importlib.util
 
+    Args:
+        no_hooks: If ``True``, skip loading entirely.
+
+    Returns:
+        Number of successfully loaded hook files.
+    """
     from lightercore.paths import config_dir
 
-    hooks_path = config_dir() / "hooks.py"
-    if not hooks_path.exists():
-        return
+    if no_hooks:
+        _logger.info("User hooks disabled by --no-hooks flag")
+        return 0
 
-    spec = importlib.util.spec_from_file_location(
-        "semantika_user_hooks", hooks_path,
+    hooks_dir = config_dir() / "hooks"
+    if not hooks_dir.is_dir():
+        return 0
+
+    namespace = _build_hook_namespace()
+
+    # Collect *.py files, skip __init__.py, hidden files, editor backups
+    files: list[Path] = sorted(
+        f for f in hooks_dir.glob("*.py")
+        if f.name != "__init__.py"
+        and not f.name.startswith((".", "~"))
     )
-    if spec is None or spec.loader is None:
-        logger = __import__("logging").getLogger(__name__)
-        logger.warning("Could not load user hooks from %s", hooks_path)
-        return
 
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    logger = __import__("logging").getLogger(__name__)
-    logger.info("Loaded user hooks from %s", hooks_path)
+    if not files:
+        _logger.debug("No hook files found in %s", hooks_dir)
+        return 0
+
+    success_count = 0
+    for path in files:
+        if _load_hook_file(path, namespace):
+            success_count += 1
+
+    _logger.info(
+        "Loaded %d/%d user hook files from %s",
+        success_count, len(files), hooks_dir,
+    )
+    return success_count
