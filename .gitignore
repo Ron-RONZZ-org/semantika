@@ -37,3 +37,4 @@ coverage_html/
 .dev
 /.prod
 *.7z
+.serena/
