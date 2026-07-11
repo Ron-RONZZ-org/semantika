@@ -609,7 +609,11 @@ async def _run_template_turn2(
         "- **predicate.search** — Find predicate IDs by keyword (no confirmation).\n\n"
         "Important: Always generate the YAML content first, then call "
         "``template.save --yaml <content>`` to persist it. The user will "
-        "be prompted to approve the save operation."
+        "be prompted to approve the save operation.\n\n"
+        "After the template is saved, the ``template.save`` tool result "
+        "includes a ``usage`` field showing the correct ``!triple add --template`` "
+        "syntax. Include this usage example verbatim in your final summary "
+        "so the user knows how to invoke the template."
     )
     turn2_messages = [
         {
