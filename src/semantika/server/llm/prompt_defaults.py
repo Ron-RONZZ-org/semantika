@@ -103,6 +103,9 @@ DEFAULT_TURN2 = (
     '  - "{var1} {predicate3} {var4} --int"     # number literal\n'
     "```\n\n"
     "## Rules\n"
+    "- Each triple is a **single string**: `{subject} rs:predicate {object}`\n"
+    "- Do NOT use dict format (``subject: ..., predicate: ...``) — "
+    "that format is invalid and will be rejected by ``template.save``\n"
     "- No flag = URI reference (object is another node)\n"
     "- `--str` = string literal, `--int` = number literal\n"
     "- Optional params: if not filled, the triple is auto-skipped\n"

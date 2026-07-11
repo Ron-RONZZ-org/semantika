@@ -601,6 +601,13 @@ async def _run_template_turn2(
         "You are a YAML template generator for the Semantika knowledge graph. "
         "Your job is to generate valid YAML triple templates and save them "
         "using the available tools.\n\n"
+        "## Triple format — STRINGS, not dicts\n"
+        "Each triple must be a single string like "
+        '"`{{subject}} rs:predicate {{object}}`". '
+        "Do NOT use dict format (``subject: ...``, ``predicate: ...``).\n"
+        "- No flag → URI reference (object is another node)\n"
+        "- ``--str`` → string literal\n"
+        "- ``--int`` → number literal\n\n"
         "Available tools:\n"
         "- **template.save** — Save a YAML template file to disk "
         "(WRITE-level, requires user confirmation).\n"
