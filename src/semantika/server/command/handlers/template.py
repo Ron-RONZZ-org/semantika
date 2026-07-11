@@ -115,6 +115,20 @@ def cmd_template_save(remaining: list[str], flags: dict[str, str]) -> dict:
     if "triples" not in parsed:
         raise CommandValidationError("YAML must include a 'triples' list")
 
+    # Validate triple format — must be strings like "{subject} rs:xxx {object} [--flag]"
+    raw_triples = parsed.get("triples", [])
+    for i, t in enumerate(raw_triples):
+        if not isinstance(t, str):
+            raise CommandValidationError(
+                f"Triple #{i + 1} must be a string, got {type(t).__name__}. "
+                f"Expected format: '{{subject}} rs:predicate {{object}} --str'\n"
+                f"Instead of dict format:\n"
+                f"  bad:  - subject: '{{subject}}'\n"
+                f"        - predicate: 'rs:predicate'\n"
+                f"        - object: '{{object}}'\n"
+                f"  good: - '{{subject}} rs:predicate {{object}} --str'"
+            )
+
     name = parsed["name"]
     templates_dir = config_dir() / "templates"
     templates_dir.mkdir(parents=True, exist_ok=True)
