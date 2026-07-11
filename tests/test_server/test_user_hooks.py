@@ -1,15 +1,18 @@
-"""Tests for user-defined command hooks (load_user_hooks, call_system_command).
+"""Tests for user-defined command hooks — ``~/.config/semantika/hooks/*.py``.
 
 Covers:
-- freeze_system_commands snapshotting
-- call_system_command delegation
-- User hook file loading and command override
-- User hook delegating back to system handler
+- ``freeze_system_commands`` / ``call_system_command`` delegation
+- ``load_user_hooks`` directory scanning with ``exec()``
+- Boilerplate-free snippets (no imports needed)
+- Error isolation (one bad file does not block others)
+- Cross-file conflict detection
+- ``reset_registry`` cleans up hook sources
+- ``--no-hooks`` flag in ``create_app``
 """
 
 from __future__ import annotations
 
-import os
+import logging
 from pathlib import Path
 
 import pytest
@@ -20,17 +23,64 @@ from semantika.server.app import create_app
 # Import handlers so @command decorators register system commands
 from semantika.server.command import handlers  # noqa: F401
 from semantika.server.command.registry import (
+    _hook_sources,
     _system_commands,
     call_system_command,
-    command,
     dispatch,
     freeze_system_commands,
     get_handler_metadata,
     load_user_hooks,
+    reset_registry,
 )
 
 
-# ── Unit tests for core hook infrastructure ────────────────────────────────
+# ── Fixtures ────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _save_restore_registry():
+    """Save and restore the full command registry around each test.
+
+    This ensures tests that modify ``_commands`` (via hook loading,
+    ``reset_registry()``, etc.) do not leak state into subsequent tests
+    — particularly important because system handlers are registered only
+    once at module import time.
+    """
+    import semantika.server.command.registry as reg
+    saved = {
+        "_commands": dict(reg._commands),
+        "_group_descriptions": dict(reg._group_descriptions),
+        "_interactive_forms": dict(reg._interactive_forms),
+        "_system_commands": dict(reg._system_commands),
+        "_hook_sources": dict(reg._hook_sources),
+        "_command_tree_cache": reg._command_tree_cache,
+        "_command_defs_cache": reg._command_defs_cache,
+    }
+    yield
+    reg._commands.clear()
+    reg._commands.update(saved["_commands"])
+    reg._group_descriptions.clear()
+    reg._group_descriptions.update(saved["_group_descriptions"])
+    reg._interactive_forms.clear()
+    reg._interactive_forms.update(saved["_interactive_forms"])
+    reg._system_commands.clear()
+    reg._system_commands.update(saved["_system_commands"])
+    reg._hook_sources.clear()
+    reg._hook_sources.update(saved["_hook_sources"])
+    reg._command_tree_cache = saved["_command_tree_cache"]
+    reg._command_defs_cache = saved["_command_defs_cache"]
+
+
+@pytest.fixture
+def hooks_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Create an empty hooks directory and point SEMANTIKA_CONFIG_DIR to it."""
+    hd = tmp_path / "hooks"
+    hd.mkdir(parents=True)
+    monkeypatch.setenv("SEMANTIKA_CONFIG_DIR", str(tmp_path))
+    return hd
+
+
+# ── Unit tests: freeze / call_system_command ────────────────────────────────
 
 
 class TestFreezeSystemCommands:
@@ -67,13 +117,15 @@ class TestCallSystemCommand:
 
     def test_custom_handler_can_delegate(self):
         """A user-style handler can wrap and delegate to the system handler."""
-        # Simulate what a user hook would do: call system handler with --id
+        from semantika.graph.db import get_services
+        import uuid
+        uid = str(uuid.uuid4())[:8]
         result = call_system_command(
             "node.add",
-            flags={"id": "HOOK_TEST", "labels": "en::Hook Test"},
+            flags={"id": f"HOOK_TEST_{uid}", "labels": "en::Hook Test"},
         )
         assert result["type"] == "status"
-        assert result["data"]["node"]["node_id"] == "HOOK_TEST"
+        assert "HOOK_TEST" in result["data"]["node"]["node_id"]
 
     def test_unknown_path_raises(self):
         """Unknown command paths raise CommandNotFound."""
@@ -82,48 +134,65 @@ class TestCallSystemCommand:
             call_system_command("nonexistent.command")
 
 
-# ── Integration test: user hook file loading ────────────────────────────────
+# ── Directory-based hook loading ────────────────────────────────────────────
 
 
-class TestUserHookLoading:
-    """User hooks.py file is loaded and its commands override system ones."""
+class TestHooksDirectoryNotFound:
+    """When no hooks directory exists, load_user_hooks is a no-op."""
 
-    HOOKS_CODE = """
-from semantika.server.command.registry import command, call_system_command
-from lightercore.permissions import PermissionLevel
+    def test_no_hooks_dir_returns_zero(self, monkeypatch: pytest.MonkeyPatch):
+        """Absent hooks dir returns 0 loaded files."""
+        monkeypatch.setenv("SEMANTIKA_CONFIG_DIR", "/tmp/nonexistent_semantika_cfg")
+        freeze_system_commands()
+        count = load_user_hooks()
+        assert count == 0
 
+    def test_empty_hooks_dir_returns_zero(self, hooks_dir: Path):
+        """Empty hooks dir returns 0 loaded files."""
+        freeze_system_commands()
+        count = load_user_hooks()
+        assert count == 0
+
+
+class TestHookFileLoading:
+    """Hook .py files in the hooks directory are loaded via exec()."""
+
+    WRAP_AND_DELEGATE = """\
 @command("node.list",
          description="[HOOKED] List all nodes",
          permission_level=PermissionLevel.READ,
          params=[{"name": "limit", "type": "number", "default": 100}])
 def hooked_node_list(remaining, flags):
-    \"\"\"User-hooked version that delegates to system but changes the type.\"\"\"
     result = call_system_command("node.list", remaining, flags)
     result["hooked"] = True
     return result
+"""
 
-
+    FULLY_CUSTOM = """\
 @command("node.search",
          description="[HOOKED] Search nodes",
          permission_level=PermissionLevel.READ,
          params=[{"name": "q", "type": "string", "required": True}])
 def hooked_node_search(remaining, flags):
-    \"\"\"Fully custom search that always returns a message.\"\"\"
     q = flags.get("q", remaining[0] if remaining else "")
     return {"type": "status", "data": {"message": f"Hooked search for: {q}"}}
 """
 
     @pytest.fixture(autouse=True)
-    def _setup_hooks(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        """Create a hooks.py file in an isolated config dir."""
-        monkeypatch.setenv("SEMANTIKA_CONFIG_DIR", str(tmp_path))
-        hooks_file = tmp_path / "hooks.py"
-        hooks_file.write_text(self.HOOKS_CODE, encoding="utf-8")
+    def _setup(self, hooks_dir: Path):
+        """Write two hook files into the hooks directory."""
+        (hooks_dir / "wrap_node_list.py").write_text(
+            self.WRAP_AND_DELEGATE, encoding="utf-8",
+        )
+        (hooks_dir / "custom_search.py").write_text(
+            self.FULLY_CUSTOM, encoding="utf-8",
+        )
 
     def test_hooks_override_system_commands(self):
         """Loading hooks replaces system handlers with user-defined ones."""
         freeze_system_commands()
-        load_user_hooks()
+        count = load_user_hooks()
+        assert count == 2
 
         # The user's node.list should have hooked metadata
         meta = get_handler_metadata("node.list")
@@ -169,46 +238,245 @@ def hooked_node_search(remaining, flags):
         assert hooked_def is not None
         assert "[HOOKED]" in hooked_def.get("description", "")
 
+    def test_hook_sources_tracked(self):
+        """Each registered command is tracked to its source file."""
+        freeze_system_commands()
+        load_user_hooks()
+
+        assert _hook_sources["node.list"] == "wrap_node_list.py"
+        assert _hook_sources["node.search"] == "custom_search.py"
+
+    def test_reset_registry_clears_hook_sources(self):
+        """reset_registry removes all hook source tracking."""
+        freeze_system_commands()
+        load_user_hooks()
+        assert len(_hook_sources) == 2
+
+        reset_registry()
+        assert len(_hook_sources) == 0
+
+    def test_no_imports_needed(self):
+        """Snippets work without any import statements."""
+        freeze_system_commands()
+        load_user_hooks()
+        # The hook files (WRAP_AND_DELEGATE, FULLY_CUSTOM) contain zero
+        # import lines — they rely entirely on the pre-populated namespace.
+        result = dispatch(["node", "search"], {"q": "no-imports"})
+        assert "Hooked search for: no-imports" in result["data"]["message"]
+
+
+# ── Error isolation ─────────────────────────────────────────────────────────
+
+
+class TestErrorIsolation:
+    """One bad hook file does not block others from loading."""
+
+    def test_syntax_error_skips_one_file(self, hooks_dir: Path):
+        """A file with a syntax error is skipped; others still load."""
+        (hooks_dir / "good_hook.py").write_text(
+            "@command('test.good', description='Works')\n"
+            "def good(rem, fl): return {'type': 'status', 'data': {'ok': True}}\n",
+            encoding="utf-8",
+        )
+        (hooks_dir / "bad_syntax.py").write_text(
+            "this is not valid python {{{{\n",
+            encoding="utf-8",
+        )
+        (hooks_dir / "another_good.py").write_text(
+            "@command('test.another', description='Also works')\n"
+            "def another(rem, fl): return {'type': 'status', 'data': {'ok': True}}\n",
+            encoding="utf-8",
+        )
+
+        freeze_system_commands()
+        count = load_user_hooks()
+        assert count == 2  # bad_syntax.py skipped
+
+        assert get_handler_metadata("test.good") is not None
+        assert get_handler_metadata("test.another") is not None
+
+    def test_runtime_error_skips_one_file(self, hooks_dir: Path):
+        """A file that raises at module level is skipped; others still load."""
+        (hooks_dir / "good_hook.py").write_text(
+            "@command('test.good', description='Works')\n"
+            "def good(rem, fl): return {'type': 'status', 'data': {'ok': True}}\n",
+            encoding="utf-8",
+        )
+        (hooks_dir / "bad_runtime.py").write_text(
+            "raise RuntimeError('Kaboom!')\n",
+            encoding="utf-8",
+        )
+
+        freeze_system_commands()
+        count = load_user_hooks()
+        assert count == 1  # bad_runtime.py skipped
+
+        assert get_handler_metadata("test.good") is not None
+
+
+# ── Cross-file conflict detection ───────────────────────────────────────────
+
+
+class TestCrossFileConflict:
+    """When two hook files register the same command, the last one wins."""
+
+    def test_last_file_wins_with_warning(self, hooks_dir: Path, caplog):
+        """Overriding a command across files logs a warning."""
+        (hooks_dir / "first.py").write_text(
+            "@command('test.conflict', description='First version')\n"
+            "def first(rem, fl): return {'type': 'status', 'data': {'from': 'first'}}\n",
+            encoding="utf-8",
+        )
+        (hooks_dir / "second.py").write_text(
+            "@command('test.conflict', description='Second version')\n"
+            "def second(rem, fl): return {'type': 'status', 'data': {'from': 'second'}}\n",
+            encoding="utf-8",
+        )
+
+        freeze_system_commands()
+        with caplog.at_level(logging.WARNING):
+            count = load_user_hooks()
+
+        assert count == 2
+        # The warning mentions the conflict
+        assert any(
+            "already registered by hook" in rec.message
+            for rec in caplog.records
+        ), f"Expected conflict warning, got: {[r.message for r in caplog.records]}"
+
+        # Second file's version wins (alphabetical: second.py > first.py)
+        result = dispatch(["test", "conflict"], {})
+        assert result["data"]["from"] == "second"
+        assert _hook_sources["test.conflict"] == "second.py"
+
+    def test_same_file_overrides_no_warning(self, hooks_dir: Path, caplog):
+        """Overriding a command within the same file does NOT warn."""
+        (hooks_dir / "self_override.py").write_text(
+            "@command('test.dup', description='First')\n"
+            "def first(rem, fl): pass\n"
+            "@command('test.dup', description='Second')\n"
+            "def second(rem, fl): pass\n",
+            encoding="utf-8",
+        )
+
+        freeze_system_commands()
+        with caplog.at_level(logging.WARNING):
+            load_user_hooks()
+
+        warnings = [r.message for r in caplog.records]
+        assert not any(
+            "already registered by hook" in m for m in warnings
+        ), f"Unexpected cross-file warning: {warnings}"
+
+
+# ── File scanning rules ─────────────────────────────────────────────────────
+
+
+class TestFileScanning:
+    """Certain files are skipped when scanning the hooks directory."""
+
+    def test_init_py_is_skipped(self, hooks_dir: Path):
+        """__init__.py is not loaded as a hook file."""
+        (hooks_dir / "__init__.py").write_text(
+            "@command('test.init', description='Should not load')\n"
+            "def init_cmd(rem, fl): pass\n",
+            encoding="utf-8",
+        )
+        freeze_system_commands()
+        count = load_user_hooks()
+        assert count == 0
+
+    def test_hidden_files_are_skipped(self, hooks_dir: Path):
+        """Dot-prefixed hidden files are not loaded."""
+        (hooks_dir / ".hidden_hook.py").write_text(
+            "@command('test.hidden', description='Should not load')\n"
+            "def hidden_cmd(rem, fl): pass\n",
+            encoding="utf-8",
+        )
+        freeze_system_commands()
+        count = load_user_hooks()
+        assert count == 0
+
+    def test_editor_backups_are_skipped(self, hooks_dir: Path):
+        """Tilde-suffixed editor backup files are not loaded."""
+        (hooks_dir / "my_hook.py~").write_text(
+            "@command('test.backup', description='Should not load')\n"
+            "def backup_cmd(rem, fl): pass\n",
+            encoding="utf-8",
+        )
+        freeze_system_commands()
+        count = load_user_hooks()
+        assert count == 0
+
+    def test_alphabetical_load_order(self, hooks_dir: Path):
+        """Files are loaded in alphabetical order."""
+        (hooks_dir / "02_middle.py").write_text(
+            "@command('test.middle', description='Middle')\n"
+            "def mid(rem, fl): fl['order'] = 'middle'; "
+            "return {'type': 'status', 'data': dict(fl)}\n",
+            encoding="utf-8",
+        )
+        (hooks_dir / "01_first.py").write_text(
+            "@command('test.first', description='First')\n"
+            "def fst(rem, fl): fl['order'] = 'first'; "
+            "return {'type': 'status', 'data': dict(fl)}\n",
+            encoding="utf-8",
+        )
+        (hooks_dir / "03_last.py").write_text(
+            "@command('test.last', description='Last')\n"
+            "def lst(rem, fl): fl['order'] = 'last'; "
+            "return {'type': 'status', 'data': dict(fl)}\n",
+            encoding="utf-8",
+        )
+
+        freeze_system_commands()
+        load_user_hooks()
+
+        # Dispatch in alphabetical order should work
+        result = dispatch(["test", "first"], {})
+        assert result["data"]["order"] == "first"
+        result = dispatch(["test", "middle"], {})
+        assert result["data"]["order"] == "middle"
+        result = dispatch(["test", "last"], {})
+        assert result["data"]["order"] == "last"
+
 
 # ── Tests for the --no-hooks flag ──────────────────────────────────────────
 
 
 class TestNoHooksFlag:
-    """create_app(no_hooks=True) skips loading user hooks.
+    """create_app(no_hooks=True) skips loading user hooks."""
 
-    We use monkeypatching to verify that the ``load_user_hooks`` function
-    is or is not called depending on the flag, avoiding the need to
-    manage actual hooks.py files in the config dir.
-    """
-
-    def test_no_hooks_skips_load_user_hooks(self, monkeypatch: pytest.MonkeyPatch):
-        """With no_hooks=True, load_user_hooks is NOT called."""
+    def test_no_hooks_passed_to_load_user_hooks(self, monkeypatch: pytest.MonkeyPatch):
+        """With no_hooks=True, load_user_hooks receives no_hooks=True."""
         calls = []
 
-        def _tracking_load():
-            calls.append(True)
+        def _tracking_load(**kwargs):
+            calls.append(kwargs)
 
         monkeypatch.setattr(
             "semantika.server.command.registry.load_user_hooks",
             _tracking_load,
         )
 
-        app = create_app(no_hooks=True)
-        assert len(calls) == 0, "load_user_hooks was called despite no_hooks=True"
+        create_app(no_hooks=True)
+        assert len(calls) == 1, "load_user_hooks should be called once"
+        # The no_hooks flag is now handled inside load_user_hooks
+        assert calls[0].get("no_hooks") is True, "no_hooks=True should be forwarded"
 
     def test_default_calls_load_user_hooks(self, monkeypatch: pytest.MonkeyPatch):
         """Without no-hooks, load_user_hooks IS called (default)."""
         calls = []
 
-        def _tracking_load():
-            calls.append(True)
+        def _tracking_load(**kwargs):
+            calls.append(kwargs)
 
         monkeypatch.setattr(
             "semantika.server.command.registry.load_user_hooks",
             _tracking_load,
         )
 
-        app = create_app()  # no_hooks defaults to False
+        create_app()  # no_hooks defaults to False
         assert len(calls) == 1, "load_user_hooks was not called by default"
 
     def test_no_hooks_api_still_functions(self):

@@ -9,7 +9,7 @@ Development tooling: dev CLI, seed data generator, test infrastructure.
   - Creates a temp data directory (avoids polluting production DB)
   - Dynamic port assignment (default 6015)
   - `--seed` flag creates a demo prompt command file in `~/.config/semantika/commands/`
-  - `--no-hooks` flag skips loading `~/.config/semantika/hooks.py` (passes `no_hooks=True` to `create_app()`)
+  - `--no-hooks` flag skips loading `~/.config/semantika/hooks/` (passes `no_hooks=True` to `create_app()`)
   - Reads `.dev` file for API keys used during seed
 - `__main__.py` — `python -m semantika` entry point for direct server launch
 

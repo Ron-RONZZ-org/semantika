@@ -152,7 +152,7 @@ def dev_main() -> None:
         default_port=6015,
     )
     parser.add_argument("--no-hooks", action="store_true",
-                        help="Skip loading user-defined hooks from ~/.config/semantika/hooks.py")
+                        help="Skip loading user-defined hooks from ~/.config/semantika/hooks/")
     parser.add_argument("--local-config", type=str, default=None,
                         help="Use a local config directory (e.g. a git checkout) "
                              "for prompt commands, AGENTS.md, user hooks, and "

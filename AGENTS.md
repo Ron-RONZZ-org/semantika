@@ -116,7 +116,7 @@ Flags beyond the standard set (`--seed`, `--prod`, `--seed-from`, `--data-dir`,
 
 | Flag | Description |
 |------|-------------|
-| `--no-hooks` | Skip loading user-defined hooks from `~/.config/semantika/hooks.py` |
+| `--no-hooks` | Skip loading user-defined hooks from `~/.config/semantika/hooks/` |
 
 When ``--data-dir`` is used, the data directory persists across restarts and
 seeding only runs when the directory is empty (safe to restart without losing
@@ -550,17 +550,21 @@ should use environment variables or system keyring exclusively.
 
 ## Security: User Hooks
 
-Semantika supports user-defined hooks via ``~/.config/semantika/hooks.py``, which is loaded
-and executed using ``importlib`` at startup. **This is effectively arbitrary code execution
-from disk.** The following considerations apply:
+Semantika supports user-defined command hooks via ``~/.config/semantika/hooks/*.py`` —
+every ``.py`` file in this directory is loaded at startup via ``exec()`` with a
+pre-populated namespace (``command``, ``call_system_command``, etc. — no imports needed).
+**This is effectively arbitrary code execution from disk.** The following considerations apply:
 
-- The hooks file lives in the XDG config directory, which should be treated as a **trusted
+- The hooks directory lives in the XDG config directory, which should be treated as a **trusted
   location** by the user.
 - A malicious ``.dev`` file or a compromised config directory could inject arbitrary code.
 - The ``--no-hooks`` flag (on ``semantika-dev`` or ``create_app(no_hooks=True)``) skips
-  loading user hooks entirely — use it during debugging or when the hooks file is suspect.
+  loading user hooks entirely — use it during debugging or when the hooks directory is suspect.
+- Files are loaded in alphabetical order; ``__init__.py``, hidden files (``.`` prefix),
+  and editor backups (``~`` suffix) are skipped.
+- One bad file does **not** block others — errors are logged and the file is skipped.
 - **Recommendation**: If you share your config directory across machines, audit the hooks
-  file for unexpected content before running Semantika.
+  directory for unexpected content before running Semantika.
 
 ---
 
