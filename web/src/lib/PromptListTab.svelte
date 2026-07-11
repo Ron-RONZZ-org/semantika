@@ -17,12 +17,6 @@
   let loading = $state(!data);
   let error = $state("");
 
-  /** @type {string|null} */
-  let editingName = $state(null);
-  let editingContent = $state("");
-  let editingDefault = $state("");
-  let saving = $state(false);
-
   /** @type {string} */
   let configDir = $state("");
 
@@ -102,47 +96,6 @@
     }
   }
 
-  async function openEditDialog(name) {
-    try {
-      const resp = await fetch(`/api/v1/llm/prompts/view?name=${encodeURIComponent(name)}`);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
-      editingName = name;
-      editingContent = data.current || data.default;
-      editingDefault = data.default;
-    } catch (err) {
-      banner.show(`Failed to load prompt: ${err.message}`, "error", 5000);
-      editingName = null;
-    }
-  }
-
-  async function handleSave() {
-    if (!editingName) return;
-    saving = true;
-    try {
-      const resp = await fetch("/api/v1/llm/prompts/save", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: editingName, content: editingContent }),
-      });
-      if (!resp.ok) {
-        const err = await resp.json();
-        throw new Error(err.detail || `HTTP ${resp.status}`);
-      }
-      banner.show(`Prompt "${editingName}" saved`, "success");
-      editingName = null;
-      await fetchPrompts();
-    } catch (err) {
-      banner.show(`Save failed: ${err.message}`, "error", 5000);
-    } finally {
-      saving = false;
-    }
-  }
-
-  function cancelEdit() {
-    editingName = null;
-  }
-
   async function handleView(name) {
     try {
       const resp = await fetch(`/api/v1/llm/prompts/view?name=${encodeURIComponent(name)}`);
@@ -152,6 +105,7 @@
       tabStore.open("status", `Prompt: ${name}`, {
         message: `**${name}** (${data.category}, ${data.exists ? `${lines} lines` : "not yet created"})`,
         details: data.current || data.default || "(empty)",
+        _edit_name: name,
       });
     } catch (err) {
       banner.show(`Failed to view prompt: ${err.message}`, "error", 5000);
@@ -238,41 +192,12 @@
           </div>
           <div class="prompt-actions">
             <button class="btn btn-view" onclick={() => handleView(p.name)} title="View content">View</button>
-            <button class="btn btn-edit" onclick={() => openEditDialog(p.name)} title="Edit content">Edit</button>
             <button class="btn btn-reset" onclick={() => handleReset(p.name)} title="Reset to default">
               Reset
             </button>
           </div>
         </div>
       {/each}
-    </div>
-  {/if}
-
-  {#if editingName !== null}
-    <!-- Edit dialog overlay -->
-    <div class="edit-overlay" onclick={cancelEdit} role="dialog" aria-modal="true" aria-label="Edit prompt"
-         tabindex="0" onkeydown={(e) => { if (e.key === "Escape") cancelEdit(); }}>
-      <div class="edit-dialog" role="presentation" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
-        <div class="edit-header">
-          <h3>Edit: {editingName}</h3>
-          <button class="btn-close" onclick={cancelEdit}>✕</button>
-        </div>
-        <textarea
-          class="edit-textarea"
-          bind:value={editingContent}
-          rows="20"
-          spellcheck="false"
-        ></textarea>
-        <div class="edit-actions">
-          <button class="btn btn-save" onclick={handleSave} disabled={saving}>
-            {saving ? "Saving…" : "Save"}
-          </button>
-          <button class="btn btn-cancel" onclick={cancelEdit}>Cancel</button>
-          <button class="btn btn-reset" onclick={() => { editingContent = editingDefault; }} title="Restore default">
-            Restore Default
-          </button>
-        </div>
-      </div>
     </div>
   {/if}
 
@@ -333,41 +258,9 @@
   .btn:hover { background: #3a3a5a; }
   .btn:disabled { opacity: 0.5; cursor: default; }
   .btn-view { background: #2a2a3e; border-color: #555; }
-  .btn-edit { background: #2a3a4a; border-color: #3a6a8a; }
   .btn-reset { background: #3a2a2a; border-color: #7a3a3a; }
   .btn-reset-all { background: #3a3a1e; border-color: #7a7a3a; font-size: 0.72rem; }
-  .btn-save { background: #2a4a3a; border-color: #3a7a4a; }
-  .btn-cancel { background: #3a3a3a; border-color: #555; }
-  .btn-close { background: none; border: none; color: #888; cursor: pointer; font-size: 1rem; }
-  .btn-close:hover { color: #e0e0e0; }
 
   .footer-hint { margin-top: 1rem; }
   .footer-hint p { font-size: 0.72rem; color: #5a5a7a; text-align: center; }
-
-  /* Edit dialog */
-  .edit-overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.6);
-    display: flex; align-items: center; justify-content: center; z-index: 100;
-  }
-  .edit-dialog {
-    background: #1e1e32; border: 1px solid #444; border-radius: 8px;
-    padding: 1rem; width: 90%; max-width: 700px;
-    max-height: 85vh; display: flex; flex-direction: column;
-  }
-  .edit-header {
-    display: flex; justify-content: space-between; align-items: center;
-    margin-bottom: 0.5rem;
-  }
-  .edit-header h3 { margin: 0; font-size: 0.95rem; color: #e0e0e0; }
-  .edit-textarea {
-    flex: 1; min-height: 300px;
-    background: #111; color: #a0d0a0; border: 1px solid #333; border-radius: 4px;
-    padding: 0.75rem; font-family: monospace; font-size: 0.8rem;
-    resize: vertical; outline: none; line-height: 1.5;
-  }
-  .edit-textarea:focus { border-color: #5a5a8a; }
-  .edit-actions {
-    display: flex; gap: 0.5rem; justify-content: flex-end;
-    margin-top: 0.75rem;
-  }
 </style>
