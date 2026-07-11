@@ -59,7 +59,7 @@ Svelte 5 SPA frontend — command-bar UI with rich result rendering for the Sema
 | `FormTab.svelte` | Wrapper for DynamicForm in a tab |
 | `FormField.svelte` | Individual form field with validation |
 | `PopupOverlay.svelte` | Modal overlay container |
-| `StatusPopup.svelte` | Status/result display (node details, triple lists, etc.) |
+| `StatusPopup.svelte` | Status/result display (node details, triple lists, etc.). Also handles **prompt file viewing** — when data contains ``details`` and ``_edit_name`` fields, renders the prompt content in a scrollable ``<pre>`` block with an **Edit** button that opens an inline editor overlay. |
 | `ErrorPopup.svelte` | Error display |
 | `LoadingPopup.svelte` | Loading spinner |
 | `ConfirmDialog.svelte` | LLM action approval dialog — per-item approve/reject with feedback, full command display, no truncation |

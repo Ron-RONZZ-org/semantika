@@ -236,6 +236,9 @@ semantika/
 │               ├── files.py     # /api/v1/files/* — file attachments
 │               ├── llm.py       # /api/v1/llm/* — chat, config, profiles, confirm
 │               ├── prompt_commands.py  # /api/v1/prompt-commands/* — list, expand, execute, SSE stream
+│               │   Turn prompts (turn1.md / turn2.md) use named-only expansion ($AVAILABLE_PREDICATES etc.).
+│               │   /template supports two-turn HITL: predicate.add in turn1, template.save in turn2.
+│               │   $STYLE_EXAMPLE auto-injected from most recently modified user-created template.
 │               └── user_config.py      # /api/v1/user/config — locale, preferences
 ├── tests/                       # pytest tests (849 tests)
 │   ├── conftest.py

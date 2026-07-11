@@ -468,7 +468,21 @@ async def resume_execution(
     final = await _run_tool_loop(messages, tools, name)
 
     if isinstance(final, dict) and final.get("type") == "confirm_tool":
+        # Another set of write tools needs approval — preserve template flow
+        if "template_flow" in state:
+            _annotate_template_flow(
+                final["session_id"],
+                state["template_flow"]["user_description"],
+            )
         return final
+
+    # ── Template flow: turn 1 completed → proceed to turn 2 ──────────────
+    template_flow = state.get("template_flow")
+    if template_flow and isinstance(final, str):
+        return await _run_template_turn2(
+            predicate_summary=final,
+            user_description=template_flow["user_description"],
+        )
 
     reply = final if isinstance(final, str) and final.strip() else None
     if reply:
@@ -513,122 +527,76 @@ def _load_turn_prompt(name: str) -> str | None:
         return None
 
 
-def _expand_turn_prompt(template: str, args: list[str]) -> str:
-    """Expand a turn prompt template with $1, $2, $ARGUMENTS substitution.
+def _expand_turn_prompt(template: str, vars: dict[str, str]) -> str:
+    """Expand a turn prompt with named ``$VARIABLE`` placeholders.
 
-    Unlike prompt commands, turn prompts always use $1 for the first arg,
-    $2 for the second, etc., and $ARGUMENTS for all remaining args joined.
-    Fallback to ``expand_prompt_template`` for consistency.
+    Unlike prompt commands, turn prompts use named variables only
+    (e.g. ``$AVAILABLE_PREDICATES``, ``$TEMPLATE_DESCRIPTION``,
+    ``$STYLE_EXAMPLE``, ``$ARGUMENTS``).  Unknown placeholders are left
+    as-is so that old-style ``$1`` / ``$2`` files visibly fail rather
+    than silently producing wrong output.
     """
-    from lightercore.prompt_commands import expand_prompt_template
-    return expand_prompt_template(template, args)
+    result = template
+    for name, value in vars.items():
+        result = result.replace(f"${name}", value)
+    return result
 
 
-def _load_and_expand_turn(name: str, expand_args: list[str]) -> str | None:
+def _load_and_expand_turn(name: str, vars: dict[str, str]) -> str | None:
     """Load and expand a turn prompt, or return ``None`` if missing."""
     template = _load_turn_prompt(name)
     if template is None:
         return None
-    return _expand_turn_prompt(template, expand_args)
+    return _expand_turn_prompt(template, vars)
+
+
+# ── Style example for template turn 2 ────────────────────────────────────
+
+
+def _get_style_example() -> str:
+    """Return the most recently modified user-created template as a YAML example.
+
+    Scans ``~/.config/semantika/templates/*.{yaml,yml}`` and picks the
+    most recently modified file.  Returns ``""`` if no templates exist.
+    """
+    from semantika.server.templates.loader import list_templates
+
+    templates = list_templates()
+    if not templates:
+        return ""
+
+    # Pick the most recently modified
+    best = max(templates, key=lambda t: t.path.stat().st_mtime)
+    try:
+        return best.path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
 
 
 # ── /template two-turn flow ────────────────────────────────────────────────
 
 
-async def execute_template_flow(data: dict[str, Any]) -> dict[str, Any]:
-    """Two-turn flow for /template: tool-based predicate discovery → YAML generation.
+async def _run_template_turn2(
+    predicate_summary: str,
+    user_description: str,
+) -> dict[str, Any]:
+    """Run turn 2 of the template flow — YAML generation.
 
-    Turn 1 uses the :func:`_run_tool_loop` with only the ``predicate.search``
-    tool available, so the LLM can search for relevant predicates by calling
-    the tool directly (no fragile JSON-in-text parsing).
-
-    Turn 2 passes the discovered predicates to the LLM for YAML template
-    generation.
-
-    Both turn prompts are stored as user-editable files in
-    ``~/.config/semantika/commands/_template_turns/``.
+    Loads and expands the turn2 prompt, builds messages and tools, then
+    runs the tool loop.  May return ``{"type": "confirm_tool", ...}`` if
+    the LLM issues WRITE-level tool calls (``template.save``).
     """
-    from pathlib import Path
-
-    args = data.get("args", [])
-    user_description = " ".join(args) if args else ""
-
-    if not user_description:
-        return {
-            "type": "status",
-            "title": "/template",
-            "data": {"message": "Describe the template you want to create."},
-        }
-
-    provider = get_provider()
-    if not provider.available:
-        return {
-            "type": "status",
-            "title": "/template",
-            "data": {
-                "message": (
-                    "LLM not configured. "
-                    "Use !llm configure or set up a provider in Settings."
-                ),
-            },
-        }
-
-    # ── Turn 1: Predicate discovery via tool calling ──────────────────────
-    turn1_text = _load_and_expand_turn("turn1", args)
-    if turn1_text is None:
-        # Fallback if file is missing — use shipped default
-        from semantika.server.llm.prompt_defaults import DEFAULT_TURN1
-        turn1_text = _expand_turn_prompt(DEFAULT_TURN1, args)
-
-    turn1_messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are a predicate discovery assistant for the Semantika "
-                "knowledge graph. Your ONLY job is to find existing predicates "
-                "relevant to the user's template description.\n\n"
-                "Use the **predicate.search** tool to search for predicates. "
-                "Each call returns matching predicate IDs and labels. "
-                "Try different keyword variations to get broad coverage.\n\n"
-                "Once you have a good set of predicates, provide a concise "
-                "summary listing the predicate IDs you found."
-            ),
-        },
-        {"role": "user", "content": turn1_text},
-    ]
-
-    # Build tool definitions — only predicate.search (READ-level, no confirm)
-    all_defs = get_command_definitions()
-    pred_search_defs = [d for d in all_defs if d["path"] == ["predicate", "search"]]
-    turn1_tools = defs_to_tools(pred_search_defs) if pred_search_defs else []
-
-    try:
-        turn1_result = await _run_tool_loop(turn1_messages, turn1_tools, "template_turn1", max_rounds=10)
-    except Exception as exc:
-        logger.exception("/template turn 1 failed")
-        return {"type": "status", "title": "/template", "data": {"message": f"Turn 1 failed: {exc}"}}
-
-    # Extract predicates summary from LLM's final answer
-    predicate_summary = turn1_result if isinstance(turn1_result, str) and turn1_result.strip() else ""
-    if not predicate_summary:
-        # If the tool loop returned no text, try to reconstruct from messages
-        # Pick last assistant message content that has tool results context
-        for msg in reversed(turn1_messages):
-            if msg["role"] == "assistant" and msg.get("content", "").strip():
-                predicate_summary = msg["content"]
-                break
-
-    # ── Turn 2: YAML template generation via tool-calling ────────────────
-    #
-    # Unlike the old plain-chat approach, turn 2 now uses _run_tool_loop
-    # so the LLM can call !template.save to persist the generated YAML.
-    # The WRITE-level save triggers the standard HITL confirmation dialog.
-    turn2_expand_args = [predicate_summary, user_description] if predicate_summary else [user_description]
-    turn2_text = _load_and_expand_turn("turn2", turn2_expand_args)
+    # Build turn2 variables
+    style_example = _get_style_example()
+    turn2_vars: dict[str, str] = {
+        "AVAILABLE_PREDICATES": predicate_summary or "(none found)",
+        "TEMPLATE_DESCRIPTION": user_description,
+        "STYLE_EXAMPLE": style_example,
+    }
+    turn2_text = _load_and_expand_turn("turn2", turn2_vars)
     if turn2_text is None:
-        # Fallback if file is missing — use shipped default expanded with args
         from semantika.server.llm.prompt_defaults import DEFAULT_TURN2
-        turn2_text = _expand_turn_prompt(DEFAULT_TURN2, turn2_expand_args)
+        turn2_text = _expand_turn_prompt(DEFAULT_TURN2, turn2_vars)
 
     turn2_messages = [
         {
@@ -651,7 +619,7 @@ async def execute_template_flow(data: dict[str, Any]) -> dict[str, Any]:
         {"role": "user", "content": turn2_text},
     ]
 
-    # Build tool definitions — template.* + predicate.search
+    # Build tool definitions
     all_defs = get_command_definitions()
     turn2_tool_paths = {
         ("template", "save"),
@@ -663,8 +631,9 @@ async def execute_template_flow(data: dict[str, Any]) -> dict[str, Any]:
     turn2_tools = defs_to_tools(turn2_defs) if turn2_defs else []
 
     if not turn2_tools:
-        # Fallback: no tools registered (e.g. template handler not loaded)
+        # Fallback: no template tools registered
         logger.warning("No turn 2 tools available — falling back to plain chat")
+        provider = get_provider()
         try:
             turn2_result = await provider.chat(
                 [
@@ -699,10 +668,6 @@ async def execute_template_flow(data: dict[str, Any]) -> dict[str, Any]:
         logger.exception("/template turn 2 failed")
         return {"type": "status", "title": "/template", "data": {"message": f"Turn 2 failed: {exc}"}}
 
-    # _run_tool_loop returns:
-    #   - str (final text) → render as chat
-    #   - dict with "type": "confirm_tool" → pass through for HITL
-    #   - None → tool loop exhausted
     if isinstance(turn2_result, dict) and turn2_result.get("type") == "confirm_tool":
         return turn2_result
 
@@ -719,3 +684,107 @@ async def execute_template_flow(data: dict[str, Any]) -> dict[str, Any]:
         "title": "/template",
         "data": {"html": "<p><em>Template generation produced no output.</em></p>", "actions": []},
     }
+
+
+def _annotate_template_flow(session_id: str, user_description: str) -> None:
+    """Annotate a pending execution session with template flow context.
+
+    Called when turn 1 returns ``confirm_tool``, so that
+    :func:`resume_execution` knows to continue to turn 2 after
+    turn 1's tool loop finishes.
+    """
+    if session_id in _pending_executions:
+        _pending_executions[session_id]["template_flow"] = {
+            "user_description": user_description,
+        }
+
+
+async def execute_template_flow(data: dict[str, Any]) -> dict[str, Any]:
+    """Two-turn flow for /template: tool-based predicate discovery → YAML generation.
+
+    Turn 1 uses the :func:`_run_tool_loop` with ``predicate.search`` and
+    ``predicate.add`` tools.  Write-level operations (``predicate.add``)
+    gate behind HITL confirmation.
+
+    Turn 2 passes the discovered predicates to the LLM for YAML template
+    generation (see :func:`_run_template_turn2`).
+
+    Both turn prompts are stored as user-editable files in
+    ``~/.config/semantika/commands/_template_turns/``.
+    """
+    args = data.get("args", [])
+    user_description = " ".join(args) if args else ""
+
+    if not user_description:
+        return {
+            "type": "status",
+            "title": "/template",
+            "data": {"message": "Describe the template you want to create."},
+        }
+
+    provider = get_provider()
+    if not provider.available:
+        return {
+            "type": "status",
+            "title": "/template",
+            "data": {
+                "message": (
+                    "LLM not configured. "
+                    "Use !llm configure or set up a provider in Settings."
+                ),
+            },
+        }
+
+    # ── Turn 1: Predicate discovery (with optional creation) ─────────────
+    turn1_text = _load_and_expand_turn("turn1", {"ARGUMENTS": user_description})
+    if turn1_text is None:
+        from semantika.server.llm.prompt_defaults import DEFAULT_TURN1
+        turn1_text = _expand_turn_prompt(DEFAULT_TURN1, {"ARGUMENTS": user_description})
+
+    turn1_messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a predicate discovery assistant for the Semantika "
+                "knowledge graph.\n\n"
+                "Use the **predicate.search** tool to find existing predicates. "
+                "Each call returns matching predicate IDs and labels. "
+                "Try different keyword variations to get broad coverage.\n\n"
+                "If a predicate you need does not exist, create it with "
+                "**predicate.add**.  Follow the naming conventions from "
+                "the user's AGENTS.md style file.\n\n"
+                "Once you have a good set of predicates (both existing and "
+                "newly created), provide a concise summary listing the "
+                "predicate IDs you found or created."
+            ),
+        },
+        {"role": "user", "content": turn1_text},
+    ]
+
+    # Build tool definitions — predicate.search (READ) + predicate.add (WRITE)
+    all_defs = get_command_definitions()
+    turn1_tool_paths = {("predicate", "search"), ("predicate", "add")}
+    turn1_defs = [d for d in all_defs if tuple(d["path"]) in turn1_tool_paths]
+    turn1_tools = defs_to_tools(turn1_defs) if turn1_defs else []
+
+    try:
+        turn1_result = await _run_tool_loop(turn1_messages, turn1_tools, "template_turn1", max_rounds=10)
+    except Exception as exc:
+        logger.exception("/template turn 1 failed")
+        return {"type": "status", "title": "/template", "data": {"message": f"Turn 1 failed: {exc}"}}
+
+    # Handle HITL from turn 1 (predicate.add gated behind confirmation)
+    if isinstance(turn1_result, dict) and turn1_result.get("type") == "confirm_tool":
+        _annotate_template_flow(turn1_result["session_id"], user_description)
+        return turn1_result
+
+    # Extract predicates summary from LLM's final answer
+    predicate_summary = turn1_result if isinstance(turn1_result, str) and turn1_result.strip() else ""
+    if not predicate_summary:
+        for msg in reversed(turn1_messages):
+            if msg["role"] == "assistant" and msg.get("content", "").strip():
+                predicate_summary = msg["content"]
+                break
+
+    # ── Turn 2: YAML template generation ──────────────────────────────────
+    return await _run_template_turn2(predicate_summary, user_description)

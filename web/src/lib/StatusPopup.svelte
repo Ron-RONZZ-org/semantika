@@ -10,6 +10,67 @@
   let activeProfileForm = $state(null); // "new" | "edit" | null
   let editingProfile = $state(null);
 
+  // ── Prompt file editing (when data has _edit_name) ─────────────────────
+  /** @type {string|null} */
+  let editingName = $state(null);
+  let editingContent = $state("");
+  let editingDefault = $state("");
+  let saving = $state(false);
+
+  async function startEditing(name) {
+    if (!name) return;
+    try {
+      const resp = await fetch(`/api/v1/llm/prompts/view?name=${encodeURIComponent(name)}`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      editingName = name;
+      editingContent = data.current || data.default;
+      editingDefault = data.default;
+    } catch (err) {
+      banner.show(`Failed to load prompt: ${err.message}`, "error", 5000);
+      editingName = null;
+    }
+  }
+
+  async function handleSave() {
+    if (!editingName) return;
+    saving = true;
+    try {
+      const resp = await fetch("/api/v1/llm/prompts/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: editingName, content: editingContent }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json();
+        throw new Error(err.detail || `HTTP ${resp.status}`);
+      }
+      banner.show(`Prompt "${editingName}" saved`, "success");
+      editingName = null;
+      // Refresh the current tab data
+      const viewResp = await fetch(`/api/v1/llm/prompts/view?name=${encodeURIComponent(editingName)}`);
+      if (viewResp.ok) {
+        const viewData = await viewResp.json();
+        const activeTab = tabStore.active;
+        if (activeTab && activeTab.id) {
+          tabStore.update(activeTab.id, {
+            ...viewData,
+            details: viewData.current || viewData.default || "(empty)",
+            _edit_name: editingName,
+          });
+        }
+      }
+    } catch (err) {
+      banner.show(`Save failed: ${err.message}`, "error", 5000);
+    } finally {
+      saving = false;
+    }
+  }
+
+  function cancelEdit() {
+    editingName = null;
+  }
+
   async function deleteProfile(item) {
     if (!confirm(`Delete profile "${item.name}"?`)) return;
     try {
@@ -217,6 +278,20 @@
     {/each}
   {:else if d.reply}
     <div class="message">{d.reply}</div>
+  {:else if d.details !== undefined}
+    <div class="prompt-view">
+      <div class="prompt-view-header">
+        {#if d.message}
+          <p class="prompt-view-meta">{@html d.message}</p>
+        {/if}
+        {#if d._edit_name}
+          <button class="btn btn-edit" onclick={() => startEditing(d._edit_name)} title="Edit this prompt file">
+            Edit
+          </button>
+        {/if}
+      </div>
+      <pre class="prompt-content">{d.details}</pre>
+    </div>
   {:else if d.message}
     <p class="message">{d.message}</p>
   {:else if d.status}
@@ -277,6 +352,34 @@
         {/each}
       {/if}
     {/if}
+  {/if}
+
+  {#if editingName !== null}
+    <!-- Edit dialog overlay -->
+    <div class="edit-overlay" onclick={cancelEdit} role="dialog" aria-modal="true" aria-label="Edit prompt"
+         tabindex="0" onkeydown={(e) => { if (e.key === "Escape") cancelEdit(); }}>
+      <div class="edit-dialog" role="presentation" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
+        <div class="edit-header">
+          <h3>Edit: {editingName}</h3>
+          <button class="btn-close" onclick={cancelEdit}>✕</button>
+        </div>
+        <textarea
+          class="edit-textarea"
+          bind:value={editingContent}
+          rows="20"
+          spellcheck="false"
+        ></textarea>
+        <div class="edit-actions">
+          <button class="btn btn-save" onclick={handleSave} disabled={saving}>
+            {saving ? "Saving…" : "Save"}
+          </button>
+          <button class="btn btn-cancel" onclick={cancelEdit}>Cancel</button>
+          <button class="btn btn-reset" onclick={() => { editingContent = editingDefault; }} title="Restore default">
+            Restore Default
+          </button>
+        </div>
+      </div>
+    </div>
   {/if}
 </div>
 
@@ -386,5 +489,56 @@
   .row.tech {
     opacity: 0.65;
     font-size: 0.78rem;
+  }
+
+  /* ── Prompt file view ────────────────────────────────── */
+  .prompt-view { padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; height: 100%; }
+  .prompt-view-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+  .prompt-view-meta { color: var(--clr-sub); font-size: 0.85rem; margin: 0; flex: 1; }
+  .prompt-content {
+    flex: 1; overflow: auto; background: #111; color: #a0d0a0;
+    border: 1px solid #333; border-radius: 4px;
+    padding: 0.75rem; font-family: monospace; font-size: 0.78rem;
+    line-height: 1.5; white-space: pre-wrap; margin: 0;
+  }
+  .btn {
+    padding: 0.25rem 0.6rem; border: 1px solid #444; border-radius: 4px;
+    background: #2a2a3e; color: #e0e0e0; cursor: pointer;
+    font-size: 0.75rem; white-space: nowrap;
+  }
+  .btn:hover { background: #3a3a5a; }
+  .btn:disabled { opacity: 0.5; cursor: default; }
+  .btn-edit { background: #2a3a4a; border-color: #3a6a8a; }
+  .btn-save { background: #2a4a3a; border-color: #3a7a4a; }
+  .btn-cancel { background: #3a3a3a; border-color: #555; }
+  .btn-reset { background: #3a2a2a; border-color: #7a3a3a; }
+  .btn-close { background: none; border: none; color: #888; cursor: pointer; font-size: 1rem; }
+  .btn-close:hover { color: #e0e0e0; }
+
+  /* ── Edit dialog overlay ─────────────────────────────── */
+  .edit-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+    display: flex; align-items: center; justify-content: center; z-index: 100;
+  }
+  .edit-dialog {
+    background: #1e1e32; border: 1px solid #444; border-radius: 8px;
+    padding: 1rem; width: 90%; max-width: 700px;
+    max-height: 85vh; display: flex; flex-direction: column;
+  }
+  .edit-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 0.5rem;
+  }
+  .edit-header h3 { margin: 0; font-size: 0.95rem; color: #e0e0e0; }
+  .edit-textarea {
+    flex: 1; min-height: 300px;
+    background: #111; color: #a0d0a0; border: 1px solid #333; border-radius: 4px;
+    padding: 0.75rem; font-family: monospace; font-size: 0.8rem;
+    resize: vertical; outline: none; line-height: 1.5;
+  }
+  .edit-textarea:focus { border-color: #5a5a8a; }
+  .edit-actions {
+    display: flex; gap: 0.5rem; justify-content: flex-end;
+    margin-top: 0.75rem;
   }
 </style>
