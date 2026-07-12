@@ -13,6 +13,7 @@ from __future__ import annotations
 import contextvars
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -85,6 +86,23 @@ def _load_user_prompt() -> str:
 # to decide what to do next (start turn 2, run validation, etc.).
 _flow_sessions: dict[str, dict] = {}
 
+# Stale sessions older than this are evicted on every access.
+_FLOW_TTL_SECONDS: int = 600  # 10 minutes
+
+
+def _cleanup_expired_flow_sessions() -> int:
+    """Remove expired flow sessions to prevent memory leak."""
+    now = time.time()
+    expired = [
+        sid for sid, state in _flow_sessions.items()
+        if now - state.get("created_at", 0) > _FLOW_TTL_SECONDS
+    ]
+    for sid in expired:
+        _flow_sessions.pop(sid, None)
+    if expired:
+        logger.info("Cleaned up %d expired flow session(s)", len(expired))
+    return len(expired)
+
 
 def _annotate_template_flow(session_id: str, user_description: str) -> None:
     """Annotate a pending execution session with template flow context."""
@@ -92,6 +110,7 @@ def _annotate_template_flow(session_id: str, user_description: str) -> None:
         "flow_type": "template",
         "next_turn": "turn2",
         "user_description": user_description,
+        "created_at": time.time(),
     }
 
 
@@ -110,6 +129,7 @@ def _annotate_ttt_flow(session_id: str, next_turn: str, user_text: str,
         "next_turn": next_turn,
         "user_text": user_text,
         "context_session_id": context_session_id,
+        "created_at": time.time(),
     }
 
 
@@ -139,6 +159,9 @@ async def resume_execution(
     from fastapi import HTTPException
 
     from lightercore.llm.tool_loop import resume_execution as _lc_resume
+
+    # Evict stale sessions before looking up the current one
+    _cleanup_expired_flow_sessions()
 
     # Save flow context before _lc_resume consumes the session
     flow_data = _flow_sessions.pop(session_id, None)

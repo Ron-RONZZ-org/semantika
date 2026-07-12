@@ -25,8 +25,10 @@ logger = logging.getLogger(__name__)
 class ReviewService:
     """Service for reviewing triples with view and quiz modes."""
 
-    def __init__(self, db: SemantikaDB) -> None:
+    def __init__(self, db: SemantikaDB, seed: int | float | str | bytes | bytearray | None = None) -> None:
         self.db = db
+        # Deterministic RNG for reproducible test results.
+        self._rng = random.Random(seed)
 
     # ── Session creation ────────────────────────────────────────────────
 
@@ -74,7 +76,7 @@ class ReviewService:
             f"ORDER BY subject_id LIMIT ?",
             (*params, fetch_limit),
         )
-        random.shuffle(triples)
+        self._rng.shuffle(triples)
         triples = triples[:limit]
 
         total = len(triples)
@@ -151,7 +153,7 @@ class ReviewService:
                 count=3,
             )
             options = [result["object_value"], *distractors]
-            random.shuffle(options)
+            self._rng.shuffle(options)
             question["options"] = options
 
         return question

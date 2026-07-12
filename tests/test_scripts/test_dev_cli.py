@@ -60,7 +60,8 @@ class TestDevMain:
             args, kwargs = mock_uvicorn.call_args
             assert "semantika.server.app:create_app" in args
             assert kwargs.get("factory") is True
-            assert kwargs.get("reload") is True
+            # reload is False because dev mode uses env-var-based hook injection
+            assert kwargs.get("reload") is False
 
     @patch("uvicorn.run")
     def test_passes_no_hooks(self, mock_uvicorn, tmp_path: Path) -> None:
