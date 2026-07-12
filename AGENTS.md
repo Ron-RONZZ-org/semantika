@@ -219,6 +219,7 @@ semantika/
 │           │       ├── predicate.py / predicate_group.py / predicate_trash.py
 │           │       ├── triple.py / review.py
 │           │       ├── backup.py / reset.py
+│           │       ├── help.py
 │           │       ├── llm.py
 │           │       ├── trash.py
 │           │       ├── unit.py

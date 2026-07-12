@@ -712,6 +712,85 @@ async function run() {
   });
 
   // ═══════════════════════════════════════════
+  //  HELP COMMAND
+  // ═══════════════════════════════════════════
+  console.log("\n═══ HELP ═══");
+
+  await test("!help opens help tab with grouped commands", async () => {
+    await closeResult();
+    await sleep(200);
+    await typeAndRun("!help");
+    await sleep(600);
+    // Should open a new tab with the help reference
+    const panel = getActivePanel();
+    await panel.waitFor({ state: "attached", timeout: 5000 });
+    const content = await panel.textContent();
+    assert.ok(content, "Help tab should have content");
+    assert.ok(
+      content.includes("Command Reference"),
+      `Help tab should show "Command Reference", got: ${content.slice(0, 200)}`,
+    );
+    // Should list command groups (node, predicate, triple, ...)
+    assert.ok(
+      content.includes("node") || content.includes("nodes"),
+      `Help tab should list node commands`,
+    );
+    assert.ok(
+      content.includes("commands in") || content.includes("groups"),
+      `Help tab should show group count`,
+    );
+    // Close the tab
+    const tabClose = page.locator(".tab-close").last();
+    if (await tabClose.isVisible().catch(() => false)) {
+      await tabClose.click();
+      await sleep(200);
+    }
+  });
+
+  await test("!help node list shows specific command detail", async () => {
+    await closeResult();
+    await sleep(200);
+    await typeAndRun("!help node list");
+    await sleep(600);
+    const panel = getActivePanel();
+    await panel.waitFor({ state: "attached", timeout: 5000 });
+    const content = await panel.textContent();
+    assert.ok(content, "Help detail tab should have content");
+    assert.ok(
+      content.includes("!node list"),
+      `Should show "!node list", got: ${(content || "").slice(0, 200)}`,
+    );
+    // Close the tab
+    const tabClose = page.locator(".tab-close").last();
+    if (await tabClose.isVisible().catch(() => false)) {
+      await tabClose.click();
+      await sleep(200);
+    }
+  });
+
+  await test("!help nonexistent shows error state", async () => {
+    await closeResult();
+    await sleep(200);
+    await typeAndRun("!help zzz_nonexistent_cmd");
+    await sleep(600);
+    const panel = getActivePanel();
+    await panel.waitFor({ state: "attached", timeout: 5000 });
+    const content = await panel.textContent();
+    assert.ok(content, "Help error tab should have content");
+    assert.ok(
+      (content.includes("not found") || content.includes("Not Found") ||
+       content.includes("⚠")),
+      `Should show error state, got: ${(content || "").slice(0, 200)}`,
+    );
+    // Close the tab
+    const tabClose = page.locator(".tab-close").last();
+    if (await tabClose.isVisible().catch(() => false)) {
+      await tabClose.click();
+      await sleep(200);
+    }
+  });
+
+  // ═══════════════════════════════════════════
   //  GUI: autocomplete
   // ═══════════════════════════════════════════
   console.log("\n═══ GUI ═══");

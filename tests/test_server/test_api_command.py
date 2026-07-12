@@ -48,7 +48,10 @@ class TestCommandTree:
         resp = client.get("/api/v1/command/help")
         assert resp.status_code == 200
         data = resp.json()
-        assert "commands" in data
+        assert data["type"] == "help"
+        assert "groups" in data
+        assert "total" in data
+        assert data["total"] > 0
 
 
 # ── Additional command dispatch tests ──────────────────────────────────
