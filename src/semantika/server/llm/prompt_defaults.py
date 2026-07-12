@@ -67,21 +67,25 @@ DEFAULT_AGENTS_STYLE = (
 # ── Template turn prompts ────────────────────────────────────────────────────
 
 DEFAULT_TURN1 = (
-    "# turn1 — predicate discovery\n"
-    "Your task is to find existing predicates in the Semantika "
-    "knowledge graph that are relevant to the user's template "
-    "description, and create any that are missing.\n\n"
+    "# turn1 — building-block discovery\n"
+    "Find (or create) the predicates and nodes that the template "
+    "will need.\n\n"
     "User description:\n"
     "$ARGUMENTS\n\n"
     "## Steps\n"
+    "### Predicates\n"
     "1. Use **predicate.search** to find relevant predicates. "
     "Try different keyword variations to get broad coverage.\n"
     "2. If an important predicate does not exist, create it with "
-    "**predicate.add**.  Follow the naming conventions from the "
-    "user's AGENTS.md style file (e.g. ``rs:xxx`` prefixed IDs).\n"
-    "3. Once you have a good set of predicates (both existing and "
-    "newly created), provide a concise summary listing the "
-    "predicate IDs you found or created.\n"
+    "**predicate.add**.  Follow naming conventions from AGENTS.md.\n\n"
+    "### Nodes\n"
+    "3. Templates often reference fixed type nodes like ``Book``, "
+    "``Person``, ``Organization`` in triples like ``{subject} rdf:type Book``. "
+    "Use **node.search** to check if these nodes exist.\n"
+    "4. If a needed node does not exist, create it with "
+    "**node.add** with an appropriate label.\n\n"
+    "Once done, provide a concise summary listing the "
+    "predicate and node IDs you found or created.\n"
 )
 
 DEFAULT_TURN2 = (
