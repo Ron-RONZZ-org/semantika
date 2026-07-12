@@ -271,7 +271,7 @@ def cmd_triple_view(remaining: list[str], flags: dict[str, str]) -> dict:
     return {"type": "table", "data": triples, "label": f"Triples for {node_id}"}
 
 
-@command("triple.add", description="Add a triple", interactive=True,
+@command("triple.add", description="Add a relationship statement between two nodes", interactive=True,
          params=[{"name": "subject_id", "type": "string", "required": True},
                  {"name": "predicate_id", "type": "string", "required": True},
                  {"name": "object_value", "type": "string", "required": True}],

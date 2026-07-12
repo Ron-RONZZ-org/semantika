@@ -88,6 +88,9 @@ DEFAULT_TURN2 = (
     "# turn2 — YAML template generation\n"
     "Generate a YAML template definition matching the user's description "
     "using the predicates available, then save it with ``template.save``.\n\n"
+    "## Get predicate IDs from context\n"
+    "Instead of relying on injected text, call **context.get(type=predicates)** "
+    "to retrieve the exact predicate IDs discovered in the previous turn.\n\n"
     "## Template Schema\n"
     "```yaml\n"
     "name: <short-name>\n"
@@ -109,9 +112,7 @@ DEFAULT_TURN2 = (
     "- No flag = URI reference (object is another node)\n"
     "- `--str` = string literal, `--int` = number literal\n"
     "- Optional params: if not filled, the triple is auto-skipped\n"
-    "- Use PREDICATE IDs that already exist in your graph\n\n"
-    "## Available predicates\n"
-    "$AVAILABLE_PREDICATES\n\n"
+    "- Use PREDICATE IDs only from **context.get**\n\n"
     "## User description\n"
     "$TEMPLATE_DESCRIPTION\n\n"
     "## Style example\n"
@@ -121,16 +122,82 @@ DEFAULT_TURN2 = (
     "$STYLE_EXAMPLE\n"
     "```\n\n"
     "## Instructions\n"
-    "1. Generate the YAML template content.\n"
-    "2. If any predicates are missing, create them first using "
+    "1. Call **context.get(type=predicates)** to see available predicates.\n"
+    "2. Generate the YAML template content using those predicate IDs.\n"
+    "3. If any predicates are missing, create them first using "
     "**predicate.add** before generating the template.\n"
-    "3. Call **template.save** with ``--yaml`` set to the full YAML "
-    "content to persist it to disk.\n"
-    "4. The user will be asked to confirm — explain what the template "
+    "4. Call **template.save** with ``--yaml`` set to the full YAML "
+    "content to persist it.\n"
+    "5. The user will be asked to confirm — explain what the template "
     "contains so they can make an informed decision.\n"
-    "5. After the tool completes, summarise what was created.\n\n"
+    "6. After the tool completes, summarise what was created.\n\n"
     "You may also call **template.list** to check existing templates "
     "or **template.view** to inspect a template's structure.\n"
+)
+
+
+# ── Text-to-triples turn prompts ────────────────────────────────────────────
+
+DEFAULT_TTT_TURN1 = (
+    "# TTT turn1 — Node discovery\n"
+    "Identify all entities mentioned in the user's text and create "
+    "nodes for them in the knowledge graph.\n\n"
+    "User text:\n"
+    "$ARGUMENTS\n\n"
+    "## Steps\n"
+    "1. Identify every entity (person, book, concept, place, etc.) "
+    "mentioned in the text.\n"
+    "2. For each entity, use **node.search** to check if it already "
+    "exists. Try different keyword variations and languages.\n"
+    "3. For entities that do not exist, use **node.add** to create "
+    "nodes with appropriate labels (English by default).\n"
+    "4. Batch all searches first, then batch all creations in a "
+    "single response.\n"
+    "5. Once done, provide a summary listing all node IDs "
+    "(both found and newly created).\n"
+)
+
+DEFAULT_TTT_TURN2 = (
+    "# TTT turn2 — Template and predicate discovery\n"
+    "Find matching triple templates and create any predicates "
+    "needed for the user's text.\n\n"
+    "User text:\n"
+    "$ARGUMENTS\n\n"
+    "## Steps\n"
+    "1. Call **template.list** to check if any existing templates "
+    "match the type of data in the text.\n"
+    "2. If a template seems relevant, call **template.view** "
+    "to inspect its structure.\n"
+    "3. For each relationship in the text, use **predicate.search** "
+    "to find existing predicates.\n"
+    "4. If a needed predicate does not exist, create it with "
+    "**predicate.add**.\n"
+    "5. Once done, provide a summary of templates found and "
+    "predicates discovered or created.\n"
+)
+
+DEFAULT_TTT_TURN3 = (
+    "# TTT turn3 — Triple creation\n"
+    "Create the actual triples from the text using the nodes "
+    "and predicates discovered in previous turns.\n\n"
+    "User text:\n"
+    "$ARGUMENTS\n\n"
+    "## CRITICAL: Get exact IDs from context\n"
+    "Before creating any triples, call **context.get(type=all)** "
+    "to retrieve the exact node and predicate IDs. Use ONLY those IDs.\n\n"
+    "## Steps\n"
+    "1. Call **context.get(type=all)** to see available nodes, "
+    "predicates, and templates.\n"
+    "2. If a matching template was found in the previous turn, "
+    "use **!triple add --template <name>** with the appropriate params.\n"
+    "3. Otherwise, create triples directly with "
+    "**!triple.add --subject_id <id> --predicate_id <id> --object_value <value>**.\n"
+    "4. Use ``--str`` for string literals, ``--int`` for numbers, "
+    "``--lang <code>`` for language tags.\n"
+    "5. Batch all triples in a single response.\n"
+    "6. After creating triples, summarise what was created.\n"
+    "7. If the text contains a pattern that repeats, suggest creating "
+    "a reusable template via **/template**.\n"
 )
 
 # ── Registered file list (for PromptFilesManager) ────────────────────────────
@@ -158,6 +225,25 @@ SEMANTIKA_PROMPT_FILES = [
         name="template/turn2",
         relative_path="commands/_template_turns/turn2.md",
         default_content=DEFAULT_TURN2,
+        category="turn",
+    ),
+    # Text-to-triples turns
+    PromptFile(
+        name="text-to-triples/turn1",
+        relative_path="commands/_text_to_triple_turns/turn1.md",
+        default_content=DEFAULT_TTT_TURN1,
+        category="turn",
+    ),
+    PromptFile(
+        name="text-to-triples/turn2",
+        relative_path="commands/_text_to_triple_turns/turn2.md",
+        default_content=DEFAULT_TTT_TURN2,
+        category="turn",
+    ),
+    PromptFile(
+        name="text-to-triples/turn3",
+        relative_path="commands/_text_to_triple_turns/turn3.md",
+        default_content=DEFAULT_TTT_TURN3,
         category="turn",
     ),
 ]

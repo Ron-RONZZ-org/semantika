@@ -43,18 +43,21 @@ def patch_config_to_tmp(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path
 
 
 def test_defaults_loaded() -> None:
-    assert len(SEMANTIKA_PROMPT_FILES) == 4
+    assert len(SEMANTIKA_PROMPT_FILES) == 7
     names = [pf.name for pf in SEMANTIKA_PROMPT_FILES]
     assert "system-prompt" in names
     assert "agents" in names
     assert "template/turn1" in names
     assert "template/turn2" in names
+    assert "text-to-triples/turn1" in names
+    assert "text-to-triples/turn2" in names
+    assert "text-to-triples/turn3" in names
 
 
 def test_integration_list_all(patch_config_to_tmp: Path) -> None:
     mgr = get_prompt_files_manager()
     entries = mgr.list_all()
-    assert len(entries) == 4
+    assert len(entries) == 7
 
     system = next(e for e in entries if e["name"] == "system-prompt")
     assert system["exists"] is True
@@ -80,7 +83,7 @@ def test_api_list(client, patch_config_to_tmp):
     resp = client.get("/api/v1/llm/prompts/list")
     assert resp.status_code == 200
     data = resp.json()
-    assert len(data) == 4
+    assert len(data) == 7
 
 
 def test_api_modified_count(client, patch_config_to_tmp):
@@ -88,7 +91,7 @@ def test_api_modified_count(client, patch_config_to_tmp):
     assert resp.status_code == 200
     data = resp.json()
     assert data["modified_count"] == 1
-    assert data["total"] == 4
+    assert data["total"] == 7
 
 
 def test_api_view(client, patch_config_to_tmp):
@@ -157,7 +160,7 @@ def test_cmd_prompt_list(client, patch_config_to_tmp):
     assert resp.status_code == 200
     data = resp.json()
     assert data["type"] == "prompt-list"
-    assert data["data"]["count"] == 4
+    assert data["data"]["count"] == 7
     assert data["data"]["modified_count"] == 1
 
 

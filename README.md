@@ -45,6 +45,7 @@ Semantika uses a **centralized command box** with three input modes and a **tab-
 - `!command` — built-in graph operations; results open in a new tab
 - **Multi-command input**: chain multiple `!` commands in one message — `!node list !predicate list`. Commands execute sequentially; `!` inside quoted strings ignored.
 - `/name [args...]` — user-defined prompt commands; results appear in the Home tab conversation
+- `/text-to-triples` or `/ttt` — built-in three-turn flow: translate natural language into semantic triples (nodes → predicates/templates → triples with validation)
 - Natural text — free-form LLM chat; results appear in the Home tab conversation
 - The **Home tab** is always pinned at index 0 — it shows a compact header once a conversation starts, the conversation history, and the command input box
 - Most `!command` results (lists, details, forms, graph views, quizzes) open as separate tabs with a tab bar at the bottom for switching; close with `Esc` or `q`
@@ -443,4 +444,4 @@ CREATE TABLE triples (
 
 ## Status
 
-**Pre-alpha — core complete.** All core triple store operations (nodes, predicates, triples, review, proof, units, TTL import/export, trash, predicate trash) are implemented and tested. The LLM provider (OpenAI-compatible + Ollama) supports configurable profiles with keyring-based key storage and two-phase command generation with permission gate. File-based prompt commands (`/` prefix) and user configuration (locale) are operational. **817 pytest tests pass.**
+**Pre-alpha — core complete.** All core triple store operations (nodes, predicates, triples, review, proof, units, TTL import/export, trash, predicate trash) are implemented and tested. The LLM provider (OpenAI-compatible + Ollama) supports configurable profiles with keyring-based key storage and two-phase command generation with permission gate. File-based prompt commands (`/` prefix), built-in multi-turn flows (``/template``, ``/text-to-triples``), context store system, and user configuration (locale) are operational. **856 pytest tests pass.**

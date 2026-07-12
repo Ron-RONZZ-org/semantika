@@ -219,6 +219,7 @@ semantika/
 │           │       ├── predicate.py / predicate_group.py / predicate_trash.py
 │           │       ├── triple.py / review.py
 │           │       ├── backup.py / reset.py
+│           │       ├── context.py  # Context store for multi-turn flows (!context.get)
 │           │       ├── help.py
 │           │       ├── llm.py
 │           │       ├── trash.py
@@ -237,8 +238,10 @@ semantika/
 │               ├── files.py     # /api/v1/files/* — file attachments
 │               ├── llm.py       # /api/v1/llm/* — chat, config, profiles, confirm
 │               ├── prompt_commands.py  # /api/v1/prompt-commands/* — list, expand, execute, SSE stream
-│               │   Turn prompts (turn1.md / turn2.md) use named-only expansion ($AVAILABLE_PREDICATES etc.).
+│               │   Turn prompts use named-only expansion ($ARGUMENTS, $TEMPLATE_DESCRIPTION, $STYLE_EXAMPLE).
 │               │   /template supports two-turn HITL: predicate.add in turn1, template.save in turn2.
+│               │   /text-to-triples supports three-turn HITL: nodes in T1, templates+predicates in T2,
+│               │     triples with post-loop validation in T3.
 │               │   $STYLE_EXAMPLE auto-injected from most recently modified user-created template.
 │               └── user_config.py      # /api/v1/user/config — locale, preferences
 ├── tests/                       # pytest tests (849 tests)
@@ -363,6 +366,70 @@ The `--seed` flag on `semantika-dev` creates demo prompt commands for testing.
 Prompt files are only seeded **if they don't already exist** — your edits survive
 across restarts.  Use ``!llm prompt list`` and ``!llm prompt reset`` to inspect
 or restore shipped defaults.
+
+## Built-in Multi-Turn Commands (/ prefix)
+
+Semantika ships with built-in prompt commands that use multi-turn LLM flows.
+These are registered as special cases in ``prompt_commands.py``.
+
+### ``/template`` — two-turn flow
+
+| Turn | Purpose | Tools | HITL |
+|------|---------|-------|------|
+| T1 | Predicate discovery | ``predicate.search``, ``predicate.add`` | Yes (predicate.add) |
+| T2 | YAML template generation | ``context.get``, ``template.save``, ``template.list``, ``template.view``, ``predicate.search`` | Yes (template.save) |
+
+Turn prompts live at ``~/.config/semantika/commands/_template_turns/turn1.md``
+and ``turn2.md`` (user-editable).  Shipped defaults are in
+:data:`~semantika.server.llm.prompt_defaults.DEFAULT_TURN1` and
+:data:`~semantika.server.llm.prompt_defaults.DEFAULT_TURN2`.
+
+### ``/text-to-triples`` — three-turn flow (also accessible as ``/ttt``)
+
+Translates natural-language text into semantic triples by discovering
+entities, relationships, and templates in separate focused turns.
+
+| Turn | Purpose | Tools | HITL |
+|------|---------|-------|------|
+| T1 | Node discovery | ``node.search``, ``node.add`` | Yes (node.add) |
+| T2 | Template + predicate discovery | ``template.list``, ``template.view``, ``predicate.search``, ``predicate.add`` | Yes (predicate.add) |
+| T3 | Triple creation | ``context.get``, ``triple.add``, ``template.list``, ``template.view``, ``template.save``, ``node.search`` | Yes (triple.add) |
+
+Turn 3 includes **post-loop validation**: after the tool loop completes,
+all ``!triple.add`` calls are checked against the context store.  If any
+reference non-existent nodes or predicates, an automatic corrective prompt
+is injected and the loop re-enters (max 3 correction rounds).
+
+Turn prompts live at ``~/.config/semantika/commands/_text_to_triple_turns/``
+(turn1.md, turn2.md, turn3.md).  Shipped defaults are in
+:data:`~semantika.server.llm.prompt_defaults.DEFAULT_TTT_TURN1`,
+:data:`~semantika.server.llm.prompt_defaults.DEFAULT_TTT_TURN2`, and
+:data:`~semantika.server.llm.prompt_defaults.DEFAULT_TTT_TURN3`.
+
+## Context System (``!context.get``)
+
+Multi-turn flows use a **context store** (in-memory, per-session) to pass
+structured data between turns.  After each turn, the backend automatically
+collects created/found entities from tool call results into the context:
+
+```python
+{
+  "nodes":       [{"id": "BOOK_001", "labels": {"en": "..."}}, ...],
+  "predicates":  [{"id": "rs:hasAuthor", "labels": {"en": "..."}}, ...],
+  "templates":   [{"name": "book-author", "description": "...", "params": 2}]
+}
+```
+
+The LLM retrieves this data via ``!context.get --type all`` (READ-level,
+no HITL) to get exact IDs instead of guessing or relying on free-text
+summaries.  This replaces the old ``$AVAILABLE_PREDICATES`` injection
+pattern in ``/template`` T2.
+
+**Key files**:
+- ``src/semantika/server/command/handlers/context.py`` — store, population,
+  and ``!context.get`` handler
+- ``src/semantika/server/routes/prompt_commands_helpers.py`` — dispatch
+  wrapper that calls ``collect_into_context()`` after each tool execution
 
 ## Optimistic UI Updates
 

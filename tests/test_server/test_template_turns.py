@@ -170,10 +170,11 @@ class TestDefaultTurnPrompts:
         assert "AGENTS.md" in DEFAULT_TURN1 or "naming" in DEFAULT_TURN1.lower()
 
     def test_turn2_uses_named_placeholders(self):
-        """DEFAULT_TURN2 should use $AVAILABLE_PREDICATES and $TEMPLATE_DESCRIPTION."""
-        assert "$AVAILABLE_PREDICATES" in DEFAULT_TURN2
+        """DEFAULT_TURN2 should use $TEMPLATE_DESCRIPTION and $STYLE_EXAMPLE."""
+        assert "$AVAILABLE_PREDICATES" not in DEFAULT_TURN2  # replaced by context.get
         assert "$TEMPLATE_DESCRIPTION" in DEFAULT_TURN2
         assert "$STYLE_EXAMPLE" in DEFAULT_TURN2
+        assert "context.get" in DEFAULT_TURN2
 
     def test_turn2_has_no_positional_placeholders(self):
         """DEFAULT_TURN2 should NOT use $1, $2 positional placeholders."""
