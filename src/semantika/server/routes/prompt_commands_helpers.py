@@ -483,23 +483,28 @@ async def execute_template_flow(data: dict[str, Any]) -> dict[str, Any]:
             },
         }
 
-    # ── Turn 1: Predicate discovery (with optional creation) ─────────
+    # ── Turn 1: Predicate + node discovery (with optional creation) ───
     turn1_text = _load_and_expand_turn("turn1", {"ARGUMENTS": user_description})
     if turn1_text is None:
         from semantika.server.llm.prompt_defaults import DEFAULT_TURN1
         turn1_text = _expand_turn_prompt(DEFAULT_TURN1, {"ARGUMENTS": user_description})
 
     turn1_system = (
-        "You are a predicate discovery assistant for the Semantika "
+        "You are a building-block discovery assistant for the Semantika "
         "knowledge graph.\n\n"
-        "Use the **predicate.search** tool to find existing predicates. "
-        "Each call returns matching predicate IDs and labels. "
-        "Try different keyword variations to get broad coverage.\n\n"
-        "If a predicate you need does not exist, create it with "
-        "**predicate.add**.\n\n"
-        "Once you have a good set of predicates (both existing and "
-        "newly created), provide a concise summary listing the "
-        "predicate IDs you found or created."
+        "Your task is to find (or create) both **predicates** and **nodes** "
+        "that the template will need.\n\n"
+        "## Predicates\n"
+        "Use **predicate.search** to find existing predicates. "
+        "If a predicate does not exist, create it with **predicate.add**.\n\n"
+        "## Nodes\n"
+        "Templates often reference fixed type nodes like ``Book``, ``Person``, "
+        "``Organization``, etc. in triples such as ``{subject} rdf:type Book``. "
+        "Use **node.search** to find existing nodes by label. "
+        "If a needed node does not exist, create it with **node.add** "
+        "with an appropriate label.\n\n"
+        "Once you have a good set of predicates and nodes (both existing "
+        "and newly created), provide a summary listing what you found or created."
     )
     turn1_messages = [
         {
@@ -511,7 +516,10 @@ async def execute_template_flow(data: dict[str, Any]) -> dict[str, Any]:
 
     # Build tool definitions
     all_defs = get_command_definitions()
-    turn1_tool_paths = {("predicate", "search"), ("predicate", "add")}
+    turn1_tool_paths = {
+        ("predicate", "search"), ("predicate", "add"),
+        ("node", "search"), ("node", "add"),
+    }
     turn1_defs = [d for d in all_defs if tuple(d["path"]) in turn1_tool_paths]
     turn1_tools = defs_to_tools(turn1_defs) if turn1_defs else []
 
