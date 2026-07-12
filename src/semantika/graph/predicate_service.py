@@ -15,6 +15,7 @@ from semantika.core.crud import CRUDService, now
 from semantika.core.fts import FTS5Manager
 from semantika.graph.constants import FTS5_KEYWORDS
 from semantika.graph.helpers import escape_like
+from semantika.graph.node_helpers import sanitize_node_id, strip_diacritics
 
 logger = logging.getLogger(__name__)
 
@@ -194,11 +195,22 @@ class PredicateService(CRUDService):
 
     # ── Create / Update / Search with FTS5 support ────────────────────
 
-    def create(self, data: dict[str, Any]) -> dict[str, Any]:
-        """Create a predicate with JSON-serialized dict fields."""
+    def create(self, data: dict[str, Any], normalize_ids: bool | None = None) -> dict[str, Any]:
+        """Create a predicate with JSON-serialized dict fields.
+
+        Args:
+            data: Predicate data dict. Must contain 'predicate_id'.
+            normalize_ids: If True, strip diacritics from the predicate_id.
+                ``None`` means default sanitization (invisible char removal)
+                still applies.
+        """
+        raw_id = data["predicate_id"]
+        cleaned_id = sanitize_node_id(raw_id)
+        if normalize_ids:
+            cleaned_id = strip_diacritics(cleaned_id)
         ts = now()
         raw = {
-            "predicate_id": data["predicate_id"],
+            "predicate_id": cleaned_id,
             "source": data.get("source", "manual"),
             "labels": json.dumps(data.get("labels", {})),
             "descriptions": json.dumps(data.get("descriptions", {})),
@@ -218,7 +230,7 @@ class PredicateService(CRUDService):
                 self._index_fts(raw["predicate_id"], conn=conn)
         except sqlite3.IntegrityError as e:
             raise ValueError(
-                f"Predicate '{data['predicate_id']}' already exists."
+                f"Predicate '{cleaned_id}' already exists."
             ) from e
         return dict(raw)
 

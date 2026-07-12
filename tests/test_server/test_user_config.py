@@ -39,3 +39,44 @@ class TestUserConfigDirect:
         assert ucfg.get_locale() == "de"
         loaded = ucfg.load_config()
         assert loaded.get("locale") == "de"
+
+    def test_get_bool_default_false(self, tmp_path: Path):
+        """get_bool returns default for missing key."""
+        os.environ["SEMANTIKA_DATA_DIR"] = str(tmp_path)
+        import semantika.server.user_config as ucfg
+        importlib.reload(ucfg)
+
+        assert ucfg.get_bool("nonexistent") is False
+        assert ucfg.get_bool("nonexistent", True) is True
+
+    def test_get_bool_various_types(self, tmp_path: Path):
+        """get_bool handles bool, string and int values."""
+        os.environ["SEMANTIKA_DATA_DIR"] = str(tmp_path)
+        import semantika.server.user_config as ucfg
+        importlib.reload(ucfg)
+
+        ucfg.save_config({
+            "flag_true": True,
+            "flag_false": False,
+            "str_true": "true",
+            "str_false": "false",
+            "int_1": 1,
+            "int_0": 0,
+        })
+        assert ucfg.get_bool("flag_true") is True
+        assert ucfg.get_bool("flag_false") is False
+        assert ucfg.get_bool("str_true") is True
+        assert ucfg.get_bool("str_false") is False
+        assert ucfg.get_bool("int_1") is True
+        assert ucfg.get_bool("int_0") is False
+
+    def test_set_bool_roundtrip(self, tmp_path: Path):
+        """set_bool persists boolean values correctly."""
+        os.environ["SEMANTIKA_DATA_DIR"] = str(tmp_path)
+        import semantika.server.user_config as ucfg
+        importlib.reload(ucfg)
+
+        ucfg.set_bool("normalise_node_ids", True)
+        assert ucfg.get_bool("normalise_node_ids") is True
+        ucfg.set_bool("normalise_node_ids", False)
+        assert ucfg.get_bool("normalise_node_ids") is False

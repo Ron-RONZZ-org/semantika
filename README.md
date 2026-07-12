@@ -200,6 +200,44 @@ DISABLE_WATCH=true npm run dev
 
 This sets `server.watch: null` and `server.hmr: false` — no chokidar watcher runs and no WebSocket connection is established. Restart the process to see changes.
 
+## Migrating from A-semantika
+
+If you have an existing A-semantika database (Esperanto-column schema), you can
+migrate it to the semantika (English-column) schema with the bundled script:
+
+```bash
+# Source: your A-semantika user DB
+# Target: your semantika data directory
+uv run python src/semantika/scripts/migrate_from_a_semantika.py \
+    ~/.local/share/A/A-semantika/semantika.db \
+    ~/.local/share/semantika/semantika.db
+```
+
+The script handles full column renaming (Esperanto → English), table renames,
+trash-table migration, and rebuilds FTS indexes. It creates a fresh DB with the
+semantika schema and copies all data — no in-place migration needed.
+
+### Column mapping reference
+
+| A-semantika         | semantika           |
+|---------------------|---------------------|
+| `etikedoj`          | `labels`            |
+| `difinoj`           | `definitions`       |
+| `difin_text`        | `definition_text`   |
+| `priskriboj`        | `descriptions`      |
+| `kreita_je`         | `created_at`        |
+| `modifita_je`       | `updated_at`        |
+| `forigita_je`       | `deleted_at`        |
+| `subject_uuid`      | `subject_id`        |
+| `object_node_uuid`  | `object_node_id`    |
+| `recenzo_sesio`     | `review_sessions`   |
+| `recenzo_rezulto`   | `review_results`    |
+| `recenzo_rezulto` → `korekta` | `review_results` → `is_correct` |
+| `recenzo_rezulto` → `pozicio` | `review_results` → `position` |
+| `nodes_rubujo`      | `nodes_trash`       |
+| `predicates_rubujo` | `predicates_trash`  |
+| `predicate_groups_rubujo` | `predicate_groups_trash` |
+
 ## Testing
 
 ```bash

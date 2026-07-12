@@ -186,3 +186,26 @@ class TestPredicateUpdateNplusOne:
         ps.create({"predicate_id": "ex:b"})
         with pytest.raises(ValueError, match="already exists"):
             ps.update_predicate_id("ex:a", "ex:b")
+
+
+class TestPredicateServiceNormalizeIds:
+    """Tests for predicate_service.create() with normalize_ids parameter."""
+
+    def test_create_without_normalize_ids_keeps_diacritics(self, services: dict):
+        """Without normalize_ids, a predicate_id with diacritics is kept (invisible chars still stripped)."""
+        ps = services["predicate"]
+        pred = ps.create({"predicate_id": "ex:matière", "labels": {"en": "Matière"}})
+        assert pred["predicate_id"] == "ex:matière"
+
+    def test_create_with_normalize_ids_strips_diacritics(self, services: dict):
+        """With normalize_ids=True, diacritics are stripped from predicate_id."""
+        ps = services["predicate"]
+        pred = ps.create({"predicate_id": "ex:matière", "labels": {"en": "Matière"}}, normalize_ids=True)
+        assert pred["predicate_id"] == "ex:matiere"
+
+    def test_create_sanitizes_invisible_chars(self, services: dict):
+        """predicate_id is always sanitized (invisible chars removed)."""
+        ps = services["predicate"]
+        pred = ps.create({"predicate_id": "ex:te\u200bst", "labels": {"en": "Test"}})
+        # Without invisible chars
+        assert pred["predicate_id"] == "ex:test"

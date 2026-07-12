@@ -320,3 +320,25 @@ class TestNodeHardDelete:
     def test_hard_delete_not_found(self, services: dict):
         """Hard delete of nonexistent node returns False."""
         assert services["node"].delete("NONEXISTENT", soft=False) is False
+
+
+class TestNodeServiceNormalizeIds:
+    """Tests for node_service.create() with normalize_ids parameter."""
+
+    def test_create_without_normalize_ids_keeps_diacritics(self, services: dict):
+        """Without normalize_ids, a node_id with diacritics is kept as-is."""
+        ns = services["node"]
+        node = ns.create({"node_id": "Matière", "labels": {"en": "Test"}})
+        assert node["node_id"] == "Matière"
+
+    def test_create_with_normalize_ids_strips_diacritics(self, services: dict):
+        """With normalize_ids=True, diacritics are stripped from node_id."""
+        ns = services["node"]
+        node = ns.create({"node_id": "Matière", "labels": {"en": "Test"}}, normalize_ids=True)
+        assert node["node_id"] == "Matiere"
+
+    def test_create_with_normalize_ids_false_keeps_diacritics(self, services: dict):
+        """With normalize_ids=False, diacritics are kept."""
+        ns = services["node"]
+        node = ns.create({"node_id": "Café", "labels": {"en": "Test"}}, normalize_ids=False)
+        assert node["node_id"] == "Café"

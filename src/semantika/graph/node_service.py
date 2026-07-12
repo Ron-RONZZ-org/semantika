@@ -25,6 +25,7 @@ from semantika.graph.node_helpers import (
     extract_label_text,
     normalize_label_to_id,
     sanitize_node_id,
+    strip_diacritics,
 )
 from semantika.graph.node_merge_mixin import NodeMergeMixin
 
@@ -99,17 +100,25 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
 
     # ── Override create ────────────────────────────────────────────────
 
-    def create(self, data: dict[str, Any]) -> dict[str, Any]:
+    def create(self, data: dict[str, Any], normalize_ids: bool | None = None) -> dict[str, Any]:
         """Create a node with optional pre-assigned node_id.
 
         If no ``node_id`` is given, derives one from the first English label
         (or first available label) via ``normalize_label_to_id``, with
         collision avoidance (``_2``, ``_3``, … suffix). Falls back to UUID
         if no labels are provided.
+
+        Args:
+            data: Node data dict.
+            normalize_ids: If True, strip diacritics from the generated
+                node_id. ``None`` means no additional normalization (existing
+                ``sanitize_node_id`` still applies).
         """
         node_id_raw = data.get("node_id")
         if node_id_raw:
             node_id_val = sanitize_node_id(node_id_raw)
+            if normalize_ids:
+                node_id_val = strip_diacritics(node_id_val)
         else:
             labels = data.get("labels", {})
             if isinstance(labels, str):

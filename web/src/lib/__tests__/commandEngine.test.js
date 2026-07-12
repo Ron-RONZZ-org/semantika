@@ -160,6 +160,13 @@ describe("getCompletions", () => {
     expect(result.completions).toEqual(["list"]);
     expect(result.level).toBe("child");
   });
+
+  it("!/ returns no completions (virtual / node was removed)", () => {
+    // The virtual / node was removed from commandTree so typing !/
+    // should not suggest prompt commands in ! mode.
+    const result = getCompletions("!/");
+    expect(result.completions).toEqual([]);
+  });
 });
 
 describe("getPromptCompletions", () => {

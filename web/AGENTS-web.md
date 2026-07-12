@@ -16,6 +16,7 @@ Svelte 5 SPA frontend — command-bar UI with rich result rendering for the Sema
 - **Katex rendering**: Mathematical formulas rendered inline in results
 - **Code block rendering**: Syntax-highlighted code snippets in results
 - **Locale**: Persistent locale setting synced with backend `GET/PATCH /api/v1/user/config`
+- **Settings tab**: ``!user config`` opens a settings tab with locale selector and ID normalisation toggles. The ``userConfig.svelte.js`` store now exposes ``getNormaliseNodeIds()``, ``getStripPredicateDiacritics()``, and ``setBoolSetting(key, value)``.
 
 ## Input Modes
 1. `!command` — built-in operations (`!node add`, `!triple list`, `!backup now`, etc.)

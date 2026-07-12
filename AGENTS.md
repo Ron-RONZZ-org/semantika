@@ -483,9 +483,17 @@ next access will re-seed it fresh, re-appending your AGENTS.md content.
 
 Semantika supports persistent user preferences stored as JSON at `~/.local/share/semantika/user_config.json`:
 
-- **Locale** — set via `!user config --locale CODE` or the GUI locale badge
+| Setting | Type | CLI flag | Effect |
+|---------|------|----------|--------|
+| **Locale** | string | `--locale CODE` | Interface language |
+| **Normalise node IDs** | bool | `--normalise-node-ids on|off` | Strip diacritics (â→a) from node IDs on creation |
+| **Strip predicate diacritics** | bool | `--strip-predicate-diacritics on|off` | Strip diacritics from predicate IDs on creation |
+
+- CLI: `!user config` with optional flags above (opens the settings tab when run without flags)
+- GUI settings tab: Type ``!user config`` to open the settings tab with toggles
 - API: `GET/PATCH /api/v1/user/config`
-- The frontend fetches locale on startup and falls back to browser language
+- The frontend fetches config on startup and falls back to browser language
+- Normalisation applies only to new IDs (no retroactive cleanup)
 
 ## Coding Guidelines
 

@@ -4,10 +4,11 @@
  */
 
 let _locale = $state("en");
+let _normaliseNodeIds = $state(false);
+let _stripPredicateDiacritics = $state(false);
 
-/** Initialize locale from backend, falling back to browser language. */
+/** Initialize from backend, falling back to browser language. */
 export async function initLocale() {
-  // Try browser language first
   const browserLang = navigator.language || navigator.languages?.[0] || "en";
 
   try {
@@ -15,6 +16,8 @@ export async function initLocale() {
     if (resp.ok) {
       const data = await resp.json();
       _locale = data.locale || browserLang;
+      _normaliseNodeIds = !!data.normalise_node_ids;
+      _stripPredicateDiacritics = !!data.strip_diacritics_from_predicate_ids;
     } else {
       _locale = browserLang;
     }
@@ -48,4 +51,28 @@ export async function setLocale(code) {
 
 export function getLocale() {
   return _locale;
+}
+
+export function getNormaliseNodeIds() {
+  return _normaliseNodeIds;
+}
+
+export function getStripPredicateDiacritics() {
+  return _stripPredicateDiacritics;
+}
+
+/** Toggle a boolean setting on both frontend and backend. */
+export async function setBoolSetting(key, value) {
+  if (key === "normalise_node_ids") {
+    _normaliseNodeIds = !!value;
+  } else if (key === "strip_diacritics_from_predicate_ids") {
+    _stripPredicateDiacritics = !!value;
+  }
+  try {
+    await fetch("/api/v1/user/config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [key]: !!value }),
+    });
+  } catch { /* silent */ }
 }

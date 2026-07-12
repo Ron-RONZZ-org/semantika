@@ -7,8 +7,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
-import unicodedata
 
 import httpx
 
@@ -150,24 +148,11 @@ def _truncate_id(node_id: str) -> str:
     return node_id[:16]
 
 
-def sanitize_node_id(raw_id: str) -> str:
-    """Strip invisible Unicode characters from a node_id."""
-    return "".join(
-        ch for ch in raw_id.strip()
-        if unicodedata.category(ch) not in ("Cf", "Cc")
-        or ch in (" ", "\t")
-    )
-
-
-def normalize_label_to_id(label: str) -> str:
-    """Convert a human label into a node_id-safe ASCII string.
-
-    Pipeline: NFKD decomposition → ASCII only → collapse non-alpha → UPPERCASE.
-    """
-    nfkd = unicodedata.normalize("NFKD", label)
-    ascii_str = nfkd.encode("ascii", "ignore").decode("ascii")
-    safe = re.sub(r"[^a-zA-Z0-9]+", "_", ascii_str)
-    safe = safe.strip("_")
-    if not safe:
-        return "_UNLABELED"
-    return safe.upper()
+# Re-export from lightercore for backward compatibility.
+# These functions have moved to the shared library so they can be
+# used by multiple projects (lighterbird, semantika) without duplication.
+from lightercore.text_utils import (  # noqa: F401  — re-exported
+    normalize_label_to_id,
+    sanitize_node_id,
+    strip_diacritics,
+)

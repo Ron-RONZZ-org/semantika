@@ -15,6 +15,7 @@
   import TripleListTab from "./TripleListTab.svelte";
   import PromptListTab from "./PromptListTab.svelte";
   import TemplateYamlPopup from "./TemplateYamlPopup.svelte";
+  import SettingsTab from "./SettingsTab.svelte";
 
   let showGlobalHelp = $state(false);
   let inputFocused = $state(false);
@@ -167,6 +168,8 @@
         <PromptListTab data={tabStore.active.data} />
       {:else if tabStore.active.type === "template_yaml"}
         <TemplateYamlPopup data={tabStore.active.data} />
+      {:else if tabStore.active.type === "settings"}
+        <SettingsTab data={tabStore.active.data} />
       {:else}
         <StatusPopup data={tabStore.active.data} />
       {/if}
