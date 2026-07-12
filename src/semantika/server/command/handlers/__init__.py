@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from . import (
     backup,  # noqa: F401
+    context,  # noqa: F401 — context store for multi-turn flows
     graph,  # noqa: F401 — graph stats, export, import, search, view
     help,  # noqa: F401 — !help command reference
     llm,  # noqa: F401

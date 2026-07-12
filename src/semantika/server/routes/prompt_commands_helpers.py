@@ -1,15 +1,16 @@
 """Shared helpers for file-based prompt command routes (/ prefix).
 
 Extracted from prompt_commands.py to keep each file under 500 lines.
-Provides the template flow, resume wrapper, and internal utilities.
+Provides the template flow, text-to-triples flow, context system,
+resume wrapper, and internal utilities.
 
 The core tool-calling loop lives in lightercore — this module only
-contains semantika-specific logic (``/template`` two-turn flow) and
-thin wrappers.
+contains semantika-specific logic and thin wrappers.
 """
 
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 from pathlib import Path
@@ -19,6 +20,13 @@ from lightercore.llm.base import defs_to_tools
 from lightercore.paths import config_dir
 
 from semantika.server.command.errors import CommandError
+from semantika.server.command.handlers.context import (
+    _current_context_session,
+    clear_context,
+    collect_into_context,
+    get_filtered_context,
+    init_context,
+)
 from semantika.server.command.registry import (
     dispatch_path as _raw_dispatch,
     get_command_definitions,
@@ -70,23 +78,38 @@ def _load_user_prompt() -> str:
     return load_system_prompt()
 
 
-# ── Template flow session tracking ──────────────────────────────────
+# ── Multi-turn flow session tracking ────────────────────────────────
 
-# Separate tracking for /template two-turn flow, kept outside lightercore's
-# _pending_executions because lightercore.resume_execution pops the session
-# state and does not preserve custom annotations.
-_template_flow_sessions: dict[str, dict] = {}
+# Kept outside lightercore's _pending_executions because the resume
+# wrapper pops the HITL state first and needs flow-level annotations
+# to decide what to do next (start turn 2, run validation, etc.).
+_flow_sessions: dict[str, dict] = {}
 
 
 def _annotate_template_flow(session_id: str, user_description: str) -> None:
-    """Annotate a pending execution session with template flow context.
-
-    Called when turn 1 returns ``confirm_tool``, signalling that after
-    the tool loop resumes and completes, turn 2 should be started
-    automatically via :func:`_run_template_turn2`.
-    """
-    _template_flow_sessions[session_id] = {
+    """Annotate a pending execution session with template flow context."""
+    _flow_sessions[session_id] = {
+        "flow_type": "template",
+        "next_turn": "turn2",
         "user_description": user_description,
+    }
+
+
+def _annotate_ttt_flow(session_id: str, next_turn: str, user_text: str,
+                       context_session_id: str) -> None:
+    """Annotate a pending execution for the text-to-triples flow.
+
+    Args:
+        session_id: The HITL session UUID.
+        next_turn: Which turn to start after resume (``"predicates"`` or ``"triples"``).
+        user_text: The original user text for the command.
+        context_session_id: The context store session ID.
+    """
+    _flow_sessions[session_id] = {
+        "flow_type": "text_to_triple",
+        "next_turn": next_turn,
+        "user_text": user_text,
+        "context_session_id": context_session_id,
     }
 
 
@@ -104,7 +127,10 @@ async def resume_execution(
     Thin wrapper around :func:`lightercore.llm.tool_loop.resume_execution`
     that adds semantika-specific features:
     - ``CommandError``/``suggestion`` in dispatch results
-    - ``/template`` two-turn flow continuation (via ``_template_flow_sessions``)
+    - ``/template`` two-turn flow continuation
+    - ``/text-to-triples`` three-turn flow continuation
+    - Context store population after turn completion
+    - T3 post-loop validation for text-to-triples
 
     Returns:
         Either a final ``{"type": "chat", ...}`` response, or another
@@ -114,15 +140,20 @@ async def resume_execution(
 
     from lightercore.llm.tool_loop import resume_execution as _lc_resume
 
-    # Save template flow context before _lc_resume consumes the session
-    template_flow = _template_flow_sessions.pop(session_id, None)
+    # Save flow context before _lc_resume consumes the session
+    flow_data = _flow_sessions.pop(session_id, None)
 
-    # Dispatch wrapper that catches CommandError and extracts suggestion
+    # Dispatch wrapper with context collection
+    context_sid = (flow_data or {}).get("context_session_id", "")
+
     def _dispatch_wrapper(path: str, flags: dict) -> dict:
         try:
-            return _raw_dispatch(path, flags)
+            result = _raw_dispatch(path, flags)
         except CommandError as exc:
             return {"error": str(exc), "suggestion": getattr(exc, "suggestion", "")}
+        if context_sid:
+            collect_into_context(context_sid, path, result)
+        return result
 
     provider = get_provider()
 
@@ -140,34 +171,41 @@ async def resume_execution(
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
-    # Post-processing: confirm_tool (nested) or template flow or chat
+    # Post-processing: confirm_tool (nested) or flow continuation or chat
     if isinstance(raw_result, dict) and raw_result.get("type") == "confirm_tool":
-        # Nested confirm_tool — preserve template flow annotation for next resume
-        if template_flow and "session_id" in raw_result:
-            _template_flow_sessions[raw_result["session_id"]] = template_flow
+        # Nested confirm_tool — preserve flow annotation for next resume
+        if flow_data and "session_id" in raw_result:
+            _flow_sessions[raw_result["session_id"]] = flow_data
         return raw_result
 
+    flow_type = (flow_data or {}).get("flow_type", "")
+    llm_answer = raw_result if isinstance(raw_result, str) and raw_result.strip() else ""
+
     # ── Template flow: turn 1 completed → proceed to turn 2 ──────────
-    if template_flow and isinstance(raw_result, str) and raw_result.strip():
+    if flow_type == "template" and llm_answer:
         return await _run_template_turn2(
-            predicate_summary=raw_result,
-            user_description=template_flow["user_description"],
+            predicate_summary=llm_answer,
+            user_description=flow_data["user_description"],
         )
 
+    # ── Text-to-triples flow continuation ────────────────────────────
+    if flow_type == "text_to_triple" and llm_answer:
+        ctx_sid = flow_data["context_session_id"]
+        next_turn = flow_data["next_turn"]
+        user_text = flow_data["user_text"]
+
+        if next_turn == "predicates":
+            return await _run_t2_templates_predicates(ctx_sid, user_text)
+        elif next_turn == "triples":
+            return await _run_t3_triples(ctx_sid, user_text)
+
     # ── Fallback: format as chat response ─────────────────────────────
-    reply = raw_result if isinstance(raw_result, str) and raw_result.strip() else None
-    if reply:
+    if llm_answer:
         return {
             "type": "chat",
             "title": "Prompt Command",
-            "data": {"html": _render_markdown(reply), "actions": []},
+            "data": {"html": _render_markdown(llm_answer), "actions": []},
         }
-
-    return {
-        "type": "chat",
-        "title": "Prompt Command",
-        "data": {"html": "<p><em>(command completed)</em></p>", "actions": []},
-    }
 
     return {
         "type": "chat",
@@ -259,14 +297,14 @@ async def _run_template_turn2(
 ) -> dict[str, Any]:
     """Run turn 2 of the template flow — YAML generation.
 
-    Loads and expands the turn2 prompt, builds messages and tools, then
-    runs the tool loop.  May return ``{"type": "confirm_tool", ...}`` if
-    the LLM issues WRITE-level tool calls (``template.save``).
+    The LLM can use **context.get** to retrieve predicate IDs discovered
+    in turn 1, instead of relying on injected text variables.
     """
+    from lightercore.llm.tool_loop import run_tool_loop as _lc_tool_loop
+
     # Build turn2 variables
     style_example = _get_style_example()
     turn2_vars: dict[str, str] = {
-        "AVAILABLE_PREDICATES": predicate_summary or "(none found)",
         "TEMPLATE_DESCRIPTION": user_description,
         "STYLE_EXAMPLE": style_example,
     }
@@ -279,6 +317,10 @@ async def _run_template_turn2(
         "You are a YAML template generator for the Semantika knowledge graph. "
         "Your job is to generate valid YAML triple templates and save them "
         "using the available tools.\n\n"
+        "## Get predicate IDs from context\n"
+        "Call **context.get(type=predicates)** to see the exact predicate IDs "
+        "that were discovered or created in the previous turn. Use ONLY "
+        "those IDs — do NOT invent predicate IDs.\n\n"
         "## Triple format — STRINGS, not dicts\n"
         "Each triple must be a single string like "
         '"`{{subject}} rs:predicate {{object}}`". '
@@ -287,7 +329,8 @@ async def _run_template_turn2(
         "- ``--str`` → string literal\n"
         "- ``--int`` → number literal\n\n"
         "Available tools:\n"
-        "- **template.save** — Save a YAML template file to disk "
+        "- **context.get** — Retrieve predicates from the previous turn.\n"
+        "- **template.save** — Save a reusable triple pattern as a named template "
         "(WRITE-level, requires user confirmation).\n"
         "- **template.list** — Check existing template names (no confirmation).\n"
         "- **template.view** — Inspect a template's full structure (no confirmation).\n"
@@ -308,9 +351,10 @@ async def _run_template_turn2(
         {"role": "user", "content": turn2_text},
     ]
 
-    # Build tool definitions
+    # Build tool definitions — include context.get
     all_defs = get_command_definitions()
     turn2_tool_paths = {
+        ("context", "get"),
         ("template", "save"),
         ("template", "list"),
         ("template", "view"),
@@ -320,7 +364,6 @@ async def _run_template_turn2(
     turn2_tools = defs_to_tools(turn2_defs) if turn2_defs else []
 
     if not turn2_tools:
-        # Fallback: no template tools registered
         logger.warning("No turn 2 tools available — falling back to plain chat")
         provider = get_provider()
         try:
@@ -330,8 +373,8 @@ async def _run_template_turn2(
                         "role": "system",
                         "content": (
                             "You are a YAML template generator. Generate a triple "
-                            "template YAML from the user's description and the "
-                            "predicates found. Output ONLY the YAML code block."
+                            "template YAML from the user's description. "
+                            "Output ONLY the YAML code block."
                         ),
                     },
                     {"role": "user", "content": turn2_text},
@@ -351,16 +394,25 @@ async def _run_template_turn2(
             },
         }
 
-    # Use lightercore's run_tool_loop for turn 2
-    from lightercore.llm.tool_loop import run_tool_loop as _lc_tool_loop
+    provider = get_provider()
+
+    # Context-aware dispatch wrapper (reuses the context from turn 1)
+    from semantika.server.command.handlers.context import _current_context_session
+    # The context_session_id from turn 1 is already set in the contextvar
+    # via execute_template_flow.  We don't need to set it again here —
+    # the context.get handler reads it automatically.
 
     def _dispatch_wrapper(path: str, flags: dict) -> dict:
         try:
-            return _raw_dispatch(path, flags)
+            result = _raw_dispatch(path, flags)
         except CommandError as exc:
             return {"error": str(exc), "suggestion": getattr(exc, "suggestion", "")}
+        # Collect into context (context_session_id is set via the contextvar)
+        sid = _current_context_session.get()
+        if sid:
+            collect_into_context(sid, path, result)
+        return result
 
-    provider = get_provider()
     try:
         turn2_result = await _lc_tool_loop(
             messages=turn2_messages,
@@ -462,12 +514,12 @@ async def execute_template_flow(data: dict[str, Any]) -> dict[str, Any]:
     turn1_defs = [d for d in all_defs if tuple(d["path"]) in turn1_tool_paths]
     turn1_tools = defs_to_tools(turn1_defs) if turn1_defs else []
 
-    # Dispatch wrapper that catches CommandError
-    def _dispatch_wrapper(path: str, flags: dict) -> dict:
-        try:
-            return _raw_dispatch(path, flags)
-        except CommandError as exc:
-            return {"error": str(exc), "suggestion": getattr(exc, "suggestion", "")}
+    # Context store for predicates discovered/created
+    import uuid
+    context_session_id = str(uuid.uuid4())
+    init_context(context_session_id)
+    _current_context_session.set(context_session_id)
+    ctx_dispatch = _make_context_dispatch_wrapper(context_session_id)
 
     from lightercore.llm.tool_loop import run_tool_loop as _lc_tool_loop
 
@@ -477,7 +529,7 @@ async def execute_template_flow(data: dict[str, Any]) -> dict[str, Any]:
             tools=turn1_tools,
             name="template_turn1",
             provider=provider,
-            dispatch_fn=_dispatch_wrapper,
+            dispatch_fn=ctx_dispatch,
             get_handler_metadata_fn=get_handler_metadata,
             get_command_level_fn=get_command_level,
             max_rounds=10,
@@ -501,3 +553,32 @@ async def execute_template_flow(data: dict[str, Any]) -> dict[str, Any]:
 
     # ── Turn 2: YAML template generation ─────────────────────────────
     return await _run_template_turn2(predicate_summary, user_description)
+
+
+# ── Context-aware dispatch wrapper ─────────────────────────────────────
+
+
+def _make_context_dispatch_wrapper(context_session_id: str) -> Any:
+    """Return a dispatch wrapper that automatically populates context.
+
+    The returned wrapper:
+    1. Dispatches the command (catching CommandError)
+    2. Collects any created/found entities into the context store
+
+    Use this instead of a raw ``_raw_dispatch`` wrapper in multi-turn flows.
+    """
+    def _wrapper(path: str, flags: dict) -> dict:
+        try:
+            result = _raw_dispatch(path, flags)
+        except CommandError as exc:
+            return {"error": str(exc), "suggestion": getattr(exc, "suggestion", "")}
+        collect_into_context(context_session_id, path, result)
+        return result
+    return _wrapper
+
+
+# ── Text-to-triples flow (extracted to separate file) ─────────────
+
+# The 3-turn flow, T1/T2/T3 functions, and validation helpers live in
+# ``prompt_commands_text_to_triple.py`` to keep this file under 500 lines.
+# Import the main entry point for use in prompt_commands.py routing:

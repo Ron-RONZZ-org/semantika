@@ -83,8 +83,8 @@ def cmd_template_view(remaining: list[str], flags: dict[str, str]) -> dict:
 
 @command(
     "template.save",
-    description="Save a YAML triple template to disk (creates or overwrites a .yaml file in the templates directory)",
-    params=[{"name": "yaml", "type": "string", "required": True, "description": "Full YAML content of the template"}],
+    description="Save a reusable triple pattern as a named template for repeated use",
+    params=[{"name": "yaml", "type": "string", "required": True, "description": "Full template definition content"}],
 )
 def cmd_template_save(remaining: list[str], flags: dict[str, str]) -> dict:
     """Save a YAML triple template to disk.

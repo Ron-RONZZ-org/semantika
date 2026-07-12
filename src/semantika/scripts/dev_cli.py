@@ -72,6 +72,30 @@ def _seed_prompt_commands() -> None:
     if not turn2_file.exists():
         turn2_file.write_text(DEFAULT_TURN2, encoding="utf-8")
 
+    # Seed the /text-to-triples prompt command (description shown in autocomplete;
+    # actual execution is handled by the backend's three-turn flow).
+    ttt_file = commands_dir / "text-to-triples.md"
+    if not ttt_file.exists():
+        ttt_file.write_text(
+            "# Translate natural language text into semantic triples\n"
+            "Analyzes text, identifies entities and relationships, creates nodes, "
+            "predicates, and triples. Describe what you want to capture.\n",
+            encoding="utf-8",
+        )
+
+    # Seed the three-turn prompt files for /text-to-triples
+    from semantika.server.llm.prompt_defaults import (
+        DEFAULT_TTT_TURN1, DEFAULT_TTT_TURN2, DEFAULT_TTT_TURN3,
+    )
+    ttt_turns_dir = commands_dir / "_text_to_triple_turns"
+    ttt_turns_dir.mkdir(parents=True, exist_ok=True)
+    for name, content in [("turn1", DEFAULT_TTT_TURN1),
+                          ("turn2", DEFAULT_TTT_TURN2),
+                          ("turn3", DEFAULT_TTT_TURN3)]:
+        fpath = ttt_turns_dir / f"{name}.md"
+        if not fpath.exists():
+            fpath.write_text(content, encoding="utf-8")
+
     # Seed a sample YAML triple template for testing
     templates_dir = config_dir() / "templates"
     templates_dir.mkdir(parents=True, exist_ok=True)

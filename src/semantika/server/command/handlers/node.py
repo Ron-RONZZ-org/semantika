@@ -66,7 +66,7 @@ def cmd_node_view(remaining: list[str], flags: dict[str, str]) -> dict:
     return {"type": "status", "data": node}
 
 
-@command("node.add", description="Create a new node with optional arc shortcuts and file attachments",
+@command("node.add", description="Create a new entity node in the knowledge graph",
          interactive=True,
          params=[{"name": "labels", "type": "string",
                "help": "Labels as LANG::TEXT or JSON"}],

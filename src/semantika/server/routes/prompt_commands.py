@@ -43,6 +43,9 @@ from semantika.server.routes.prompt_commands_helpers import (
     execute_template_flow,
     resume_execution,
 )
+from semantika.server.routes.prompt_commands_text_to_triple import (
+    execute_text_to_triple_flow,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -117,9 +120,11 @@ async def execute_endpoint(data: dict[str, Any]) -> dict[str, Any]:
     if not name:
         raise HTTPException(status_code=400, detail="'name' is required.")
 
-    # Special case: /template uses its own flow
+    # Special cases: built-in multi-turn flows
     if name.lower() == "template":
         return await execute_template_flow(data)
+    if name.lower() in ("text-to-triples", "text_to_triples", "ttt"):
+        return await execute_text_to_triple_flow(data)
 
     # Dispatch wrapper that catches CommandError and extracts suggestion
     def _dispatch_path(path: str, flags: dict) -> dict:
