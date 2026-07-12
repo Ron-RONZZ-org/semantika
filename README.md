@@ -46,6 +46,7 @@ Semantika uses a **centralized command box** with three input modes and a **tab-
 - **Multi-command input**: chain multiple `!` commands in one message — `!node list !predicate list`. Commands execute sequentially; `!` inside quoted strings ignored.
 - `/name [args...]` — user-defined prompt commands; results appear in the Home tab conversation
 - `/text-to-triples` or `/ttt` — built-in three-turn flow: translate natural language into semantic triples (nodes → predicates/templates → triples with validation)
+- `!template use` — apply a reusable template to create nodes from labels and add triples
 - Natural text — free-form LLM chat; results appear in the Home tab conversation
 - The **Home tab** is always pinned at index 0 — it shows a compact header once a conversation starts, the conversation history, and the command input box
 - Most `!command` results (lists, details, forms, graph views, quizzes) open as separate tabs with a tab bar at the bottom for switching; close with `Esc` or `q`

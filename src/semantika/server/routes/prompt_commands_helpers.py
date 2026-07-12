@@ -339,7 +339,7 @@ async def _run_template_turn2(
         "``template.save --yaml <content>`` to persist it. The user will "
         "be prompted to approve the save operation.\n\n"
         "After the template is saved, the ``template.save`` tool result "
-        "includes a ``usage`` field showing the correct ``!triple add --template`` "
+        "includes a ``usage`` field showing the correct ``!template use`` "
         "syntax. Include this usage example verbatim in your final summary "
         "so the user knows how to invoke the template."
     )
@@ -356,6 +356,7 @@ async def _run_template_turn2(
     turn2_tool_paths = {
         ("context", "get"),
         ("template", "save"),
+        ("template", "use"),
         ("template", "list"),
         ("template", "view"),
         ("predicate", "search"),

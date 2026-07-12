@@ -425,6 +425,26 @@ no HITL) to get exact IDs instead of guessing or relying on free-text
 summaries.  This replaces the old ``$AVAILABLE_PREDICATES`` injection
 pattern in ``/template`` T2.
 
+## Templates (``!template``)
+
+Templates are reusable triple patterns stored as YAML files in
+``~/.config/semantika/templates/``.
+
+| Command | Permission | Purpose |
+|---------|-----------|---------|
+| ``!template list`` | READ | List available templates |
+| ``!template view`` | READ | View a template's structure |
+| ``!template save`` | WRITE | Save a new template definition |
+| ``!template use`` | WRITE | Apply a template: creates nodes from labels, then adds triples |
+
+``!template use`` accepts labels (not just existing node IDs) for
+``type: node`` parameters.  Labels can be plain text, ``LANG::TEXT``
+pairs, or JSON dicts for multi-language support::
+
+    !template use book --subject "The Great Gatsby" --author "F. Scott Fitzgerald"
+    !template use book --subject '{"en":"Gatsby","fr":"Gatsby le Magnifique"}'
+    !template use book --subject "en::Gatsby, fr::Gatsby le Magnifique"
+
 **Key files**:
 - ``src/semantika/server/command/handlers/context.py`` — store, population,
   and ``!context.get`` handler

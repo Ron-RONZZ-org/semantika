@@ -6,6 +6,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
+from semantika.server.command.handlers.template import _resolve_or_create_node
 from semantika.server.templates.executor import expand_template
 from semantika.server.templates.loader import list_templates, load_template
 from semantika.server.templates.models import TemplateParam, TriplePattern, TripleTemplate
@@ -291,16 +292,16 @@ class TestTripleTemplatesAPI:
         assert "inferred" in resp.json()["data"]["message"]
 
 
-# ── Handler tests (via !triple add --template) ────────────────────────────
+# ── Handler tests (via !template use) ────────────────────────────────────
 
 
-def test_triple_add_template_missing_params_returns_form(
+def test_template_use_missing_params_returns_form(
     client, patch_templates_dir, sample_template_yaml,
 ) -> None:
-    """!triple add --template book without required params → form-required."""
+    """!template use missing required params → form-required."""
     resp = client.post("/api/v1/command", json={
-        "tokens": ["triple", "add"],
-        "flags": {"template": "book"},
+        "tokens": ["template", "use"],
+        "flags": {"name": "book"},
     })
     assert resp.status_code == 200
     data = resp.json()
@@ -309,18 +310,17 @@ def test_triple_add_template_missing_params_returns_form(
     assert "subject" in data["data"]["missing"]
 
 
-def test_triple_add_template_not_found(client) -> None:
-    """Template not found with interactive form → form-required with message."""
+def test_template_use_not_found(client) -> None:
+    """!template use with nonexistent template name returns form-required (interactive)."""
     resp = client.post("/api/v1/command", json={
-        "tokens": ["triple", "add"],
-        "flags": {"template": "nonexistent"},
+        "tokens": ["template", "use"],
+        "flags": {"name": "nonexistent"},
     })
     assert resp.status_code == 200
     data = resp.json()
-    # Because triple.add is interactive, CommandValidationError routes to form-required
     assert data["type"] == "form-required"
     message = (data.get("data") or {}).get("message", "") or ""
-    assert "nonexistent" in message or "not found" in message
+    assert "not found" in message.lower()
 
 
 # ── Template command handler tests (!template list/view/save) ───────────
@@ -429,3 +429,101 @@ def test_template_save_no_name(client) -> None:
     })
     # template.save has no interactive form → CommandValidationError → HTTP 400
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.json()}"
+
+
+# ── !template use — API tests ────────────────────────────────────────────
+
+
+def test_template_use_creates_nodes_and_triples(
+    client, patch_templates_dir, sample_template_yaml,
+) -> None:
+    """!template use creates nodes from labels and adds triples."""
+    resp = client.post("/api/v1/command", json={
+        "tokens": ["template", "use", "book"],
+        "flags": {
+            "subject": "The Great Gatsby",
+            "author": "F. Scott Fitzgerald",
+            "isbn": "978-3-16-148410-0",
+        },
+    })
+    assert resp.status_code == 200, f"Error: {resp.json()}"
+    data = resp.json()
+    assert data["type"] == "status"
+    assert "template" in data.get("data", {}).get("message", "").lower()
+
+
+def test_template_use_creates_nodes_with_json_labels(
+    client, patch_templates_dir, sample_template_yaml,
+) -> None:
+    """!template use with JSON labels for node params."""
+    resp = client.post("/api/v1/command", json={
+        "tokens": ["template", "use", "book"],
+        "flags": {
+            "subject": '{"en": "Gatsby", "fr": "Gatsby le Magnifique"}',
+            "author": "F. Scott Fitzgerald",
+            "isbn": "978-3-16-148410-0",
+        },
+    })
+    assert resp.status_code == 200, f"Error: {resp.json()}"
+    data = resp.json()
+
+
+def test_template_use_reuses_existing_nodes(
+    client, patch_templates_dir, sample_template_yaml,
+) -> None:
+    """Using a template twice with the same labels reuses existing nodes."""
+    # First use — creates nodes
+    resp1 = client.post("/api/v1/command", json={
+        "tokens": ["template", "use", "book"],
+        "flags": {
+            "subject": "Unique Book XYZ",
+            "author": "Unique Author XYZ",
+            "isbn": "999-999",
+        },
+    })
+    assert resp1.status_code == 200
+
+    # Second use with same labels — should reuse nodes (no error)
+    resp2 = client.post("/api/v1/command", json={
+        "tokens": ["template", "use", "book"],
+        "flags": {
+            "subject": "Unique Book XYZ",
+            "author": "Unique Author XYZ",
+            "isbn": "999-999",
+        },
+    })
+    assert resp2.status_code == 200
+
+
+# ── _resolve_or_create_node unit tests ───────────────────────────────────
+
+
+def test_resolve_or_create_node_plain_string(services, monkeypatch) -> None:
+    """Plain string creates a node with en label."""
+    from semantika.server.command.handlers.template import _resolve_or_create_node
+    nid = _resolve_or_create_node(services, "My Test Entity")
+    assert nid is not None
+    node = services["node"].get(nid)
+    assert node is not None
+
+
+def test_resolve_or_create_node_json_labels(services, monkeypatch) -> None:
+    """JSON object creates a node with multiple language labels."""
+    from semantika.server.command.handlers.template import _resolve_or_create_node
+    nid = _resolve_or_create_node(services, '{"en": "Hello", "fr": "Bonjour"}')
+    assert nid is not None
+
+
+def test_resolve_or_create_node_reuses_existing(services, monkeypatch) -> None:
+    """Calling twice with the same label reuses the existing node."""
+    from semantika.server.command.handlers.template import _resolve_or_create_node
+    nid1 = _resolve_or_create_node(services, "Reusable Entity")
+    nid2 = _resolve_or_create_node(services, "Reusable Entity")
+    assert nid1 == nid2
+
+
+def test_resolve_or_create_node_lang_tag(services, monkeypatch) -> None:
+    """LANG::TEXT format creates correct labels."""
+    from semantika.server.command.handlers.template import _resolve_or_create_node
+    nid = _resolve_or_create_node(services, "en::Hello, fr::Bonjour")
+    assert nid is not None

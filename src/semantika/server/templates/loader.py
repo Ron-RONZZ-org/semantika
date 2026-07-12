@@ -121,6 +121,7 @@ def _parse_param(raw: dict[str, Any]) -> TemplateParam:
         type=raw.get("type", "string"),
         required=bool(raw.get("required", False)),
         help=raw.get("help", ""),
+        languages=raw.get("languages", []),
     )
 
 
