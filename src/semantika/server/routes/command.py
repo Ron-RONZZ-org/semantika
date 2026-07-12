@@ -2,7 +2,7 @@
 
 ``POST /api/v1/command`` — Execute a parsed command token list.
 ``GET /api/v1/command/tree`` — Return the auto-generated command tree.
-``GET /api/v1/command/help`` — Flat help text.
+``GET /api/v1/command/help`` — Auto-generated command reference (grouped, with optional ``?cmd=`` filter).
 
 Command handlers are registered via ``@command()`` decorators in
 ``semantika.server.command.handlers.*`` and dispatched by
@@ -25,6 +25,7 @@ from semantika.server.command.errors import (
 from semantika.server.command.models import CommandRequest, CommandResponse
 from semantika.server.command.registry import (
     dispatch,
+    get_command_definitions,
     get_command_tree,
     resolve_form_type,
 )
@@ -77,30 +78,33 @@ def command_tree() -> list[dict]:
 
 
 @router.get("/help")
-def help_text() -> dict:
-    """Return flat help text."""
+def help_text(cmd: str | None = None) -> dict:
+    """Return auto-generated command reference.
+
+    Replaces the old hardcoded list with dynamic content sourced from
+    ``@command()`` decorator metadata (via ``get_command_definitions()``).
+
+    Args:
+        cmd: Optional dot-separated command path (e.g. ``node.add``)
+             to return details for a single command.
+    """
+    defs = get_command_definitions()
+
+    if cmd:
+        target = cmd.lower().split(".")
+        for entry in defs:
+            if [p.lower() for p in entry["path"]] == target:
+                return {"type": "help", "command": entry}
+        return {"type": "help", "error": f"Command '{cmd}' not found"}
+
+    groups: dict[str, list[dict]] = {}
+    for entry in defs:
+        domain = entry["path"][0] if entry["path"] else "general"
+        groups.setdefault(domain, []).append(entry)
+
     return {
-        "commands": [
-            {"cmd": "!node list/search/view/add/update/delete/merge/rename", "desc": "Manage nodes"},
-            {"cmd": "!predicate list/search/view/add/update/delete/rename", "desc": "Manage predicates"},
-            {"cmd": "!predicate-group list/view/add/rename/delete/search", "desc": "Manage predicate groups"},
-            {"cmd": "!triple list/add/delete/modify/view", "desc": "Manage triples"},
-            {"cmd": "!unit list/view/resolve/decompose/add", "desc": "Unit ontology"},
-            {"cmd": "!search <q> [--date-from] [--date-to]", "desc": "Full-text search with optional date filter"},
-            {"cmd": "!view <id>", "desc": "View all triples for a node"},
-            {"cmd": "!export [--output FILE] [--base-uri URI]", "desc": "Export as Turtle"},
-            {"cmd": "!import <data>", "desc": "Import Turtle data"},
-            {"cmd": "!stats", "desc": "Graph statistics"},
-            {"cmd": "!proof add/view/delete", "desc": "Manage proofs"},
-            {"cmd": "!review start/sessions/view/delete", "desc": "Flashcard review"},
-            {"cmd": "!trash list/restore/delete/purge", "desc": "Trash management"},
-            {"cmd": "!llm show/new/set/clear", "desc": "LLM provider configuration"},
-            {"cmd": "!llm profile list/show/load/delete", "desc": "LLM profile management"},
-            {"cmd": "!llm prompt list/view/reset", "desc": "Prompt file management (system prompt, AGENTS.md, turn prompts)"},
-            {"cmd": "!backup now/list/restore/prune", "desc": "Database backup"},
-            {"cmd": "!backup config list/add/modify/delete", "desc": "Backup strategies"},
-            {"cmd": "!backup export/import", "desc": "Portable data export/import"},
-            {"cmd": "!reset [path] [--no-backup]", "desc": "Reset to fresh state (with optional backup)"},
-            {"cmd": "!ask <question>", "desc": "Ask the LLM about the graph"},
-        ]
+        "type": "help",
+        "groups": dict(sorted(groups.items())),
+        "total": len(defs),
+        "group_count": len(groups),
     }

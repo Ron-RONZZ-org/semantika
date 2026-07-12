@@ -255,6 +255,24 @@
           return;
         }
 
+        if (result.type === "help") {
+          tabStore.open("help", result.title || "Command Reference", result.data, {
+            idKey: "help-reference",
+            replaceable: true,
+          });
+          scrollToBottom();
+          return;
+        }
+
+        if (result.type === "settings") {
+          tabStore.open("settings", result.title || "Settings", result.data, {
+            idKey: "settings",
+            replaceable: true,
+          });
+          scrollToBottom();
+          return;
+        }
+
         if (result.type === "table") {
           popup.show("status", result.title || result.label || "Results", {
             type: "table", data: result.data, label: result.label || "",

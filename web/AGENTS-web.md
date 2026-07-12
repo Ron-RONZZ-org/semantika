@@ -64,7 +64,7 @@ Svelte 5 SPA frontend — command-bar UI with rich result rendering for the Sema
 | `LoadingPopup.svelte` | Loading spinner |
 | `ConfirmDialog.svelte` | LLM action approval dialog — per-item approve/reject with feedback, full command display, no truncation |
 | `formatCommand.js` | Utility: format `{tokens, flags}` → human-readable command string |
-| `HelpPopup.svelte` | Command help overlay |
+| `HelpPopup.svelte` | Full help tab — grouped, expandable, filterable command reference. Opened via ``!help`` or ``!help <command>``. |
 | `KeyboardShortcutOverlay.svelte` | Keyboard shortcuts reference |
 | `LlmSetupModal.svelte` | Multi-step LLM provider configuration wizard |
 | `GraphView.svelte` | Interactive force-directed graph visualization |
