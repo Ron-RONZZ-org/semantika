@@ -281,22 +281,13 @@ def cmd_triple_view(remaining: list[str], flags: dict[str, str]) -> dict:
                 {"name": "bool", "type": "flag", "help": "Treat object as boolean literal"},
                 {"name": "lang", "type": "string", "help": "Language tag"},
                 {"name": "unit", "type": "string", "help": "Unit for numeric literals"},
-                {"name": "katex", "type": "string", "help": "KaTeX math expression"},
-                {"name": "str-dosiero", "type": "string", "help": "Read content from file"},
-                {"name": "template", "type": "string", "help": "Triple template name"}])
+                 {"name": "katex", "type": "string", "help": "KaTeX math expression"},
+                 {"name": "str-dosiero", "type": "string", "help": "Read content from file"}])
 def cmd_triple_add(remaining: list[str], flags: dict[str, str]) -> dict:
-    """Add a triple (or batch from template).
+    """Add a single relationship statement between two nodes.
 
-    When ``--template <name>`` is given, loads the named template from
-    ``~/.config/semantika/templates/``, fills placeholders from remaining
-    args / flags, and adds all triples in a batch.
-
-    Without ``--template``, behaves as the standard single-triple add.
+    For batch triple creation from reusable patterns, see ``!template use``.
     """
-    template_name = flags.get("template", "").strip()
-    if template_name:
-        return _handle_template_add(template_name, flags, remaining)
-
     svc = get_services()
     subject_id = flags.get("subject_id") or (remaining[0] if remaining else "") or ""
     predicate_id = flags.get("predicate_id") or (remaining[1] if len(remaining) > 1 else "") or ""
@@ -426,54 +417,4 @@ def cmd_triple_modify(remaining: list[str], flags: dict[str, str]) -> dict:
     return {"type": "status", "data": {"message": "Triple modified"}}
 
 
-# ── Template-based triple add ────────────────────────────────────────────────
-
-
-def _handle_template_add(template_name: str, flags: dict[str, str], remaining: list[str]) -> dict:
-    """Handle ``!triple add --template <name> ...``.
-
-    Loads the template, fills values from flags and remaining args,
-    and either executes (all params present) or returns a
-    ``form-required`` response for the frontend.
-    """
-    from semantika.server.templates import execute_template, load_template
-
-    tpl = load_template(template_name)
-    if tpl is None:
-        from semantika.server.templates import list_templates
-        available = [t.name for t in list_templates()]
-        raise CommandValidationError(
-            f"Template '{template_name}' not found. "
-            f"Available: {', '.join(available) or '(none)'}"
-        )
-
-    # Extract values from flags and remaining positional args
-    values: dict[str, str] = {}
-    remaining_copy = list(remaining)
-
-    for param in tpl.params:
-        val = flags.get(param.name, "")
-        if not val and remaining_copy:
-            val = remaining_copy.pop(0)
-        if val:
-            values[param.name] = val
-
-    # Check required params
-    missing = [p.name for p in tpl.params if p.required and not values.get(p.name, "").strip()]
-    if missing:
-        return {
-            "type": "form-required",
-            "data": {
-                "form": f"triple-template-{template_name}",
-                "templateName": template_name,
-                "params": [
-                    {"name": p.name, "label": p.label, "type": p.type, "required": p.required}
-                    for p in tpl.params
-                ],
-                "initialData": values,
-                "missing": missing,
-                "message": f"Missing required parameters: {', '.join(missing)}",
-            },
-        }
-
-    return execute_template(tpl, values)
+# ── (template-based triple add moved to !template use in template.py) ────────

@@ -291,8 +291,11 @@ async def _run_t3_triples(context_session_id: str, user_text: str) -> dict[str, 
         "to retrieve the exact node and predicate IDs from previous turns. "
         "Use ONLY those IDs — do NOT invent or guess IDs.\n\n"
         "To create triples, you can either:\n"
-        "- Use **!triple add --template <name> --param1 <value> --param2 <value>** "
-        "if a matching template was found.\n"
+        "- Use **!template use <name> --param1 <label> --param2 <label>** "
+        "if a matching template was found. This creates nodes from labels "
+        "automatically.\n"
+        "  For node params, labels can be JSON for multiple languages:\n"
+        "  ``--param '{\"en\":\"Title\",\"fr\":\"Titre\"}'``\n"
         "- Use **!triple add --subject_id <id> --predicate_id <id> --object_value <value>** "
         "for direct triple creation.\n\n"
         "For literal values, use the appropriate flag:\n"
@@ -316,7 +319,8 @@ async def _run_t3_triples(context_session_id: str, user_text: str) -> dict[str, 
     turn3_tool_paths = {
         ("context", "get"),
         ("triple", "add"),
-        ("template", "list"), ("template", "view"), ("template", "save"),
+        ("template", "use"),
+        ("template", "list"), ("template", "view"),
         ("node", "search"),
     }
     turn3_defs = [d for d in all_defs if tuple(d["path"]) in turn3_tool_paths]

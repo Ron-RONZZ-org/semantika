@@ -60,7 +60,7 @@
   {/if}
 
   {#if saved}
-    <p class="success-msg">Template saved! Use <code>!triple add --template &#x200b;{extractName(yaml)}</code> to use it.</p>
+    <p class="success-msg">Template saved! Use <code>!template use &#x200b;{extractName(yaml)}</code> to apply it.</p>
   {:else}
     <p class="hint">
       The LLM could not use tools to save this template automatically.

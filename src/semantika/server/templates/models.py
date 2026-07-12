@@ -16,6 +16,10 @@ class TemplateParam:
     type: str = "string"  # "node" | "string" | "number"
     required: bool = False
     help: str = ""
+    languages: list[str] = field(default_factory=list)
+    """Expected label languages for node-type params (e.g. ``["en", "fr"]``).
+    Informational only — the handler accepts JSON, LANG::TEXT, or plain text
+    regardless.  When specified, appears in ``!template view`` output."""
 
 
 @dataclass
