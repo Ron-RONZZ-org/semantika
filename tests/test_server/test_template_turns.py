@@ -173,7 +173,7 @@ class TestDefaultTurnPrompts:
         """DEFAULT_TURN1 should instruct the LLM to find/create nodes."""
         assert "node.search" in DEFAULT_TURN1 or "**node.search**" in DEFAULT_TURN1
         assert "node.add" in DEFAULT_TURN1 or "**node.add**" in DEFAULT_TURN1
-        assert "type nodes" in DEFAULT_TURN1.lower() or "rdf:type" in DEFAULT_TURN1
+        assert "fixed nodes" in DEFAULT_TURN1.lower() or "Scientist" in DEFAULT_TURN1
 
     def test_turn2_uses_named_placeholders(self):
         """DEFAULT_TURN2 should use $TEMPLATE_DESCRIPTION and $STYLE_EXAMPLE."""
