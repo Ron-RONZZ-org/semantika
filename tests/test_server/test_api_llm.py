@@ -65,9 +65,9 @@ class TestLLMAPI:
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert "nodes" in data["reply"]
-        assert "predicates" in data["reply"]
-        assert "triples" in data["reply"]
+        assert "reply" in data
+        # Without LLM, shows command area hints
+        assert "command areas" in data["reply"].lower() or "!help" in data["reply"]
 
     def test_chat_search_keyword(self, client: TestClient):
         resp = client.post(
@@ -76,7 +76,9 @@ class TestLLMAPI:
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert "test" in data["reply"].lower() or "TESTNODE" in data["reply"]
+        assert "reply" in data
+        # Without LLM, shows command area hints
+        assert "command areas" in data["reply"].lower() or "!help" in data["reply"]
 
     def test_chat_help_keyword(self, client: TestClient):
         resp = client.post(

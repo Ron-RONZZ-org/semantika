@@ -176,12 +176,14 @@ class TestCommandDispatchAPI:
     """Test specific command handlers via the API."""
 
     def test_help_command(self, client: TestClient):
-        """!help should return flat help text."""
+        """!help should return grouped command reference."""
         resp = client.get("/api/v1/command/help")
         assert resp.status_code == 200
         data = resp.json()
-        assert "commands" in data
-        assert len(data["commands"]) > 0
+        assert data["type"] == "help"
+        assert "groups" in data
+        assert len(data["groups"]) > 0
+        assert data["total"] > 0
 
     def test_command_tree(self, client: TestClient):
         """!command tree should return full command tree."""
