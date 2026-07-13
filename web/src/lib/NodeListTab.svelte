@@ -23,12 +23,22 @@
   let showSearch = $state(false);
   let searchQuery = $state("");
   let searchTimeout;
+  let showNewDropdown = $state(false);
 
-  function handleNew() {
-    tabStore.open("form", "Add Node", {
-      form: "node-add", commandPath: ["node", "add"],
+  const nodeTypes = [
+    { label: "Node (general)", command: ["node", "add"], formType: "node-add", icon: "\u25CB" },
+    { label: "Photo", command: ["node", "add", "photo"], formType: "node-add-photo", icon: "\u{1F5BC}" },
+    { label: "Video", command: ["node", "add", "video"], formType: "node-add-video", icon: "\u{1F3AC}" },
+    { label: "Document", command: ["node", "add", "file"], formType: "node-add-file", icon: "\u{1F4C4}" },
+    { label: "Source Code", command: ["node", "add", "code"], formType: "node-add-code", icon: "\u{1F4BB}" },
+  ];
+
+  function handleNew(type) {
+    showNewDropdown = false;
+    tabStore.open("form", type.label, {
+      form: type.formType, commandPath: type.command,
       initialData: { _returnType: "node-list", _returnTitle: "Nodes" },
-    }, { idKey: "node-add" });
+    }, { idKey: type.formType });
   }
 
   async function fetchNodes(query) {
@@ -112,6 +122,12 @@
     if (searchQuery.length > 0) fetchNodes("");
   }
 
+  function handleDocClick(e) {
+    if (showNewDropdown && !e.target.closest('.new-dropdown-container')) {
+      showNewDropdown = false;
+    }
+  }
+
   function handleWindowKeydown(e) {
     const tag = e.target.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA" || e.target.isContentEditable) return;
@@ -144,7 +160,7 @@
   }
 </script>
 
-<svelte:window onkeydown={handleWindowKeydown} />
+<svelte:window onkeydown={handleWindowKeydown} onclick={handleDocClick} />
 
 <div class="node-list">
   {#if showSearch}
@@ -163,7 +179,19 @@
       <button class="btn-small danger" onclick={() => { sel.confirmDelete = true; }}
         disabled={sel.numSelected === 0}>Delete</button>
     {:else}
-      <button class="btn-small" onclick={handleNew}>+ New</button>
+      <div class="new-dropdown-container">
+        <button class="btn-small" onclick={() => { showNewDropdown = !showNewDropdown; }}>+ New ▾</button>
+        {#if showNewDropdown}
+          <div class="new-dropdown" role="menu">
+            {#each nodeTypes as nt}
+              <button class="dropdown-item" role="menuitem" onclick={() => handleNew(nt)}>
+                <span class="dropdown-icon">{nt.icon}</span>
+                <span>{nt.label}</span>
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
       <button class="btn-small" onclick={() => { showSearch = true; requestAnimationFrame(() => document.querySelector('.nl-search-input')?.focus()); }}>
         / Search</button>
       <button class="btn-small" onclick={() => sel.toggleSelectionMode()}>v Select</button>
@@ -227,4 +255,9 @@
   .id { color: var(--clr-sub); font-size: 0.78rem; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .actions { flex-shrink: 0; }
   .empty { color: var(--clr-muted); text-align: center; padding: 2rem; }
+  .new-dropdown-container { position: relative; display: inline-block; }
+  .new-dropdown { position: absolute; top: 100%; left: 0; min-width: 180px; background: #1a1a2e; border: 1px solid #444; border-radius: 4px; z-index: 100; margin-top: 2px; padding: 4px 0; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+  .dropdown-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 0.3rem 0.75rem; background: none; border: none; color: #e0e0e0; cursor: pointer; font-family: monospace; font-size: 0.78rem; text-align: left; }
+  .dropdown-item:hover { background: #2a2a4e; }
+  .dropdown-icon { font-size: 0.9rem; width: 20px; text-align: center; }
 </style>

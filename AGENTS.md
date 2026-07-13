@@ -172,13 +172,14 @@ semantika/
 │       │   └── reset.py         # Reset to fresh state
 │       ├── graph/               # Triple store services (16 source files + services/)
 │       │   ├── __init__.py + constants.py + db.py + file_helpers.py
-│       │   ├── node_helpers.py + node_service.py + node_merge_mixin.py + node_fts.py
-│       │   ├── predicate_service.py + predicate_group_service.py
-│       │   ├── triple_service.py + triple_turtle.py
-│       │   ├── review_service.py + proof_service.py
-│       │   ├── unit_service.py + unit_builder.py + unit_decomposition.py
-│       │   ├── unit_errors.py + unit_parser.py + unit_seed_data.py
-│       │   └── services/__init__.py
+│   │   ├── node_helpers.py + node_service.py + node_merge_mixin.py + node_fts.py
+│   │   ├── predicate_service.py + predicate_group_service.py
+│   │   ├── triple_service.py + triple_turtle.py
+│   │   ├── review_service.py + proof_service.py
+│   │   ├── unit_service.py + unit_builder.py + unit_decomposition.py
+│   │   ├── unit_errors.py + unit_parser.py + unit_seed_data.py
+│   │   ├── builtin_type_service.py + builtin_seed_data.py
+│   │   └── services/__init__.py
 │       ├── scripts/             # CLI entry points
 │       │   ├── __init__.py
 │       │   └── dev_cli.py       # semantika-dev CLI: --data-dir, --seed, --prod, --no-hooks
@@ -575,6 +576,7 @@ Semantika supports persistent user preferences stored as JSON at `~/.local/share
 8. **Error messages include actionable suggestions.**
 9. **Missing CLI args → form popup (default behaviour).** When a `!command` is invoked with missing required options and the command has an interactive form registered, the system redirects the user to a form with pre-filled options. All interactive commands must be registered in `registry.py` (backend) with `interactive: true`.
 10. **Prompt command files go in `~/.config/semantika/commands/*.md`.** The first line must start with `# ` (description). Positional args use `$1`, `$2`, …, `$9` and `$ARGUMENTS` catch-all.
+11. **No backward compatibility guarantee (pre-release).** Pre-1.0 versions may remove or rename flags, options, and commands without a deprecation period. A clear error message pointing to the replacement is sufficient — no migration shims, no phase gates.
 
 ---
 

@@ -40,6 +40,7 @@ Triple store services: NodeService, PredicateService, PredicateGroupService, Tri
 | `proof_service.py` | Proof CRUD (RDF reification) |
 | `unit_service.py` / `unit_builder.py` / `unit_decomposition.py` | Unit ontology management |
 | `unit_parser.py` / `unit_errors.py` / `unit_seed_data.py` | Unit parser, errors, and seed data |
+| `builtin_type_service.py` / `builtin_seed_data.py` | Built-in type nodes and predicates (sm: namespace) — lazy seeding |
 | `db.py` | Graph DB init, schema DDL, `get_services()` factory |
 | `constants.py` | Shared constants (type prefixes, limits) |
 | `file_helpers.py` | File attachment helpers |

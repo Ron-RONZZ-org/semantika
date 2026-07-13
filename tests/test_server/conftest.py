@@ -81,6 +81,7 @@ def db(tmp_path: Path) -> SemantikaDB:
 
 def _build_services(db: SemantikaDB) -> dict:
     """Construct the standard services dict for a given DB."""
+    from semantika.graph.builtin_type_service import BuiltinTypeService
     return {
         "node": NodeService(db),
         "predicate": PredicateService(db),
@@ -88,6 +89,12 @@ def _build_services(db: SemantikaDB) -> dict:
         "triple": TripleService(db),
         "review": ReviewService(db),
         "proof": ProofService(db),
+        "builtin_type": BuiltinTypeService(
+            db,
+            NodeService(db),
+            TripleService(db),
+            PredicateService(db),
+        ),
     }
 
 

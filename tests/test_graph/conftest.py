@@ -7,6 +7,7 @@ from pathlib import Path
 
 from semantika.core import SemantikaDB
 from semantika.graph.db import SCHEMA, REVIEW_SCHEMA, PROOF_SCHEMA
+from semantika.graph.builtin_type_service import BuiltinTypeService
 from semantika.graph.node_service import NodeService
 from semantika.graph.predicate_service import PredicateService
 from semantika.graph.predicate_group_service import PredicateGroupService
@@ -51,4 +52,5 @@ def services(db: SemantikaDB) -> dict:
         "triple": TripleService(db),
         "review": ReviewService(db),
         "proof": ProofService(db),
+        "builtin_type": BuiltinTypeService(db, NodeService(db), TripleService(db), PredicateService(db)),
     }
