@@ -90,48 +90,25 @@
     localStorage.setItem(STORAGE_KEY, sortMode);
   }
 
-  /** Reverse-map a SPARQL result IRI → internal Semantika ID (mirrors
-   *  backend _from_uri).  Only used for the API call — the entity type
-   *  comes from _type, not from naming conventions.
-   */
-  function iriToId(uri) {
-    const PREFIX_NS = {
-      "http://www.w3.org/1999/02/22-rdf-syntax-ns#": "rdf:",
-      "http://www.w3.org/2000/01/rdf-schema#":       "rdfs:",
-      "http://www.w3.org/2001/XMLSchema#":            "xsd:",
-      "http://www.w3.org/2002/07/owl#":               "owl:",
-    };
-    for (const [ns, prefix] of Object.entries(PREFIX_NS)) {
-      if (uri.startsWith(ns)) return prefix + uri.slice(ns.length);
-    }
-    const nodeNs = "https://semantika.local/node/";
-    if (uri.startsWith(nodeNs)) return uri.slice(nodeNs.length);
-    const resNs = "https://semantika.local/resource/";
-    if (uri.startsWith(resNs)) return uri.slice(resNs.length);
-    return uri; // external — pass through
-  }
-
   /**
    * Open a view tab for a URI result entry.
    *
-   * Uses the ``_type`` field set by the backend's enrichment step
-   * (``_serialize_solutions``), which queries BOTH the nodes and
-   * predicates tables and records which table matched.  No naming-
-   * convention guessing needed.
+   * Uses ``_type`` and ``_id`` set by the backend enrichment
+   * (``_serialize_solutions``), which resolved the type by querying
+   * BOTH the nodes and predicates SQLite tables by internal ID.
+   * No IRI string parsing on the frontend.
    */
   async function openEntityView(entry) {
-    if (!entry || entry.type !== "uri" || !entry._type) return;
-    const idType = entry._type;
-    const internalId = iriToId(entry.value);
+    if (!entry || entry.type !== "uri" || !entry._type || !entry._id) return;
     try {
-      const endpoint = idType === "node" ? "nodes" : "predicates";
-      const resp = await fetch(`/api/v1/graph/${endpoint}/${encodeURIComponent(internalId)}`);
+      const endpoint = entry._type === "node" ? "nodes" : "predicates";
+      const resp = await fetch(`/api/v1/graph/${endpoint}/${encodeURIComponent(entry._id)}`);
       if (!resp.ok) return;
       const result = await resp.json();
       const entity = result.node || result.predicate || result;
-      const label = getLabel(entity?.labels, getLocale()) || internalId;
+      const label = getLabel(entity?.labels, getLocale()) || entry._id;
       tabStore.open("status", label, { ...entity, triples: result.triples || [] }, {
-        idKey: `${idType}-${internalId}`, replaceable: false,
+        idKey: `${entry._type}-${entry._id}`, replaceable: false,
       });
     } catch { /* silent */ }
   }

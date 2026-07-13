@@ -346,9 +346,11 @@ class SparqlEngine:
                 if internal in node_labels:
                     entry["_label"] = node_labels[internal]
                     entry["_type"] = "node"
+                    entry["_id"] = internal
                 elif internal in pred_labels:
                     entry["_label"] = pred_labels[internal]
                     entry["_type"] = "predicate"
+                    entry["_id"] = internal
                 # else: external URI not in our DB — leave unenriched
 
         return data
