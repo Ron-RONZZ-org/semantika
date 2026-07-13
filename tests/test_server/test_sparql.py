@@ -368,6 +368,159 @@ class TestSparqlEngine:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# IRI resolution cache tests (Option B)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestIriResolution:
+    """Test _resolve_iri cache behaviour."""
+
+    def test_resolve_bare_node(self, engine: SparqlEngine, sparql_db):
+        """A bare node ID without a custom iri column gets the template IRI."""
+        sparql_db.execute(
+            "INSERT INTO nodes (node_id, labels, created_at, updated_at) "
+            "VALUES ('BOOK_001', '{}', '2024-01-01', '2024-01-01')"
+        )
+        iri = engine._resolve_iri("BOOK_001", kind="node")
+        assert iri == _NODE_TPL.replace("$id", "BOOK_001")
+
+    def test_resolve_node_with_custom_iri(self, engine: SparqlEngine, sparql_db):
+        """A node with a stored iri column returns the custom IRI."""
+        sparql_db.execute(
+            "INSERT INTO nodes (node_id, iri, labels, created_at, updated_at) "
+            "VALUES ('CUSTOM', 'https://purl.org/custom', '{}', '2024-01-01', '2024-01-01')"
+        )
+        iri = engine._resolve_iri("CUSTOM", kind="node")
+        assert iri == "https://purl.org/custom"
+
+    def test_resolve_cache_hit(self, engine: SparqlEngine, sparql_db):
+        """After the first resolution, subsequent calls hit the cache."""
+        sparql_db.execute(
+            "INSERT INTO nodes (node_id, labels, created_at, updated_at) "
+            "VALUES ('CACHED', '{}', '2024-01-01', '2024-01-01')"
+        )
+        # First call — populates cache
+        iri1 = engine._resolve_iri("CACHED", kind="node")
+        assert iri1 == _NODE_TPL.replace("$id", "CACHED")
+        # Delete from DB to prove cache is used
+        sparql_db.execute("DELETE FROM nodes WHERE node_id = 'CACHED'")
+        iri2 = engine._resolve_iri("CACHED", kind="node")
+        assert iri2 == iri1  # Cache hit — still returns cached value
+
+    def test_resolve_known_prefix_predicate(self, engine: SparqlEngine, sparql_db):
+        """Known-prefix predicate (rdf:type) resolves without DB query."""
+        iri = engine._resolve_iri("rdf:type", kind="predicate")
+        assert iri == "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+
+    def test_clear_cache(self, engine: SparqlEngine, sparql_db):
+        """clear_iri_cache() empties the cache so next call re-queries."""
+        sparql_db.execute(
+            "INSERT INTO nodes (node_id, labels, created_at, updated_at) "
+            "VALUES ('CLR', '{}', '2024-01-01', '2024-01-01')"
+        )
+        engine._resolve_iri("CLR", kind="node")
+        engine.clear_iri_cache()
+        # After clear, should re-query (which still works)
+        iri = engine._resolve_iri("CLR", kind="node")
+        assert iri == _NODE_TPL.replace("$id", "CLR")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Dual-path enrichment tests
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestDualPathEnrichment:
+    """Test the dual-path enrichment logic in _serialize_solutions."""
+
+    def test_template_path(self, engine: SparqlEngine, sparql_db):
+        """An IRI matching the node template prefix is resolved by string-op."""
+        sparql_db.execute(
+            "INSERT INTO nodes (node_id, labels, created_at, updated_at) "
+            "VALUES ('GATSBY', '{\"en\": \"The Great Gatsby\"}', '2024-01-01', '2024-01-01')"
+        )
+        # Sync a triple so Oxigraph has it
+        iri = _NODE_TPL.replace("$id", "GATSBY")
+        engine._iri_cache["GATSBY"] = iri
+        engine.on_triple_added({
+            "subject_id": "GATSBY",
+            "predicate_id": "rdf:type",
+            "object_value": "Novel",
+            "object_type": "uri",
+        })
+        result = engine.execute(
+            "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> "
+            "SELECT ?s WHERE { ?s rdf:type ?o }"
+        )
+        bindings = result["results"]["bindings"]
+        assert len(bindings) == 1
+        s = bindings[0]["s"]
+        assert s["_label"] == "The Great Gatsby"
+        assert s["_type"] == "node"
+        assert s["_id"] == "GATSBY"
+
+    def test_custom_iri_path(self, engine: SparqlEngine, sparql_db):
+        """An IRI that does NOT match the template prefix queries the iri column."""
+        custom_iri = "https://purl.org/my-node"
+        sparql_db.execute(
+            "INSERT INTO nodes (node_id, iri, labels, created_at, updated_at) "
+            "VALUES ('PURL', ?, '{\"en\": \"Purl Node\"}', '2024-01-01', '2024-01-01')",
+            (custom_iri,),
+        )
+        # Sync a triple with the custom IRI
+        engine._iri_cache["PURL"] = custom_iri
+        engine.on_triple_added({
+            "subject_id": "PURL",
+            "predicate_id": "rdf:type",
+            "object_value": "Thing",
+            "object_type": "uri",
+        })
+        result = engine.execute(
+            "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> "
+            "SELECT ?s WHERE { ?s rdf:type ?o }"
+        )
+        bindings = result["results"]["bindings"]
+        assert len(bindings) == 1
+        s = bindings[0]["s"]
+        assert s["_label"] == "Purl Node"
+        assert s["_type"] == "node"
+        assert s["_id"] == "PURL"
+        # The IRI in the SPARQL result IS the custom one
+        assert s["value"] == custom_iri
+
+    def test_known_prefix_iri_path(self, engine: SparqlEngine, sparql_db):
+        """IRIs from known prefix namespaces (rdf:) query the iri column."""
+        # A predicate with a fixed standard IRI
+        sparql_db.execute(
+            "INSERT INTO predicates (predicate_id, iri, labels, created_at, updated_at) "
+            "VALUES ('ex:custom', 'http://example.org/custom', '{}', '2024-01-01', '2024-01-01')"
+        )
+        engine._iri_cache["ex:custom"] = "http://example.org/custom"
+        engine.on_triple_added({
+            "subject_id": "GATSBY",
+            "predicate_id": "ex:custom",
+            "object_value": "Novel",
+            "object_type": "uri",
+        })
+        # We need the subject too
+        sparql_db.execute(
+            "INSERT INTO nodes (node_id, labels, created_at, updated_at) "
+            "VALUES ('GATSBY', '{}', '2024-01-01', '2024-01-01')"
+        )
+        engine._iri_cache["GATSBY"] = _NODE_TPL.replace("$id", "GATSBY")
+        result = engine.execute(
+            "PREFIX ex: <http://example.org/> "
+            "SELECT ?p WHERE { ?s ?p ?o }"
+        )
+        bindings = result["results"]["bindings"]
+        assert len(bindings) == 1
+        p = bindings[0]["p"]
+        assert p["_label"] == "ex:custom"  # fallback to predicate_id
+        assert p["_type"] == "predicate"
+        assert p["_id"] == "ex:custom"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Incremental sync integration tests
 # ═══════════════════════════════════════════════════════════════════════════
 

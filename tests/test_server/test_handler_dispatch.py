@@ -139,6 +139,20 @@ class TestReviewHandler:
         assert "Deleted proof" in result["data"]["message"]
 
 
+# ── System handler tests ─────────────────────────────────────────────────
+
+
+class TestSystemHandler:
+    """Test system command handlers."""
+
+    def test_system_reindex_requires_confirmed(self):
+        """!system reindex without --confirmed returns form-required."""
+        result = dispatch(["system", "reindex"], {})
+        assert result["type"] == "form-required"
+        assert result["title"] == "Confirm Reindex"
+        assert result["data"]["form"] == "confirm-reindex"
+
+
 # ── Unit handler tests ───────────────────────────────────────────────────
 
 
