@@ -46,6 +46,7 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
     def __init__(self, db: SemantikaDB) -> None:
         super().__init__(db=db, table="nodes", trash_table="nodes_trash", pk_column="node_id")
         self._create_count = 0
+        self._sparql_engine: object | None = None
 
     # ── Node ID Resolution ──────────────────────────────────────────────
 
@@ -222,6 +223,28 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
 
         return self.get(node_id)
 
+    # ── SPARQL sync helpers ─────────────────────────────────────────────
+
+    def _capture_triples_for_node(
+        self, node_id: str,
+    ) -> list[dict]:
+        """Read triples referencing this node before deletion (for SPARQL sync)."""
+        if not self._sparql_engine:
+            return []
+        return self.db.execute(
+            "SELECT * FROM triples WHERE subject_id = ? "
+            "OR (object_type = 'uri' AND object_value = ?)",
+            (node_id, node_id),
+        )
+
+    def _sync_removed_triples(self, triples: list[dict]) -> None:
+        """Fire SPARQL sync hooks for removed triples."""
+        if not self._sparql_engine or not triples:
+            return
+        engine = self._sparql_engine
+        for t in triples:
+            engine.on_triple_removed(t)
+
     # ── Delete warning ─────────────────────────────────────────────────
 
     def get_delete_warning(self, node_id: str) -> str | None:
@@ -262,6 +285,9 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
         if not old_data:
             return False
 
+        # SPARQL sync: capture affected triples before deletion
+        removed_triples = self._capture_triples_for_node(node_id)
+
         if soft and self._trash_table:
             self._move_to_trash(node_id)
         else:
@@ -285,13 +311,11 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
                     (node_id, node_id),
                 )
                 conn.execute(
-                    f"DELETE FROM {self.table} WHERE node_id = ?", (node_id,)
-                )
+                f"DELETE FROM {self.table} WHERE node_id = ?", (node_id,)
+            )
 
-                if saved_rowid is not None:
-                    self._remove_fts_by_rowid(node_id, saved_rowid)
-
-        self._post_delete(node_id, old_data)
+        # SPARQL sync: fire removal hooks for cascade-deleted triples
+        self._sync_removed_triples(removed_triples)
         return True
 
     # ── Move to trash ─────────────────────────────────────────────────
@@ -376,6 +400,16 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
         valid_ids = [nid for nid in node_ids if nid in existing_map]
         if not valid_ids:
             return (0, [f"Node not found: {nid}" for nid in node_ids if nid not in existing_map])
+
+        # SPARQL sync: capture affected triples before deletion
+        removed_triples: list[dict] = []
+        if self._sparql_engine and valid_ids:
+            vp_s = ", ".join(["?"] * len(valid_ids))
+            removed_triples = self.db.execute(
+                f"SELECT * FROM triples WHERE subject_id IN ({vp_s}) "
+                f"OR (object_type = 'uri' AND object_value IN ({vp_s}))",
+                tuple(valid_ids) * 2,
+            )
 
         # Recompute placeholders based on valid_ids (fewer than node_ids if some were missing)
         vp = ", ".join(["?"] * len(valid_ids))
@@ -471,6 +505,9 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
         # Call _post_delete for each deleted node (logging hooks etc.)
         for nid in valid_ids:
             self._post_delete(nid, existing_map[nid])
+
+        # SPARQL sync: fire removal hooks for cascade-deleted triples
+        self._sync_removed_triples(removed_triples)
 
         missing = [nid for nid in node_ids if nid not in existing_map]
         errors.extend(f"Node not found: {nid}" for nid in missing)

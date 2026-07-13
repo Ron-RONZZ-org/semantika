@@ -14,6 +14,7 @@ from . import (
     predicate_trash,  # noqa: F401 — predicate trash commands (predicate.trash.*)
     reset,  # noqa: F401
     review,  # noqa: F401
+    sparql,  # noqa: F401 — SPARQL query commands
     template,  # noqa: F401 — triple template management (LLM tool use)
     trash,  # noqa: F401 — node trash commands (node.trash.*)
     triple,  # noqa: F401 — triple CRUD + triple search

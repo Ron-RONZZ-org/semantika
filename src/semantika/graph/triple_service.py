@@ -21,6 +21,7 @@ class TripleService:
 
     def __init__(self, db: SemantikaDB) -> None:
         self.db = db
+        self._sparql_engine: object | None = None
 
     def add(
         self,
@@ -69,7 +70,11 @@ class TripleService:
             raise ValueError(
                 f"Triple already exists: {subject_id} → {predicate_id} → {object_value}"
             )
-        return dict(row)
+        result = dict(row)
+        # SPARQL sync: add to RocksDB cache
+        if self._sparql_engine:
+            self._sparql_engine.on_triple_added(result)
+        return result
 
     def update_metadata(
         self,
@@ -119,7 +124,17 @@ class TripleService:
         )
         with self.db.transaction() as conn:
             conn.execute(sql, params)
-        return self.get_one(subject_id, predicate_id, object_value, object_type)
+
+        updated = self.get_one(subject_id, predicate_id, object_value, object_type)
+        # SPARQL sync: fire update hook (remove old, add new)
+        if self._sparql_engine and updated:
+            old = dict({k: updated[k] for k in updated})
+            # Build the "old" version with previous metadata values
+            old["object_lang"] = object_lang if object_lang is not None else updated.get("object_lang")
+            old["object_datatype"] = object_datatype if object_datatype is not None else updated.get("object_datatype")
+            old["object_unit"] = object_unit if object_unit is not None else updated.get("object_unit")
+            self._sparql_engine.on_triple_updated(old, updated)
+        return updated
 
     def get_one(
         self,
@@ -143,8 +158,9 @@ class TripleService:
         object_type: str | None = None,
     ) -> int:
         """Remove triples matching the given criteria. Returns count removed."""
+        # Build WHERE clause
         clauses = []
-        params = []
+        params: list = []
         for col, val in [
             ("subject_id", subject_id),
             ("predicate_id", predicate_id),
@@ -156,8 +172,23 @@ class TripleService:
                 params.append(val)
         if not clauses:
             return 0
-        sql = f"DELETE FROM triples WHERE {' AND '.join(clauses)}"
-        self.db.execute(sql, tuple(params))
+        where = " AND ".join(clauses)
+
+        # SPARQL sync: read-before-delete to capture removed triples
+        removed: list[dict] = []
+        if self._sparql_engine:
+            removed = self.db.execute(
+                f"SELECT * FROM triples WHERE {where}", tuple(params)
+            )
+
+        self.db.execute(f"DELETE FROM triples WHERE {where}", tuple(params))
+
+        # SPARQL sync: fire removal hooks
+        if self._sparql_engine:
+            engine = self._sparql_engine
+            for t in removed:
+                engine.on_triple_removed(t)
+
         # Return count from the number of affected rows
         result = self.db.execute_one("SELECT changes() AS cnt")
         return result["cnt"] if result else 0
