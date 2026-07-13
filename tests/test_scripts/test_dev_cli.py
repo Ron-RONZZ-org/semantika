@@ -44,7 +44,7 @@ class TestDevMain:
             mock_parser = MagicMock()
             mock_parser.parse_args.return_value = self._make_args()
             mock_parser_factory.return_value = mock_parser
-            mock_setup.return_value = (tmp_path, tmp_path / "data", tmp_path / "config", True)
+            mock_setup.return_value = (tmp_path / "data", True)
 
             from semantika.scripts.dev_cli import dev_main
 
@@ -73,7 +73,7 @@ class TestDevMain:
             mock_parser = MagicMock()
             mock_parser.parse_args.return_value = self._make_args(no_hooks=True)
             mock_parser_factory.return_value = mock_parser
-            mock_setup.return_value = (tmp_path, tmp_path / "data", tmp_path / "config", True)
+            mock_setup.return_value = (tmp_path / "data", True)
 
             from semantika.scripts.dev_cli import dev_main
 
@@ -107,7 +107,7 @@ class TestDevMain:
             mock_parser = MagicMock()
             mock_parser.parse_args.return_value = self._make_args(seed="auto")
             mock_parser_factory.return_value = mock_parser
-            mock_setup.return_value = (tmp_path, tmp_path / "data", tmp_path / "config", True)
+            mock_setup.return_value = (tmp_path / "data", True)
 
             from semantika.scripts.dev_cli import dev_main
 
@@ -133,7 +133,7 @@ class TestDevMain:
             mock_parser = MagicMock()
             mock_parser.parse_args.return_value = self._make_args(seed="auto")
             mock_parser_factory.return_value = mock_parser
-            mock_setup.return_value = (tmp_path, tmp_path / "data", tmp_path / "config", True)
+            mock_setup.return_value = (tmp_path / "data", True)
 
             from semantika.scripts.dev_cli import dev_main
 
