@@ -153,10 +153,10 @@
     if (entry["xml:lang"]) return `@${entry["xml:lang"]}`;
     if (entry.datatype) {
       const dt = entry.datatype.value || entry.datatype;
-      // Strip namespace to short name
-      const short = dt.includes("#") ? dt.split("#").pop() : dt.includes("/") ? dt.split("/").pop() : dt;
-      return short === "string" ? "" : short;
+      // Strip namespace to short name (e.g. "integer", "string", "boolean")
+      return dt.includes("#") ? dt.split("#").pop() : dt.includes("/") ? dt.split("/").pop() : dt;
     }
+    // Plain literal without explicit datatype — do not assume xsd:string
     return "";
   }
 
