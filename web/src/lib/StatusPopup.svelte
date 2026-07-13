@@ -169,9 +169,11 @@
 
   let langLabels = $derived(isDetailView() ? parseLangDict(d.labels) : null);
   let langDefs = $derived(isDetailView() ? parseLangDict(d.definitions) : null);
+  let langDescs = $derived(isDetailView() ? parseLangDict(d.descriptions) : null);
   let hasLangSections = $derived(
     (langLabels && Object.keys(langLabels).length > 0) ||
-    (langDefs && Object.keys(langDefs).length > 0)
+    (langDefs && Object.keys(langDefs).length > 0) ||
+    (langDescs && Object.keys(langDescs).length > 0)
   );
 
   async function openNode(id) {
@@ -269,6 +271,7 @@
       </div>
       <div class="lang-section">
         {#if langLabels}
+          <div class="sub-label-inline">Labels</div>
           {#each Object.entries(langLabels) as [lang, text]}
             <div class="lang-row">
               <span class="lang-code">{lang}</span>
@@ -278,7 +281,18 @@
         {/if}
         {#if langDefs}
           <div class="lang-def-sep"></div>
+          <div class="sub-label-inline">Definitions</div>
           {#each Object.entries(langDefs) as [lang, text]}
+            <div class="lang-row def">
+              <span class="lang-code">{lang}</span>
+              <span class="lang-text">{text}</span>
+            </div>
+          {/each}
+        {/if}
+        {#if langDescs}
+          <div class="lang-def-sep"></div>
+          <div class="sub-label-inline">Descriptions</div>
+          {#each Object.entries(langDescs) as [lang, text]}
             <div class="lang-row def">
               <span class="lang-code">{lang}</span>
               <span class="lang-text">{text}</span>
@@ -645,6 +659,7 @@
   .lang-text { color: #e0e0e0; font-size: 0.85rem; }
   .lang-row.def .lang-text { color: var(--clr-sub); font-style: italic; }
   .lang-def-sep { height: 0.3rem; }
+  .sub-label-inline { font-size: 0.72rem; color: var(--clr-sub); text-transform: uppercase; letter-spacing: 0.5px; margin: 0.15rem 0; }
 
   /* ── Triple row with dual-arc ───────────────────────── */
   .triple-row {

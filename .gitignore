@@ -38,3 +38,4 @@ coverage_html/
 /.prod
 *.7z
 .serena/
+MagicMock/
