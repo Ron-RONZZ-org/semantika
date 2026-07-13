@@ -14,6 +14,7 @@ from semantika.core import SemantikaDB
 from semantika.core.crud import CRUDService, now
 from semantika.core.fts import FTS5Manager
 from semantika.graph.constants import FTS5_KEYWORDS
+from semantika.graph.db import compute_iri
 from semantika.graph.helpers import escape_like
 from semantika.graph.node_helpers import sanitize_node_id, strip_diacritics
 
@@ -232,8 +233,10 @@ class PredicateService(CRUDService):
         if normalize_ids:
             cleaned_id = strip_diacritics(cleaned_id)
         ts = now()
+        pred_iri = compute_iri(cleaned_id)
         raw = {
             "predicate_id": cleaned_id,
+            "iri": pred_iri,
             "source": data.get("source", "manual"),
             "labels": json.dumps(data.get("labels", {})),
             "descriptions": json.dumps(data.get("descriptions", {})),
@@ -244,9 +247,9 @@ class PredicateService(CRUDService):
         try:
             with self.db.transaction() as conn:
                 conn.execute(
-                    "INSERT INTO predicates (predicate_id, source, labels, descriptions, "
+                    "INSERT INTO predicates (predicate_id, iri, source, labels, descriptions, "
                     "aliases, created_at, updated_at) "
-                    "VALUES (:predicate_id, :source, :labels, :descriptions, "
+                    "VALUES (:predicate_id, :iri, :source, :labels, :descriptions, "
                     ":aliases, :created_at, :updated_at)",
                     raw,
                 )

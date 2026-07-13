@@ -315,59 +315,53 @@ class SparqlEngine:
             data["results"]["bindings"] = truncated
             data["truncated"] = True
 
-        # Collect all internal IDs from URI bindings (no guessing).
-        all_ids: set[str] = set()
+        # Collect all IRIs from URI bindings.
+        all_iris: list[str] = []
         for row in bindings:
             for entry in row.values():
                 if not isinstance(entry, dict):
                     continue
                 if entry.get("type") != "uri":
                     continue
-                try:
-                    all_ids.add(_from_uri(entry["value"], self._base_uri))
-                except ValueError:
-                    continue
+                all_iris.append(entry["value"])
 
-        # Batch-query BOTH tables for every ID
-        node_labels = self._fetch_node_labels(list(all_ids))
-        pred_labels = self._fetch_pred_labels(list(all_ids))
+        # Batch-query BOTH tables by IRI column directly.
+        node_info = self._fetch_node_by_iri(all_iris)
+        pred_info = self._fetch_pred_by_iri(all_iris)
 
-        # Enrich with label AND type, determined by which table matched.
+        # Enrich with label, type, and internal ID from whichever table matched.
         for row in bindings:
             for entry in row.values():
                 if not isinstance(entry, dict):
                     continue
                 if entry.get("type") != "uri":
                     continue
-                try:
-                    internal = _from_uri(entry["value"], self._base_uri)
-                except ValueError:
-                    continue
-                if internal in node_labels:
-                    entry["_label"] = node_labels[internal]
+                iri = entry["value"]
+                if iri in node_info:
+                    entry["_label"] = node_info[iri][0]
                     entry["_type"] = "node"
-                    entry["_id"] = internal
-                elif internal in pred_labels:
-                    entry["_label"] = pred_labels[internal]
+                    entry["_id"] = node_info[iri][1]
+                elif iri in pred_info:
+                    entry["_label"] = pred_info[iri][0]
                     entry["_type"] = "predicate"
-                    entry["_id"] = internal
+                    entry["_id"] = pred_info[iri][1]
                 # else: external URI not in our DB — leave unenriched
 
         return data
 
-    def _fetch_node_labels(self, node_ids: list[str]) -> dict[str, str]:
-        """Batch-fetch node labels from SQLite.
+    def _fetch_node_by_iri(self, iris: list[str]) -> dict[str, tuple[str, str]]:
+        """Batch-fetch nodes by IRI column.
 
-        Returns a map of ``node_id → best_label_string``.
+        Returns a map of ``iri → (best_label, node_id)``.
         """
-        if not node_ids:
+        if not iris:
             return {}
-        placeholders = ", ".join(["?"] * len(node_ids))
+        placeholders = ", ".join(["?"] * len(iris))
         rows = self._db.execute(
-            f"SELECT node_id, labels FROM nodes WHERE node_id IN ({placeholders})",
-            tuple(node_ids),
+            f"SELECT iri, node_id, labels FROM nodes WHERE iri IN ({placeholders})",
+            tuple(iris),
         )
-        result: dict[str, str] = {}
+        result: dict[str, tuple[str, str]] = {}
         for row in rows:
             labels_raw = row.get("labels", "{}")
             if isinstance(labels_raw, str):
@@ -384,23 +378,23 @@ class SparqlEngine:
                 )
             else:
                 label = row["node_id"]
-            result[row["node_id"]] = label
+            result[row["iri"]] = (label, row["node_id"])
         return result
 
-    def _fetch_pred_labels(self, pred_ids: list[str]) -> dict[str, str]:
-        """Batch-fetch predicate labels from SQLite.
+    def _fetch_pred_by_iri(self, iris: list[str]) -> dict[str, tuple[str, str]]:
+        """Batch-fetch predicates by IRI column.
 
-        Returns a map of ``predicate_id → best_label_string``.
+        Returns a map of ``iri → (best_label, predicate_id)``.
         """
-        if not pred_ids:
+        if not iris:
             return {}
-        placeholders = ", ".join(["?"] * len(pred_ids))
+        placeholders = ", ".join(["?"] * len(iris))
         rows = self._db.execute(
-            f"SELECT predicate_id, labels FROM predicates "
-            f"WHERE predicate_id IN ({placeholders})",
-            tuple(pred_ids),
+            f"SELECT iri, predicate_id, labels FROM predicates "
+            f"WHERE iri IN ({placeholders})",
+            tuple(iris),
         )
-        result: dict[str, str] = {}
+        result: dict[str, tuple[str, str]] = {}
         for row in rows:
             labels_raw = row.get("labels", "{}")
             if isinstance(labels_raw, str):
@@ -417,7 +411,7 @@ class SparqlEngine:
                 )
             else:
                 label = row["predicate_id"]
-            result[row["predicate_id"]] = label
+            result[row["iri"]] = (label, row["predicate_id"])
         return result
 
     # ── Sync hooks (called by service layer) ────────────────────────────

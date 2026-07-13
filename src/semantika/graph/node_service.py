@@ -18,6 +18,7 @@ from typing import Any
 from semantika.core import AmbiguousIDError, SemantikaDB
 from semantika.core.crud import CRUDService, now
 from semantika.core.fts import FTSConfig
+from semantika.graph.db import compute_iri
 from semantika.graph.helpers import escape_like
 from semantika.graph.node_fts import NodeFtsMixin
 from semantika.graph.node_helpers import (
@@ -141,8 +142,10 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
                 node_id_val = str(_uuid.uuid4())
         ts = now()
 
+        node_iri = compute_iri(node_id_val)
         raw = {
             "node_id": node_id_val,
+            "iri": node_iri,
             "labels": json.dumps(data.get("labels", {})),
             "label_text": extract_label_text(data.get("labels", {})),
             "definitions": json.dumps(data.get("definitions", {})),
@@ -153,9 +156,9 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
         try:
             with self.db.transaction() as conn:
                 conn.execute(
-                    "INSERT INTO nodes (node_id, labels, label_text, definitions, "
+                    "INSERT INTO nodes (node_id, iri, labels, label_text, definitions, "
                     "definition_text, created_at, updated_at) "
-                    "VALUES (:node_id, :labels, :label_text, :definitions, "
+                    "VALUES (:node_id, :iri, :labels, :label_text, :definitions, "
                     ":definition_text, :created_at, :updated_at)",
                     raw,
                 )

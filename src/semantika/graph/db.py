@@ -188,12 +188,50 @@ def reset_services() -> None:
     _services_cache = None
 
 
+# ── Canonical IRI computation ──────────────────────────────────────────
+
+KNOWN_PREFIXES: dict[str, str] = {
+    "rdf":  "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+    "xsd":  "http://www.w3.org/2001/XMLSchema#",
+    "owl":  "http://www.w3.org/2002/07/owl#",
+}
+
+DEFAULT_BASE_URI = "https://semantika.local/"
+
+
+def compute_iri(internal_id: str, base_uri: str = DEFAULT_BASE_URI) -> str:
+    """Return the canonical IRI string for an internal Semantika ID.
+
+    Resolution rules (mirrors :func:`_to_uri` in ``engine.py``):
+
+    1. Full ``http://`` / ``https://`` URI → pass through as-is.
+    2. ``prefix:local`` with known prefix (e.g. ``rdf:type``) →
+       ``<known_prefix_uri>local``.
+    3. ``prefix:local`` with *unknown* prefix →
+       ``{base_uri}resource/prefix:local``.
+    4. Bare label (no colon) → ``{base_uri}node/label``.
+    """
+    if internal_id.startswith("http://") or internal_id.startswith("https://"):
+        return internal_id
+    if ":" in internal_id:
+        prefix, local = internal_id.split(":", 1)
+        ns = KNOWN_PREFIXES.get(prefix)
+        if ns:
+            return ns + local
+        return f"{base_uri}resource/{internal_id}"
+    if not internal_id:
+        raise ValueError("Cannot compute IRI for empty internal ID")
+    return f"{base_uri}node/{internal_id}"
+
+
 # ── Schema DDL ─────────────────────────────────────────────────────────
 
 SCHEMA = {
     "nodes": """
         CREATE TABLE IF NOT EXISTS nodes (
             node_id       TEXT PRIMARY KEY,
+            iri           TEXT NOT NULL DEFAULT '',
             labels        TEXT NOT NULL DEFAULT '{}',   -- JSON: {"en": "Label"}
             label_text    TEXT NOT NULL DEFAULT '',
             definitions   TEXT NOT NULL DEFAULT '{}',   -- JSON: {"en": "Definition"}
@@ -205,6 +243,7 @@ SCHEMA = {
     "nodes_trash": """
         CREATE TABLE IF NOT EXISTS nodes_trash (
             node_id       TEXT PRIMARY KEY,
+            iri           TEXT NOT NULL DEFAULT '',
             labels        TEXT NOT NULL DEFAULT '{}',
             label_text    TEXT NOT NULL DEFAULT '',
             definitions   TEXT NOT NULL DEFAULT '{}',
@@ -217,6 +256,7 @@ SCHEMA = {
     "predicates": """
         CREATE TABLE IF NOT EXISTS predicates (
             predicate_id  TEXT PRIMARY KEY,
+            iri           TEXT NOT NULL DEFAULT '',
             source        TEXT NOT NULL DEFAULT 'manual',
             labels        TEXT NOT NULL DEFAULT '{}',   -- JSON: {"en": "type"}
             descriptions  TEXT NOT NULL DEFAULT '{}',   -- JSON: {"en": "Description"}
@@ -228,6 +268,7 @@ SCHEMA = {
     "predicates_trash": """
         CREATE TABLE IF NOT EXISTS predicates_trash (
             predicate_id  TEXT PRIMARY KEY,
+            iri           TEXT NOT NULL DEFAULT '',
             source        TEXT NOT NULL DEFAULT 'manual',
             labels        TEXT NOT NULL DEFAULT '{}',
             descriptions  TEXT NOT NULL DEFAULT '{}',
@@ -357,6 +398,7 @@ def init_db() -> None:
     # Migrate existing tables
     _migrate_review_schema(db)
     _migrate_triples_schema(db)
+    _migrate_iri_column(db)
 
     # Seed default predicates if empty
     _seed_default_predicates(db)
@@ -397,6 +439,23 @@ def _migrate_triples_schema(db: SemantikaDB) -> None:
                 db.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}")
             except sqlite3.OperationalError:
                 pass  # Column already exists
+
+
+def _migrate_iri_column(db: SemantikaDB) -> None:
+    """Add ``iri`` column to nodes/predicates tables and backfill for existing rows."""
+    for table in ("nodes", "nodes_trash", "predicates", "predicates_trash"):
+        try:
+            db.execute(f"ALTER TABLE {table} ADD COLUMN iri TEXT NOT NULL DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
+    # Backfill empty iri columns for existing rows
+    for table, id_col in (("nodes", "node_id"), ("predicates", "predicate_id")):
+        rows = db.execute(f"SELECT {id_col} FROM {table} WHERE iri = ''")
+        for row in rows:
+            cid = row[id_col]
+            iri = compute_iri(cid)
+            db.execute(f"UPDATE {table} SET iri = ? WHERE {id_col} = ?", (iri, cid))
 
 
 def _ensure_fts(
@@ -491,8 +550,9 @@ def _seed_default_predicates(db: SemantikaDB) -> None:
 
     ts = now()
     for pred_id, source, labels, descriptions in defaults:
+        iri = compute_iri(pred_id)
         db.execute(
-            "INSERT INTO predicates (predicate_id, source, labels, descriptions, aliases, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, '[]', ?, ?)",
-            (pred_id, source, json.dumps(labels), json.dumps(descriptions), ts, ts),
+            "INSERT INTO predicates (predicate_id, iri, source, labels, descriptions, aliases, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, '[]', ?, ?)",
+            (pred_id, iri, source, json.dumps(labels), json.dumps(descriptions), ts, ts),
         )
