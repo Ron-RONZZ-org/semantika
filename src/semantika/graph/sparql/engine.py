@@ -315,31 +315,24 @@ class SparqlEngine:
             data["results"]["bindings"] = truncated
             data["truncated"] = True
 
-        # Collect all URI bindings that need enrichment
-        node_ids: set[str] = set()
-        pred_ids: set[str] = set()
-
+        # Collect all internal IDs from URI bindings (no guessing).
+        all_ids: set[str] = set()
         for row in bindings:
             for entry in row.values():
                 if not isinstance(entry, dict):
                     continue
                 if entry.get("type") != "uri":
                     continue
-                uri_str = entry["value"]
                 try:
-                    internal = _from_uri(uri_str, self._base_uri)
+                    all_ids.add(_from_uri(entry["value"], self._base_uri))
                 except ValueError:
                     continue
-                if ":" in internal and not internal.startswith("http"):
-                    pred_ids.add(internal)
-                else:
-                    node_ids.add(internal)
 
-        # Batch enrichment
-        node_labels = self._fetch_node_labels(list(node_ids))
-        pred_labels = self._fetch_pred_labels(list(pred_ids))
+        # Batch-query BOTH tables for every ID
+        node_labels = self._fetch_node_labels(list(all_ids))
+        pred_labels = self._fetch_pred_labels(list(all_ids))
 
-        # Attach labels
+        # Enrich with label AND type, determined by which table matched.
         for row in bindings:
             for entry in row.values():
                 if not isinstance(entry, dict):
@@ -350,9 +343,13 @@ class SparqlEngine:
                     internal = _from_uri(entry["value"], self._base_uri)
                 except ValueError:
                     continue
-                label = node_labels.get(internal) or pred_labels.get(internal)
-                if label:
-                    entry["_label"] = label
+                if internal in node_labels:
+                    entry["_label"] = node_labels[internal]
+                    entry["_type"] = "node"
+                elif internal in pred_labels:
+                    entry["_label"] = pred_labels[internal]
+                    entry["_type"] = "predicate"
+                # else: external URI not in our DB — leave unenriched
 
         return data
 

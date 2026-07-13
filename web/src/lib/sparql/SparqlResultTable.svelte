@@ -90,51 +90,39 @@
     localStorage.setItem(STORAGE_KEY, sortMode);
   }
 
-  // ── URI ↔ internal ID (mirrors backend _from_uri) ────────────────────
-  const BASE_URI = "https://semantika.local/";
-  const KNOWN_PREFIXES = {
-    rdf: "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
-    rdfs: "http://www.w3.org/2000/01/rdf-schema#",
-    xsd: "http://www.w3.org/2001/XMLSchema#",
-    owl: "http://www.w3.org/2002/07/owl#",
-  };
-
-  /** Convert a SPARQL result IRI back to an internal Semantika ID. */
-  function fromUri(uri) {
-    for (const [prefix, ns] of Object.entries(KNOWN_PREFIXES)) {
-      if (uri.startsWith(ns)) {
-        const local = uri.slice(ns.length);
-        if (local) return `${prefix}:${local}`;
-      }
+  /** Reverse-map a SPARQL result IRI → internal Semantika ID (mirrors
+   *  backend _from_uri).  Only used for the API call — the entity type
+   *  comes from _type, not from naming conventions.
+   */
+  function iriToId(uri) {
+    const PREFIX_NS = {
+      "http://www.w3.org/1999/02/22-rdf-syntax-ns#": "rdf:",
+      "http://www.w3.org/2000/01/rdf-schema#":       "rdfs:",
+      "http://www.w3.org/2001/XMLSchema#":            "xsd:",
+      "http://www.w3.org/2002/07/owl#":               "owl:",
+    };
+    for (const [ns, prefix] of Object.entries(PREFIX_NS)) {
+      if (uri.startsWith(ns)) return prefix + uri.slice(ns.length);
     }
-    const nodeNs = `${BASE_URI}node/`;
+    const nodeNs = "https://semantika.local/node/";
     if (uri.startsWith(nodeNs)) return uri.slice(nodeNs.length);
-    const resNs = `${BASE_URI}resource/`;
+    const resNs = "https://semantika.local/resource/";
     if (uri.startsWith(resNs)) return uri.slice(resNs.length);
-    // External URI — pass through
-    return uri;
+    return uri; // external — pass through
   }
 
-  /** Guess whether an internal ID refers to a node or a predicate. */
-  function guessIdType(id) {
-    // Known-prefix IDs (rdf:, rdfs:, xsd:, owl:) are predicates
-    for (const prefix of Object.keys(KNOWN_PREFIXES)) {
-      if (id.startsWith(`${prefix}:`)) return "predicate";
-    }
-    // resource/ namespace + colon → predicate (e.g. rs:opcion)
-    if (id.includes(":")) return "predicate";
-    // node/ namespace or bare → node
-    return "node";
-  }
-
-  /** Open a view tab for a URI result entry. */
+  /**
+   * Open a view tab for a URI result entry.
+   *
+   * Uses the ``_type`` field set by the backend's enrichment step
+   * (``_serialize_solutions``), which queries BOTH the nodes and
+   * predicates tables and records which table matched.  No naming-
+   * convention guessing needed.
+   */
   async function openEntityView(entry) {
-    if (!entry || entry.type !== "uri") return;
-    const internalId = fromUri(entry.value);
-    if (internalId === entry.value && (internalId.startsWith("http://") || internalId.startsWith("https://"))) {
-      return; // external URI, can't look up
-    }
-    const idType = guessIdType(internalId);
+    if (!entry || entry.type !== "uri" || !entry._type) return;
+    const idType = entry._type;
+    const internalId = iriToId(entry.value);
     try {
       const endpoint = idType === "node" ? "nodes" : "predicates";
       const resp = await fetch(`/api/v1/graph/${endpoint}/${encodeURIComponent(internalId)}`);
