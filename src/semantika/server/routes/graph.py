@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
@@ -15,6 +16,67 @@ router = APIRouter()
 def _svc() -> Any:
     """Get service singletons."""
     return get_services()
+
+
+def _annotate_triples_with_labels(triples: list[dict]) -> list[dict]:
+    """Annotate raw triples with ``_subject_label``, ``_predicate_label``,
+    ``_object_label`` by bulk-fetching referenced nodes and predicates.
+
+    Mutates triples in place and returns the same list.
+    """
+    if not triples:
+        return triples
+    svc = _svc()
+    node_svc = svc["node"]
+    pred_svc = svc["predicate"]
+
+    all_node_ids: set[str] = set()
+    all_pred_ids: set[str] = set()
+    for t in triples:
+        all_node_ids.add(t["subject_id"])
+        all_pred_ids.add(t["predicate_id"])
+        if t.get("object_type") == "uri":
+            all_node_ids.add(t["object_value"])
+
+    node_map: dict[str, dict] = {}
+    if all_node_ids:
+        for n in node_svc.get_by_nodes(list(all_node_ids)):
+            node_map[n["node_id"]] = n
+
+    pred_map: dict[str, dict] = {}
+    if all_pred_ids:
+        for p in pred_svc.get_by_ids(list(all_pred_ids)):
+            pred_map[p["predicate_id"]] = p
+
+    for t in triples:
+        subj = node_map.get(t["subject_id"])
+        t["_subject_label"] = _get_label(subj) if subj else t["subject_id"]
+
+        pred = pred_map.get(t["predicate_id"])
+        t["_predicate_label"] = _get_label(pred) if pred else t["predicate_id"]
+
+        if t.get("object_type") == "uri":
+            obj = node_map.get(t["object_value"])
+            t["_object_label"] = _get_label(obj) if obj else t["object_value"]
+        else:
+            t["_object_label"] = t["object_value"]
+
+    return triples
+
+
+def _get_label(entity: dict) -> str:
+    """Extract display label from a node or predicate dict."""
+    labels_raw = entity.get("labels", "{}")
+    try:
+        labels = json.loads(labels_raw) if isinstance(labels_raw, str) else labels_raw
+    except (json.JSONDecodeError, TypeError):
+        return entity.get("node_id") or entity.get("predicate_id", "")
+    if not isinstance(labels, dict):
+        return entity.get("node_id") or entity.get("predicate_id", "")
+    for val in labels.values():
+        if val and isinstance(val, str):
+            return val
+    return entity.get("node_id") or entity.get("predicate_id", "")
 
 
 # ── Pydantic models ────────────────────────────────────────────────────
@@ -104,6 +166,7 @@ def get_node(node_id: str):
     if not node:
         raise HTTPException(404, f"Node not found: {node_id}")
     triples = _svc()["triple"].get_by_subject(node["node_id"])
+    _annotate_triples_with_labels(triples)
     return {"node": node, "triples": triples}
 
 
@@ -245,6 +308,7 @@ def get_predicate(predicate_id: str):
     if not pred:
         raise HTTPException(404, f"Predicate not found: {predicate_id}")
     triples = _svc()["triple"].get_by_predicate(predicate_id)
+    _annotate_triples_with_labels(triples)
     return {"predicate": pred, "triples": triples}
 
 
@@ -289,6 +353,7 @@ def list_triples(limit: int = 100, offset: int = 0):
     all_t = svc.db.execute(
         "SELECT * FROM triples ORDER BY subject_id, predicate_id LIMIT ? OFFSET ?", (limit, offset)
     )
+    _annotate_triples_with_labels(all_t)
     return {"triples": all_t, "total": svc.count()}
 
 
@@ -296,6 +361,7 @@ def list_triples(limit: int = 100, offset: int = 0):
 def get_triples_by_subject(subject_id: str):
     """Get triples for a subject."""
     triples = _svc()["triple"].get_by_subject(subject_id)
+    _annotate_triples_with_labels(triples)
     return {"triples": triples}
 
 
