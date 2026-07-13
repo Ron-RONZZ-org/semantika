@@ -82,6 +82,7 @@ def get_services() -> dict[str, Any]:
     from semantika.graph.proof_service import ProofService
     from semantika.graph.review_service import ReviewService
     from semantika.graph.triple_service import TripleService
+    from semantika.graph.builtin_type_service import BuiltinTypeService
 
     db = get_db()
     _services_cache = {
@@ -91,6 +92,12 @@ def get_services() -> dict[str, Any]:
         "triple": TripleService(db),
         "review": ReviewService(db),
         "proof": ProofService(db),
+        "builtin_type": BuiltinTypeService(
+            db,
+            NodeService(db),
+            TripleService(db),
+            PredicateService(db),
+        ),
     }
     return _services_cache
 

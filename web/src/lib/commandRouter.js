@@ -140,6 +140,10 @@ function resolveAddFormType(tokens, leafName) {
   const path = tokens.join(" ");
 
   if (/^node\s+add$/i.test(path)) return "node-add";
+  if (/^node\s+add\s+photo$/i.test(path)) return "node-add-photo";
+  if (/^node\s+add\s+video$/i.test(path)) return "node-add-video";
+  if (/^node\s+add\s+file$/i.test(path)) return "node-add-file";
+  if (/^node\s+add\s+code$/i.test(path)) return "node-add-code";
   if (/^predicate\s+add$/i.test(path)) return "predicate-add";
   if (/^predicate\s+group\s+add$/i.test(path)) return "predicate-group-add";
   if (/^triple\s+add$/i.test(path)) return "triple-add";
@@ -155,6 +159,10 @@ function resolveAddFormType(tokens, leafName) {
 function resolveAddTitle(addFormType) {
   const titles = {
     "node-add": "Add Node",
+    "node-add-photo": "Add Photo",
+    "node-add-video": "Add Video",
+    "node-add-file": "Add Document",
+    "node-add-code": "Add Source Code",
     "predicate-add": "Add Predicate",
     "triple-add": "Add Triple",
     "unit-add": "Add Unit",

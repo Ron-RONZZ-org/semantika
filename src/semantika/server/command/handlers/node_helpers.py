@@ -1,8 +1,9 @@
-"""Helper functions for node command handlers — arc shortcuts and file attachments."""
+"""Helper functions for node command handlers — arc shortcuts, file attachments, semantic triples."""
 
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -157,3 +158,224 @@ def handle_file_attachment(
             "object_type": "literal",
         })
     return triples
+
+
+# ── Specialised node add helpers ────────────────────────────────────────
+
+
+def resolve_node_refs(svc: dict, raw: str, flag_name: str) -> list[str]:
+    """Resolve a comma-separated string of node references to node IDs.
+
+    Each token is resolved via prefix or label search.  Raises
+    ``CommandValidationError`` if any token is unresolvable.
+
+    Args:
+        svc: Service dict.
+        raw: Comma-separated node IDs or labels.
+        flag_name: Flag name for error messages.
+
+    Returns:
+        List of resolved node IDs.
+    """
+    if not raw:
+        return []
+    ids: list[str] = []
+    for token in raw.split(","):
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            node = svc["node"].resolve_node_id_prefix(token)
+            if node:
+                ids.append(node["node_id"])
+                continue
+        except AmbiguousIDError:
+            raise CommandValidationError(
+                f"Ambiguous {flag_name} target: '{token}' matches multiple nodes"
+            )
+        # Fallback: label search
+        results = svc["node"].search(token, limit=1)
+        if results:
+            ids.append(results[0]["node_id"])
+        else:
+            raise CommandValidationError(
+                f"{flag_name.title()} target not found: '{token}'"
+            )
+    return ids
+
+
+def parse_dimension(raw: str) -> str | None:
+    """Validate and normalise a dimension string (e.g. ``1920x1080``).
+
+    Returns the normalised form (width x height with lowercase 'x'),
+    or ``None`` if the input is empty.
+
+    Raises:
+        CommandValidationError: If the format is invalid.
+    """
+    if not raw:
+        return None
+    raw = raw.strip()
+    m = re.match(r"^(\d+)\s*[xX×]\s*(\d+)$", raw)
+    if not m:
+        raise CommandValidationError(
+            f"Invalid dimension '{raw}'. Use format like '1920x1080'"
+        )
+    return f"{m.group(1)}x{m.group(2)}"
+
+
+def create_semantic_triples(
+    svc: dict,
+    subject_id: str,
+    predicate_id: str,
+    object_ids: list[str],
+) -> list[dict]:
+    """Create ``subject predicate object`` triples for each object ID.
+
+    Args:
+        svc: Service dict.
+        subject_id: The subject node ID.
+        predicate_id: The predicate ID (e.g. ``"sm:depicts"``).
+        object_ids: List of object node IDs.
+
+    Returns:
+        List of created triple dicts.
+    """
+    created = []
+    for obj_id in object_ids:
+        try:
+            triple = svc["triple"].add(
+                subject_id=subject_id,
+                predicate_id=predicate_id,
+                object_value=obj_id,
+                object_type="uri",
+            )
+            created.append(triple)
+        except ValueError:
+            pass  # Duplicate — skip silently
+    return created
+
+
+def attach_file_and_create_node(
+    svc: dict,
+    labels_raw: str,
+    file_path: str,
+    attachment_type: str,
+    node_type: str,
+    explicit_id: str = "",
+    no_copy: bool = False,
+    canonical_link: str = "",
+    extra_fields: list[tuple[str, str, str, str]] | None = None,
+) -> dict:
+    """Create a node with file attachment, type triple, and optional canonical link.
+
+    This is the shared workflow for ``!node add photo|video|file|code``.
+
+    Args:
+        svc: Service dict.
+        labels_raw: Label string (JSON or LANG::TEXT) for the node.
+        file_path: Path or URL to the file.
+        attachment_type: ``"img"``, ``"vid"``, or ``"doc"``.
+        node_type: The builtin type node ID (e.g. ``"sm:Photo"``).
+        explicit_id: Optional explicit node ID.
+        no_copy: If True, store reference only (do not copy file).
+        canonical_link: Optional canonical URL.
+        extra_fields: Optional list of ``(predicate_id, object_value, object_type, object_datatype)``
+            tuples to create as additional triples on the node.
+
+    Returns:
+        Dict with ``node``, ``message_parts``, ``file_triples``, ``semantic_triples``.
+    """
+    import json
+
+    # 1. Ensure builtins exist
+    svc["builtin_type"].ensure_builtins()
+
+    # 2. Parse labels
+    if labels_raw:
+        try:
+            labels_dict = json.loads(labels_raw) if labels_raw.startswith("{") else None
+        except (json.JSONDecodeError, TypeError):
+            labels_dict = None
+        payload = {"labels": labels_dict} if labels_dict else {"labels": {"en": labels_raw}}
+    else:
+        payload = {"labels": {}}
+    if explicit_id:
+        payload["node_id"] = explicit_id
+
+    # 3. Create the node
+    try:
+        node = svc["node"].create(payload)
+    except ValueError as e:
+        raise CommandValidationError(str(e))
+
+    node_id_val = node["node_id"]
+    msg_parts = [f"Created node {node_id_val}"]
+    if labels_raw:
+        msg_parts.append(f"with label \"{labels_raw}\"")
+
+    created_file_triples: list[dict] = []
+    semantic_triples: list[dict] = []
+    combined_arcs: list[tuple[str, str]] = []
+
+    try:
+        # 4. Handle file attachment
+        use_in_place = no_copy
+        file_triple_list = handle_file_attachment(
+            svc, file_path, attachment_type, node_id_val,
+            in_place=use_in_place, do_move=False,
+        )
+        if file_triple_list:
+            created_file_triples = file_triple_list
+            # Persist file metadata triples
+            file_arcs = [
+                (node_id_val, ft["predicate"], ft["object"])
+                for ft in file_triple_list
+            ]
+            combined_arcs.extend((o, p) for _, p, o in file_arcs)
+            msg_parts.append("with file attachment")
+
+        # 5. Create rdf:type triple
+        combined_arcs.append((node_type, "rdf:type"))
+
+        # 6. Canonical link
+        if canonical_link:
+            svc["builtin_type"].ensure_predicates(["sm:canonicalLink"])
+            combined_arcs.append((canonical_link, "sm:canonicalLink"))
+
+        # 7. Extra semantic triples
+        if extra_fields:
+            svc["builtin_type"].ensure_predicates([ef[0] for ef in extra_fields])
+            for pred_id, obj_val, obj_type, obj_dt in extra_fields:
+                try:
+                    triple = svc["triple"].add(
+                        subject_id=node_id_val,
+                        predicate_id=pred_id,
+                        object_value=obj_val,
+                        object_type=obj_type,
+                        object_datatype=obj_dt or None,
+                    )
+                    semantic_triples.append(triple)
+                except ValueError:
+                    pass
+
+        # 8. Create all arc triples
+        create_arc_triples(svc, node_id_val, combined_arcs)
+        if combined_arcs:
+            msg_parts.append(f"with {len(combined_arcs)} triple(s)")
+
+    except Exception:
+        # Roll back node creation on failure
+        logger.warning("Rolling back node %s after post-creation failure", node_id_val)
+        try:
+            svc["node"].delete(node_id_val, soft=False)
+        except Exception as rb_err:
+            logger.error("Rollback delete of node %s also failed: %s", node_id_val, rb_err)
+        raise
+
+    return {
+        "node": node,
+        "message_parts": msg_parts,
+        "file_triples": created_file_triples,
+        "semantic_triples": semantic_triples,
+    }

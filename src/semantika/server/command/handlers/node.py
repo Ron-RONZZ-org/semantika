@@ -1,4 +1,8 @@
-"""Command handlers for node management: list, search, view, add, update, delete, rename, merge."""
+"""Command handlers for node management: list, search, view, add, update, delete, rename, merge.
+
+Specialised subcommands (``!node add photo|video|file|code``) create semantically
+typed nodes with file attachments and auto-generated triples.
+"""
 
 from __future__ import annotations
 
@@ -11,10 +15,13 @@ from semantika.graph.db import get_services
 from semantika.server.command.errors import CommandValidationError
 from semantika.server.command.handlers.node_helpers import (
     _ARC_PREDICATES,
+    attach_file_and_create_node,
     create_arc_triples,
+    create_semantic_triples,
     ensure_predicate,
-    handle_file_attachment,
+    parse_dimension,
     resolve_arc_target,
+    resolve_node_refs,
 )
 from semantika.server.command.helpers import parse_lang_tag_pairs
 from semantika.server.command.registry import command
@@ -78,31 +85,28 @@ def cmd_node_view(remaining: list[str], flags: dict[str, str]) -> dict:
              {"name": "superclass", "type": "string", "help": "rdfs:subClassOf target node ID"},
              {"name": "disjoint", "type": "string", "help": "owl:disjointWith target node ID"},
              {"name": "inverse", "type": "string", "help": "owl:inverseOf target node ID"},
-             # File attachments
-             {"name": "img", "type": "string", "help": "Attach image (path or URL)"},
-             {"name": "attachment", "type": "string", "help": "Attach video (path or URL)"},
-             {"name": "file", "type": "string", "help": "Attach arbitrary file (path or URL)"},
-             {"name": "in-place", "type": "flag", "help": "Store reference only, do not copy file"},
-             {"name": "move", "type": "flag", "help": "Move file instead of copying (local only)"},
          ])
 def cmd_node_add(remaining: list[str], flags: dict[str, str]) -> dict:
-    """Add a new node with optional arc shortcuts and file attachments.
+    """Add a new node with optional arc shortcuts.
 
     Arc shortcuts:
     ``--type <id>``, ``--superclass <id>``, ``--disjoint <id>``, ``--inverse <id>``
     create ``rdf:type``, ``rdfs:subClassOf``, ``owl:disjointWith``, ``owl:inverseOf`` arcs.
 
-    File attachments:
-    ``--img``, ``--attachment``, ``--file`` accept local paths or URLs.
-    ``--in-place`` stores a reference without copying; ``--move`` moves instead of copying.
+    For file attachments and typed nodes, use the specialised subcommands:
+    ``!node add photo``, ``!node add video``, ``!node add file``, ``!node add code``.
+
+    Deprecated flags ``--img``, ``--attachment``, ``--file``, ``--in-place``,
+    ``--move`` have been removed. Use the specialised subcommands instead.
     """
     svc = get_services()
     labels_raw = flags.get("labels") or (remaining[0] if remaining else "")
-    # Optional explicit node ID (overrides auto-derivation from eo label)
     explicit_id = flags.get("id", "")
+
+    # Check for removed flags and point to replacement
+    _check_removed_flags(flags)
+
     if labels_raw:
-        # Accept both JSON ({"eo": "...", "fr": "...", "en": "..."})
-        # and simple string ("en::My Node" or "My Node").
         try:
             labels_dict = json.loads(labels_raw) if labels_raw.startswith("{") else None
         except (json.JSONDecodeError, TypeError):
@@ -122,19 +126,6 @@ def cmd_node_add(remaining: list[str], flags: dict[str, str]) -> dict:
             if target_id:
                 arc_targets.append((target_id, pred))
 
-    # ── File attachment ───────────────────────────────────────────────
-    file_attachment_type: str | None = None
-    file_source: str | None = None
-    for ft, atype in [("img", "img"), ("attachment", "vid"), ("file", "doc")]:
-        val = flags.get(ft) or ""
-        if val:
-            file_attachment_type = atype
-            file_source = val
-            break
-
-    in_place = "in-place" in flags or flags.get("in-place", "").lower() in ("true", "1", "yes")
-    do_move = "move" in flags or flags.get("move", "").lower() in ("true", "1", "yes")
-
     try:
         node = svc["node"].create(payload)
     except ValueError as e:
@@ -146,63 +137,314 @@ def cmd_node_add(remaining: list[str], flags: dict[str, str]) -> dict:
         msg_parts.append(f"with label \"{labels_raw}\"")
 
     created_arcs: list[dict] = []
-    file_triples: list[dict] = []
 
     # ── Ensure required predicates exist ─────────────────────────────
-    if arc_targets or file_source:
+    if arc_targets:
         ensure_predicate(svc, "rdf:type")
         ensure_predicate(svc, "rdfs:subClassOf")
         ensure_predicate(svc, "owl:disjointWith")
         ensure_predicate(svc, "owl:inverseOf")
-        for fp in (":hasFilePath", ":hasFileMime", ":hasFileSize", ":hasFileSource"):
-            ensure_predicate(svc, fp)
 
-    # ── Create arc triples + handle file attachment ──────────────────
-    # Both are inside the try block so that any failure rolls back
-    # the entire post-creation operation (node hard-delete cascades FK).
+    # ── Create arc triples ───────────────────────────────────────────
     try:
         if arc_targets:
             created_arcs = create_arc_triples(svc, node_id_val, arc_targets)
             msg_parts.append(f"with {len(created_arcs)} arc(s)")
-
-        if file_source:
-            file_triples = handle_file_attachment(
-                svc, file_source, file_attachment_type, node_id_val,
-                in_place=in_place, do_move=do_move,
-            )
-            if file_triples:
-                # Create file metadata triples
-                file_arcs = [
-                    (node_id_val, ft["predicate"], ft["object"])
-                    for ft in file_triples
-                ]
-                create_arc_triples(svc, node_id_val, [(o, p) for _, p, o in file_arcs])
-                msg_parts.append("with file attachment")
     except Exception:
-        # Roll back node creation if any post-creation step fails.
-        # Hard-deleting the node cascades to referencing triples,
-        # preventing orphan data.
         logger.warning("Rolling back node %s after post-creation failure", node_id_val)
         try:
             svc["node"].delete(node_id_val, soft=False)
         except Exception as rb_err:
-            logger.error(
-                "Rollback delete of node %s also failed: %s",
-                node_id_val, rb_err,
-            )
+            logger.error("Rollback delete of node %s also failed: %s", node_id_val, rb_err)
         raise
 
     result: dict = {"message": ". ".join(msg_parts), "node": node}
     if arc_targets:
         result["arcs"] = created_arcs
-    if file_triples:
-        result["file_triples"] = file_triples
 
     copy_flag = "copy" in flags or flags.get("copy", "").lower() in ("true", "1", "yes")
     if copy_flag:
         result["copy_clipboard"] = node_id_val
 
     return {"type": "status", "data": result}
+
+
+def _check_removed_flags(flags: dict[str, str]) -> None:
+    """Raise a clear error if any removed file-attachment flag is used."""
+    removed = {
+        "img": "!node add photo",
+        "attachment": "!node add video",
+        "file": "!node add file",
+        "in-place": "!node add photo/video/file --no-copy",
+        "move": "!node add photo/video/file with --no-copy",
+    }
+    for flag_name, replacement in removed.items():
+        if flag_name in flags and flags.get(flag_name, ""):
+            raise CommandValidationError(
+                f"The --{flag_name} flag has been removed. "
+                f"Use {replacement} instead."
+            )
+
+
+# ── Specialised node add subcommands ─────────────────────────────────────
+
+
+@command("node.add.photo", description="Create a photo node with file attachment",
+         interactive=True,
+         flags=[
+             {"name": "path", "type": "string", "required": True,
+              "help": "Path or URL to the photo file"},
+             {"name": "id", "type": "string", "help": "Explicit node ID"},
+             {"name": "dimension", "type": "string", "help": "Dimensions (e.g. 1920x1080)"},
+             {"name": "object", "type": "string",
+              "help": "Node IDs this photo depicts (comma-separated)"},
+             {"name": "canonical-link", "type": "string", "help": "Original source URL"},
+             {"name": "no-copy", "type": "flag", "help": "Store reference only, do not copy file"},
+         ])
+def cmd_node_add_photo(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Create a photo node with file attachment and semantic triples.
+
+    Auto-creates:
+    - File metadata triples (``:hasFilePath``, ``:hasFileMime``, etc.)
+    - ``rdf:type`` triple to ``sm:Photo``
+    - ``sm:depicts`` triples for each ``--object``
+    - ``sm:dimension`` triple if ``--dimension`` is provided
+    - ``sm:canonicalLink`` triple if ``--canonical-link`` is provided
+    """
+    svc = get_services()
+    path = flags.get("path", "")
+    if not path:
+        # Try positional arg
+        path = remaining[0] if remaining else ""
+    if not path:
+        raise CommandValidationError("Specify --path to the photo file")
+
+    labels_raw = flags.get("labels") or ""
+    explicit_id = flags.get("id", "")
+    no_copy = "no-copy" in flags or flags.get("no-copy", "").lower() in ("true", "1", "yes")
+    canonical_link = flags.get("canonical-link", "") or ""
+    dimension = parse_dimension(flags.get("dimension", "") or "")
+    object_nodes = resolve_node_refs(svc, flags.get("object", "") or "", "object")
+
+    # Build extra semantic triples
+    extra_fields: list[tuple[str, str, str, str]] = []
+
+    # Ensure predicates exist
+    svc["builtin_type"].ensure_predicates(["sm:depicts", "sm:dimension", "sm:canonicalLink"])
+
+    for obj_id in object_nodes:
+        extra_fields.append(("sm:depicts", obj_id, "uri", ""))
+    if dimension:
+        extra_fields.append(("sm:dimension", dimension, "literal", ""))
+
+    result = attach_file_and_create_node(
+        svc, labels_raw, path, "img", "sm:Photo",
+        explicit_id=explicit_id,
+        no_copy=no_copy,
+        canonical_link=canonical_link,
+        extra_fields=extra_fields,
+    )
+
+    response_data: dict = {
+        "message": ". ".join(result["message_parts"]),
+        "node": result["node"],
+    }
+    if result["file_triples"]:
+        response_data["file_triples"] = result["file_triples"]
+    if result["semantic_triples"]:
+        response_data["semantic_triples"] = result["semantic_triples"]
+
+    return {"type": "status", "data": response_data}
+
+
+@command("node.add.video", description="Create a video node with file attachment",
+         interactive=True,
+         flags=[
+             {"name": "path", "type": "string", "required": True,
+              "help": "Path or URL to the video file"},
+             {"name": "id", "type": "string", "help": "Explicit node ID"},
+             {"name": "dimension", "type": "string", "help": "Dimensions (e.g. 1920x1080)"},
+             {"name": "object", "type": "string",
+              "help": "Node IDs this video depicts (comma-separated)"},
+             {"name": "canonical-link", "type": "string", "help": "Original source URL"},
+             {"name": "no-copy", "type": "flag", "help": "Store reference only, do not copy file"},
+         ])
+def cmd_node_add_video(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Create a video node with file attachment and semantic triples.
+
+    Auto-creates:
+    - File metadata triples (``:hasFilePath``, ``:hasFileMime``, etc.)
+    - ``rdf:type`` triple to ``sm:Video``
+    - ``sm:depicts`` triples for each ``--object``
+    - ``sm:dimension`` triple if ``--dimension`` is provided
+    - ``sm:canonicalLink`` triple if ``--canonical-link`` is provided
+    """
+    svc = get_services()
+    path = flags.get("path", "")
+    if not path:
+        path = remaining[0] if remaining else ""
+    if not path:
+        raise CommandValidationError("Specify --path to the video file")
+
+    labels_raw = flags.get("labels") or ""
+    explicit_id = flags.get("id", "")
+    no_copy = "no-copy" in flags or flags.get("no-copy", "").lower() in ("true", "1", "yes")
+    canonical_link = flags.get("canonical-link", "") or ""
+    dimension = parse_dimension(flags.get("dimension", "") or "")
+    object_nodes = resolve_node_refs(svc, flags.get("object", "") or "", "object")
+
+    extra_fields: list[tuple[str, str, str, str]] = []
+    svc["builtin_type"].ensure_predicates(["sm:depicts", "sm:dimension", "sm:canonicalLink"])
+
+    for obj_id in object_nodes:
+        extra_fields.append(("sm:depicts", obj_id, "uri", ""))
+    if dimension:
+        extra_fields.append(("sm:dimension", dimension, "literal", ""))
+
+    result = attach_file_and_create_node(
+        svc, labels_raw, path, "vid", "sm:Video",
+        explicit_id=explicit_id,
+        no_copy=no_copy,
+        canonical_link=canonical_link,
+        extra_fields=extra_fields,
+    )
+
+    response_data: dict = {
+        "message": ". ".join(result["message_parts"]),
+        "node": result["node"],
+    }
+    if result["file_triples"]:
+        response_data["file_triples"] = result["file_triples"]
+    if result["semantic_triples"]:
+        response_data["semantic_triples"] = result["semantic_triples"]
+
+    return {"type": "status", "data": response_data}
+
+
+@command("node.add.file", description="Create a document node with file attachment",
+         interactive=True,
+         flags=[
+             {"name": "path", "type": "string", "required": True,
+              "help": "Path or URL to the file"},
+             {"name": "id", "type": "string", "help": "Explicit node ID"},
+             {"name": "theme", "type": "string",
+              "help": "Node IDs representing this document's themes (comma-separated)"},
+             {"name": "canonical-link", "type": "string", "help": "Original source URL"},
+             {"name": "no-copy", "type": "flag", "help": "Store reference only, do not copy file"},
+         ])
+def cmd_node_add_file(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Create a document node with file attachment and theme triples.
+
+    Auto-creates:
+    - File metadata triples
+    - ``rdf:type`` triple to ``sm:Document``
+    - ``sm:theme`` triples for each ``--theme``
+    - ``sm:canonicalLink`` triple if ``--canonical-link`` is provided
+    """
+    svc = get_services()
+    path = flags.get("path", "")
+    if not path:
+        path = remaining[0] if remaining else ""
+    if not path:
+        raise CommandValidationError("Specify --path to the file")
+
+    labels_raw = flags.get("labels") or ""
+    explicit_id = flags.get("id", "")
+    no_copy = "no-copy" in flags or flags.get("no-copy", "").lower() in ("true", "1", "yes")
+    canonical_link = flags.get("canonical-link", "") or ""
+    theme_nodes = resolve_node_refs(svc, flags.get("theme", "") or "", "theme")
+
+    extra_fields: list[tuple[str, str, str, str]] = []
+    svc["builtin_type"].ensure_predicates(["sm:theme", "sm:canonicalLink"])
+
+    for theme_id in theme_nodes:
+        extra_fields.append(("sm:theme", theme_id, "uri", ""))
+
+    result = attach_file_and_create_node(
+        svc, labels_raw, path, "doc", "sm:Document",
+        explicit_id=explicit_id,
+        no_copy=no_copy,
+        canonical_link=canonical_link,
+        extra_fields=extra_fields,
+    )
+
+    response_data: dict = {
+        "message": ". ".join(result["message_parts"]),
+        "node": result["node"],
+    }
+    if result["file_triples"]:
+        response_data["file_triples"] = result["file_triples"]
+    if result["semantic_triples"]:
+        response_data["semantic_triples"] = result["semantic_triples"]
+
+    return {"type": "status", "data": response_data}
+
+
+@command("node.add.code", description="Create a source code node with file attachment",
+         interactive=True,
+         flags=[
+             {"name": "path", "type": "string", "required": True,
+              "help": "Path or URL to the source code file"},
+             {"name": "lang", "type": "string", "required": True,
+              "help": "Programming language (e.g. python, javascript)"},
+             {"name": "id", "type": "string", "help": "Explicit node ID"},
+             {"name": "canonical-link", "type": "string", "help": "Original source URL"},
+             {"name": "no-copy", "type": "flag", "help": "Store reference only, do not copy file"},
+         ])
+def cmd_node_add_code(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Create a source code node with file attachment and language triple.
+
+    Auto-creates:
+    - File metadata triples
+    - ``rdf:type`` triple to ``sm:SourceCode``
+    - ``sm:programmingLanguage`` triple with the language value
+    - ``sm:canonicalLink`` triple if ``--canonical-link`` is provided
+    """
+    svc = get_services()
+    path = flags.get("path", "")
+    if not path:
+        path = remaining[0] if remaining else ""
+    if not path:
+        raise CommandValidationError("Specify --path to the source code file")
+
+    lang = flags.get("lang", "")
+    if not lang:
+        # Try positional after path
+        lang = remaining[1] if len(remaining) > 1 else ""
+    if not lang:
+        raise CommandValidationError("Specify --lang for the programming language")
+
+    labels_raw = flags.get("labels") or ""
+    explicit_id = flags.get("id", "")
+    no_copy = "no-copy" in flags or flags.get("no-copy", "").lower() in ("true", "1", "yes")
+    canonical_link = flags.get("canonical-link", "") or ""
+
+    extra_fields: list[tuple[str, str, str, str]] = []
+    svc["builtin_type"].ensure_predicates(["sm:programmingLanguage", "sm:canonicalLink"])
+
+    extra_fields.append(("sm:programmingLanguage", lang, "literal", ""))
+
+    result = attach_file_and_create_node(
+        svc, labels_raw, path, "doc", "sm:SourceCode",
+        explicit_id=explicit_id,
+        no_copy=no_copy,
+        canonical_link=canonical_link,
+        extra_fields=extra_fields,
+    )
+
+    response_data: dict = {
+        "message": ". ".join(result["message_parts"]),
+        "node": result["node"],
+    }
+    if result["file_triples"]:
+        response_data["file_triples"] = result["file_triples"]
+    if result["semantic_triples"]:
+        response_data["semantic_triples"] = result["semantic_triples"]
+
+    return {"type": "status", "data": response_data}
+
+
+# ── CRUD commands (unchanged) ────────────────────────────────────────────
 
 
 @command("node.update", description="Update node labels/definitions",
@@ -278,7 +520,6 @@ def cmd_node_delete(remaining: list[str], flags: dict[str, str]) -> dict:
     if not ids:
         raise CommandValidationError("Specify node ID(s) or use --prefix")
     force = flags.get("force", "").lower() in ("true", "1", "yes")
-    # Batch warning check — single query instead of N individual lookups
     placeholders = ", ".join(["?"] * len(ids))
     rows = svc["node"].db.execute(
         f"SELECT node_id, "
@@ -347,7 +588,6 @@ def cmd_node_merge(remaining: list[str], flags: dict[str, str]) -> dict:
     if not tgt_node:
         raise CommandValidationError(f"Target node not found: {target}")
 
-    # Build preview
     import json as _json
     try:
         src_labels = _json.loads(src_node["labels"]) if isinstance(src_node["labels"], str) else src_node.get("labels", {})
