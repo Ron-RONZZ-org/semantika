@@ -12,6 +12,9 @@
    *   - Empty/null: nothing rendered
    */
 
+  import { tabStore } from "../tabStore.svelte.js";
+  import { getLocale } from "../userConfig.svelte.js";
+  import { getLabel } from "../listTabFormat.js";
   import { sparqlStore } from "./sparqlStore.svelte.js";
 
   /** @type {import("@lightercore/ui/types").SparqlResult|null} */
@@ -87,16 +90,81 @@
     localStorage.setItem(STORAGE_KEY, sortMode);
   }
 
+  // ── URI ↔ internal ID (mirrors backend _from_uri) ────────────────────
+  const BASE_URI = "https://semantika.local/";
+  const KNOWN_PREFIXES = {
+    rdf: "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+    rdfs: "http://www.w3.org/2000/01/rdf-schema#",
+    xsd: "http://www.w3.org/2001/XMLSchema#",
+    owl: "http://www.w3.org/2002/07/owl#",
+  };
+
+  /** Convert a SPARQL result IRI back to an internal Semantika ID. */
+  function fromUri(uri) {
+    for (const [prefix, ns] of Object.entries(KNOWN_PREFIXES)) {
+      if (uri.startsWith(ns)) {
+        const local = uri.slice(ns.length);
+        if (local) return `${prefix}:${local}`;
+      }
+    }
+    const nodeNs = `${BASE_URI}node/`;
+    if (uri.startsWith(nodeNs)) return uri.slice(nodeNs.length);
+    const resNs = `${BASE_URI}resource/`;
+    if (uri.startsWith(resNs)) return uri.slice(resNs.length);
+    // External URI — pass through
+    return uri;
+  }
+
+  /** Guess whether an internal ID refers to a node or a predicate. */
+  function guessIdType(id) {
+    // Known-prefix IDs (rdf:, rdfs:, xsd:, owl:) are predicates
+    for (const prefix of Object.keys(KNOWN_PREFIXES)) {
+      if (id.startsWith(`${prefix}:`)) return "predicate";
+    }
+    // resource/ namespace + colon → predicate (e.g. rs:opcion)
+    if (id.includes(":")) return "predicate";
+    // node/ namespace or bare → node
+    return "node";
+  }
+
+  /** Open a view tab for a URI result entry. */
+  async function openEntityView(entry) {
+    if (!entry || entry.type !== "uri") return;
+    const internalId = fromUri(entry.value);
+    if (internalId === entry.value && (internalId.startsWith("http://") || internalId.startsWith("https://"))) {
+      return; // external URI, can't look up
+    }
+    const idType = guessIdType(internalId);
+    try {
+      const endpoint = idType === "node" ? "nodes" : "predicates";
+      const resp = await fetch(`/api/v1/graph/${endpoint}/${encodeURIComponent(internalId)}`);
+      if (!resp.ok) return;
+      const result = await resp.json();
+      const entity = result.node || result.predicate || result;
+      const label = getLabel(entity?.labels, getLocale()) || internalId;
+      tabStore.open("status", label, { ...entity, triples: result.triples || [] }, {
+        idKey: `${idType}-${internalId}`, replaceable: false,
+      });
+    } catch { /* silent */ }
+  }
+
+  /** Short human-readable label for a literal's datatype or language. */
+  function literalTypeLabel(entry) {
+    if (entry["xml:lang"]) return `@${entry["xml:lang"]}`;
+    if (entry.datatype) {
+      const dt = entry.datatype.value || entry.datatype;
+      // Strip namespace to short name
+      const short = dt.includes("#") ? dt.split("#").pop() : dt.includes("/") ? dt.split("/").pop() : dt;
+      return short === "string" ? "" : short;
+    }
+    return "";
+  }
+
   function cellValue(binding, varName) {
     const entry = binding[varName];
     if (!entry) return "";
     if (entry.type === "uri") return entry._label || entry.value;
-    if (entry.type === "literal") {
-      let val = entry.value;
-      if (entry["xml:lang"]) val += `@${entry["xml:lang"]}`;
-      if (entry.datatype) val += ` (${entry.datatype.value})`;
-      return val;
-    }
+    if (entry.type === "literal") return entry.value;
     if (entry.type === "bnode") return `_:${entry.value}`;
     return entry.value || "";
   }
@@ -105,7 +173,16 @@
     const entry = binding[varName];
     if (!entry) return "";
     if (entry.type === "uri") return entry._label ? "uri-rich" : "uri";
+    if (entry.type === "literal") return literalTypeLabel(entry) ? "literal-rich" : "literal";
     return entry.type || "";
+  }
+
+  function cellSubValue(binding, varName) {
+    const entry = binding[varName];
+    if (!entry) return "";
+    if (entry.type === "uri") return entry.value; // full IRI below label
+    if (entry.type === "literal") return literalTypeLabel(entry);
+    return "";
   }
 
   function cellTooltip(binding, varName) {
@@ -228,13 +305,23 @@
                 >
                   <td class="row-num">{i + 1}</td>
                   {#each v as col}
+                    {@const ct = cellType(row, col)}
+                    {@const entry = row[col]}
                     <td
-                      class="cell cell-{cellType(row, col)}"
+                      class="cell cell-{ct}"
+                      class:cell-clickable={ct === "uri" || ct === "uri-rich"}
                       title={cellTooltip(row, col)}
+                      onclick={ct === "uri" || ct === "uri-rich" ? () => openEntityView(entry) : undefined}
+                      role={ct === "uri" || ct === "uri-rich" ? "button" : undefined}
+                      tabindex={ct === "uri" || ct === "uri-rich" ? "0" : undefined}
+                      onkeydown={ct === "uri" || ct === "uri-rich" ? (e) => { if (e.key === "Enter") openEntityView(entry); } : undefined}
                     >
-                      {#if cellType(row, col) === "uri-rich"}
+                      {#if ct === "uri-rich"}
                         <span class="uri-label">{cellValue(row, col)}</span>
-                        <span class="uri-value">{row[col]?.value || ""}</span>
+                        <span class="cell-sub">{cellSubValue(row, col)}</span>
+                      {:else if ct === "literal-rich"}
+                        <span class="literal-value">{cellValue(row, col)}</span>
+                        <span class="cell-sub">{cellSubValue(row, col)}</span>
                       {:else}
                         {cellValue(row, col)}
                       {/if}
@@ -436,6 +523,13 @@
     font-size: 12px;
   }
 
+  .cell-clickable {
+    cursor: pointer;
+  }
+  .cell-clickable:hover {
+    background: rgba(126, 200, 227, 0.08);
+  }
+
   .cell-uri-rich {
     padding: 2px 10px;
     line-height: 1.5;
@@ -448,7 +542,25 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .cell-uri-rich .uri-value {
+
+  .cell-literal {
+    color: #ce9178;
+  }
+
+  .cell-literal-rich {
+    padding: 2px 10px;
+    line-height: 1.5;
+  }
+  .cell-literal-rich .literal-value {
+    display: block;
+    color: #ce9178;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /** Shared secondary line (full IRI for URIs, datatype/lang for literals). */
+  .cell-sub {
     display: block;
     color: #7ec8e3;
     font-family: "SF Mono", "Fira Code", monospace;
@@ -458,9 +570,9 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-
-  .cell-literal {
-    color: #ce9178;
+  .cell-literal-rich .cell-sub {
+    color: #888;
+    font-family: inherit;
   }
 
   .cell-bnode {

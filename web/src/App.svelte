@@ -156,7 +156,9 @@
   }} />
 
 <main>
-  <BannerContainer />
+  {#if tabStore.active.type === "home"}
+    <BannerContainer />
+  {/if}
   {#if isLoading}
     <div class="loading-bar" aria-label="Loading"></div>
   {/if}
