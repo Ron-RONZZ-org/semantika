@@ -22,8 +22,8 @@ import pytest
 SCRIPTS: list[tuple[str, str, int]] = [
     (
         "semantika_full_e2e.mjs",
-        "120 tests: all commands + flags/options, GUI (tabs, forms, autocomplete, keyboard shortcuts), CLI→GUI routing, empty states, LLM endpoints, SPARQL editor",
-        600,
+        "126 tests: all commands + flags/options, GUI (tabs, forms, autocomplete, keyboard shortcuts), CLI→GUI routing, empty states, LLM endpoints, SPARQL editor, canonical/default IRI display + click navigation",
+        660,
     ),
 ]
 

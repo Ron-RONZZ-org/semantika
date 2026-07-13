@@ -85,6 +85,7 @@ class NodeCreate(BaseModel):
     node_id: str | None = None
     labels: dict[str, str] = {}
     definitions: dict[str, str] = {}
+    iri: str = ""
 
 
 class NodeUpdate(BaseModel):
@@ -119,6 +120,7 @@ class PredicateCreate(BaseModel):
     source: str = "manual"
     labels: dict[str, str] = {}
     descriptions: dict[str, str] = {}
+    iri: str = ""
 
 
 class PredicateUpdate(BaseModel):
