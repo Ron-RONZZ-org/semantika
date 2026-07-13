@@ -210,16 +210,35 @@ def get_command_tree() -> list[dict[str, Any]]:
             else:
                 # Node exists — if it was a leaf but now needs children, add them
                 if not is_last and "children" not in current[part]:
-                    # Convert leaf to group node, preserving description
+                    # Convert leaf to group node, preserving leaf metadata
                     existing = current[part]
                     group_desc = _group_descriptions.get(".".join(parts[:idx + 1]), "")
                     children = {}
+                    entry = {"name": part, "children": children}
+                    # Preserve all metadata from the leaf entry
                     desc = existing.get("description") or group_desc
-                    current[part] = {"name": part, "description": desc, "children": children}
+                    entry["description"] = desc
+                    for key in ("params", "flags"):
+                        if key in existing:
+                            entry[key] = existing[key]
+                    if existing.get("interactive"):
+                        entry["interactive"] = True
+                    if existing.get("listIdKey"):
+                        entry["listIdKey"] = existing["listIdKey"]
+                    current[part] = entry
                 elif is_last and "children" in current[part]:
-                    # Node has children and also a direct command handler — set description
+                    # Node has children and also a direct command handler —
+                    # merge the handler metadata into the existing group node
                     if meta.get("description"):
                         current[part]["description"] = meta.get("description")
+                    if meta.get("params"):
+                        current[part]["params"] = list(meta["params"])
+                    if meta.get("flags"):
+                        current[part]["flags"] = list(meta["flags"])
+                    if meta.get("interactive"):
+                        current[part]["interactive"] = True
+                    if meta.get("list_id_key"):
+                        current[part]["listIdKey"] = meta["list_id_key"]
             if not is_last:
                 # Navigate into the group node's children dict, not the node itself
                 current = current[part]["children"]
@@ -357,6 +376,8 @@ def get_command_definitions(tree: list[dict] | None = None) -> list[dict]:
                     }
                     for f in node["flags"]
                 ]
+            if node.get("interactive"):
+                entry["interactive"] = True
             definitions.append(entry)
             if node.get("children"):
                 _walk(node["children"], path)
