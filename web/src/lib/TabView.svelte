@@ -17,6 +17,7 @@
   import TemplateYamlPopup from "./TemplateYamlPopup.svelte";
   import SettingsTab from "./SettingsTab.svelte";
   import TripleDetailTab from "./TripleDetailTab.svelte";
+import SparqlQueryEditor from "./sparql/SparqlQueryEditor.svelte";
 
   // Tab types that manage their own Escape (selection mode, search, dialogs)
   const LIST_TAB_TYPES = new Set([
@@ -185,6 +186,8 @@
         <SettingsTab data={tabStore.active.data} />
       {:else if tabStore.active.type === "triple-detail"}
         <TripleDetailTab data={tabStore.active.data} />
+      {:else if tabStore.active.type === "sparql-editor"}
+        <SparqlQueryEditor />
       {:else}
         <StatusPopup data={tabStore.active.data} />
       {/if}
@@ -276,6 +279,7 @@
       form: "\u270f",
       quiz: "?",
       template_yaml: "\u2699",
+      "sparql-editor": "\u269b",
     };
     return icons[type] || "\u2022";
   }

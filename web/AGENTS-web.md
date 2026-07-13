@@ -56,6 +56,10 @@ Svelte 5 SPA frontend — command-bar UI with rich result rendering for the Sema
 | `NodeListTab.svelte` | Searchable node list with selection, batch delete |
 | `PredicateListTab.svelte` | Searchable predicate list with selection, batch delete |
 | `TripleListTab.svelte` | Filterable triple list (by subject/predicate) |
+| `SparqlQueryEditor.svelte` | SPARQL query editor with CodeMirror 6 — syntax highlighting, Run/Stop, split-editor/result layout |
+| `SparqlResultTable.svelte` | SPARQL result renderer — table for SELECT, Yes/No for ASK, Turtle for CONSTRUCT, CSV export |
+| `sparqlStore.svelte.js` | Reactive store for SPARQL query state: query text, results, loading, error, prefix autocomplete |
+| `sparqlLanguage.js` | CodeMirror 6 SPARQL language support (keyword highlighting via `@codemirror/lang-sql`) |
 | `DynamicForm.svelte` | Generic form builder for command params |
 | `FormTab.svelte` | Wrapper for DynamicForm in a tab |
 | `FormField.svelte` | Individual form field with validation |

@@ -309,18 +309,21 @@
       <div class="triple-row">
         <span class="triple-label-arc">
           <span class="ent-link" role="button" tabindex="-1"
-            onclick={(e) => { e.stopPropagation(); openNode(triple.subject_id); }}>
+            onclick={(e) => { e.stopPropagation(); openNode(triple.subject_id); }}
+            onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); openNode(triple.subject_id); } }}>
             {tripleLabel(triple, "subject")}
           </span>
           <span class="arrow">→</span>
           <span class="ent-link" role="button" tabindex="-1"
-            onclick={(e) => { e.stopPropagation(); openPredicate(triple.predicate_id); }}>
+            onclick={(e) => { e.stopPropagation(); openPredicate(triple.predicate_id); }}
+            onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); openPredicate(triple.predicate_id); } }}>
             {tripleLabel(triple, "predicate")}
           </span>
           <span class="arrow">→</span>
           {#if triple.object_type === "uri"}
             <span class="ent-link" role="button" tabindex="-1"
-              onclick={(e) => { e.stopPropagation(); openNode(triple.object_value); }}>
+              onclick={(e) => { e.stopPropagation(); openNode(triple.object_value); }}
+            onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); openNode(triple.object_value); } }}>
               {tripleLabel(triple, "object")}
             </span>
           {:else}
@@ -329,18 +332,21 @@
         </span>
         <span class="triple-id-arc">
           <span class="id-link" role="button" tabindex="-1"
-            onclick={(e) => { e.stopPropagation(); openNode(triple.subject_id); }}>
+            onclick={(e) => { e.stopPropagation(); openNode(triple.subject_id); }}
+            onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); openNode(triple.subject_id); } }}>
             {triple.subject_id}
           </span>
           <span class="arrow">→</span>
           <span class="id-link" role="button" tabindex="-1"
-            onclick={(e) => { e.stopPropagation(); openPredicate(triple.predicate_id); }}>
+            onclick={(e) => { e.stopPropagation(); openPredicate(triple.predicate_id); }}
+            onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); openPredicate(triple.predicate_id); } }}>
             {triple.predicate_id}
           </span>
           <span class="arrow">→</span>
           {#if triple.object_type === "uri"}
             <span class="id-link" role="button" tabindex="-1"
-              onclick={(e) => { e.stopPropagation(); openNode(triple.object_value); }}>
+              onclick={(e) => { e.stopPropagation(); openNode(triple.object_value); }}
+            onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); openNode(triple.object_value); } }}>
               {triple.object_value}
             </span>
           {:else}
@@ -395,18 +401,21 @@
       <div class="triple-row">
         <span class="triple-label-arc">
           <span class="ent-link" role="button" tabindex="-1"
-            onclick={(e) => { e.stopPropagation(); openNode(triple.subject_id); }}>
+            onclick={(e) => { e.stopPropagation(); openNode(triple.subject_id); }}
+            onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); openNode(triple.subject_id); } }}>
             {tripleLabel(triple, "subject")}
           </span>
           <span class="arrow">→</span>
           <span class="ent-link" role="button" tabindex="-1"
-            onclick={(e) => { e.stopPropagation(); openPredicate(triple.predicate_id); }}>
+            onclick={(e) => { e.stopPropagation(); openPredicate(triple.predicate_id); }}
+            onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); openPredicate(triple.predicate_id); } }}>
             {tripleLabel(triple, "predicate")}
           </span>
           <span class="arrow">→</span>
           {#if triple.object_type === "uri"}
             <span class="ent-link" role="button" tabindex="-1"
-              onclick={(e) => { e.stopPropagation(); openNode(triple.object_value); }}>
+              onclick={(e) => { e.stopPropagation(); openNode(triple.object_value); }}
+            onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); openNode(triple.object_value); } }}>
               {tripleLabel(triple, "object")}
             </span>
           {:else}
@@ -415,18 +424,21 @@
         </span>
         <span class="triple-id-arc">
           <span class="id-link" role="button" tabindex="-1"
-            onclick={(e) => { e.stopPropagation(); openNode(triple.subject_id); }}>
+            onclick={(e) => { e.stopPropagation(); openNode(triple.subject_id); }}
+            onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); openNode(triple.subject_id); } }}>
             {triple.subject_id}
           </span>
           <span class="arrow">→</span>
           <span class="id-link" role="button" tabindex="-1"
-            onclick={(e) => { e.stopPropagation(); openPredicate(triple.predicate_id); }}>
+            onclick={(e) => { e.stopPropagation(); openPredicate(triple.predicate_id); }}
+            onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); openPredicate(triple.predicate_id); } }}>
             {triple.predicate_id}
           </span>
           <span class="arrow">→</span>
           {#if triple.object_type === "uri"}
             <span class="id-link" role="button" tabindex="-1"
-              onclick={(e) => { e.stopPropagation(); openNode(triple.object_value); }}>
+              onclick={(e) => { e.stopPropagation(); openNode(triple.object_value); }}
+            onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); openNode(triple.object_value); } }}>
               {triple.object_value}
             </span>
           {:else}

@@ -84,6 +84,11 @@
 
       if (result.type === "form-required") {
         const { form, initialData } = result.data || {};
+        if (form === "sparql-editor") {
+          tabStore.open("sparql-editor", "SPARQL Query", {}, { idKey: "sparql-editor" });
+          isLoading = false;
+          return;
+        }
         if (form) {
           const activeId = tabStore.active?.id;
           if (activeId) tabStore.close(activeId);

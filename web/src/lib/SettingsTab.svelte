@@ -72,6 +72,7 @@
         disabled={saving}
         role="switch"
         aria-checked={normNodes}
+        aria-label="Normalise node IDs"
       >
         <span class="toggle-knob"></span>
       </button>
@@ -90,6 +91,7 @@
         disabled={saving}
         role="switch"
         aria-checked={stripPred}
+        aria-label="Strip predicate diacritics"
       >
         <span class="toggle-knob"></span>
       </button>
