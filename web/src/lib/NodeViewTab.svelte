@@ -1,7 +1,7 @@
 <script>
-  /** Rich viewer for nodes with built-in types — photo, video, document, code. */
-
-  import { tabStore } from "./tabStore.svelte.js";
+  /** Rich viewer for nodes with built-in types — photo, video, document, code.
+   *
+   * Shows media/rendered content at the top, then a table of all triples below. */
 
   let { data = {} } = $props();
 
@@ -12,7 +12,7 @@
   let filePath = $derived(node?.file_path || "");
   let triples = $derived(node?.triples || []);
 
-  // Extract labels
+  // Labels
   let labels = $derived.by(() => {
     if (!node?.labels) return {};
     try {
@@ -28,41 +28,27 @@
   });
   let definition = $derived(definitions?.en || "");
 
+  // Key metadata from triples
   let programmingLanguage = $derived.by(() => {
-    for (const t of triples) {
-      if (t.predicate_id === "sm:programmingLanguage") return t.object_value;
-    }
+    for (const t of triples) { if (t.predicate_id === "sm:programmingLanguage") return t.object_value; }
     return "";
   });
-
   let dimension = $derived.by(() => {
-    for (const t of triples) {
-      if (t.predicate_id === "sm:dimension") return t.object_value;
-    }
+    for (const t of triples) { if (t.predicate_id === "sm:dimension") return t.object_value; }
     return "";
   });
-
   let canonicalLink = $derived.by(() => {
-    for (const t of triples) {
-      if (t.predicate_id === "sm:canonicalLink") return t.object_value;
-    }
+    for (const t of triples) { if (t.predicate_id === "sm:canonicalLink") return t.object_value; }
     return "";
   });
-
   let fileSize = $derived.by(() => {
-    for (const t of triples) {
-      if (t.predicate_id === ":hasFileSize") return t.object_value;
-    }
+    for (const t of triples) { if (t.predicate_id === ":hasFileSize") return t.object_value; }
     return "";
   });
-
   let fileMime = $derived.by(() => {
-    for (const t of triples) {
-      if (t.predicate_id === ":hasFileMime") return t.object_value;
-    }
+    for (const t of triples) { if (t.predicate_id === ":hasFileMime") return t.object_value; }
     return "";
   });
-
   let mimeCategory = $derived.by(() => {
     const m = fileMime || "";
     if (m.startsWith("image/")) return "image";
@@ -72,14 +58,13 @@
     return "other";
   });
 
-  // Code content state
+  // Code content
   let codeContent = $state("");
   let codeLoading = $state(false);
   let codeError = $state("");
   let codeCopied = $state(false);
 
   $effect(() => {
-    // Auto-load code content when viewing a code node or a text-typed document
     if ((nodeType === "code" || nodeType === "document") && nodeId && !codeContent && !codeLoading) {
       loadCodeContent();
     }
@@ -121,23 +106,26 @@
     return `${(n / (1024 * 1024)).toFixed(1)} MB`;
   }
 
-  function openTripleView() {
-    tabStore.open("status", label, { ...node, triples }, {
-      idKey: `node-${nodeId}`, replaceable: false,
-    });
+  function tripleObjectLabel(t) {
+    if (t.object_type === "uri") return `→ ${t.object_value}`;
+    const val = t.object_value || "";
+    if (t.object_datatype) return `${val} (${t.object_datatype})`;
+    if (t.object_lang) return `${val}@${t.object_lang}`;
+    return `"${val}"`;
   }
 </script>
 
 <div class="node-view">
+  <!-- Header -->
   <div class="nv-header">
     <div class="nv-title">{label}</div>
     <div class="nv-id">{nodeId}</div>
+    {#if definition}
+      <div class="nv-definition">{definition}</div>
+    {/if}
   </div>
 
-  {#if definition}
-    <div class="nv-definition">{definition}</div>
-  {/if}
-
+  <!-- Badge bar -->
   <div class="nv-meta">
     {#if nodeType}
       <span class="nv-badge nv-badge-{nodeType}">{nodeType}</span>
@@ -156,14 +144,14 @@
     {/if}
   </div>
 
-  <!-- Photo viewer -->
+  <!-- Media content -->
   {#if nodeType === "photo"}
     <div class="nv-media">
-      <img src={fileUrl} alt={label} class="nv-image" onerror={(e) => { e.target.alt = 'Failed to load image'; }} />
+      <img src={fileUrl} alt={label} class="nv-image"
+        onerror={(e) => { e.target.alt = 'Failed to load image'; }} />
     </div>
   {/if}
 
-  <!-- Video player -->
   {#if nodeType === "video"}
     <div class="nv-media">
       <video controls class="nv-video" preload="metadata">
@@ -173,7 +161,6 @@
     </div>
   {/if}
 
-  <!-- File download -->
   {#if nodeType === "document"}
     <div class="nv-file-area">
       <div class="nv-file-icon">📄</div>
@@ -203,7 +190,6 @@
     {/if}
   {/if}
 
-  <!-- Code viewer -->
   {#if nodeType === "code"}
     <div class="nv-code-area">
       {#if codeLoading}
@@ -233,9 +219,17 @@
     </div>
   {/if}
 
-  <!-- Triple view link -->
-  <div class="nv-footer">
-    <button class="nv-triple-btn" onclick={openTripleView}>📋 Show raw triples</button>
+  <!-- Triples table -->
+  <div class="nv-triples-section">
+    <div class="nv-section-title">Triples ({triples.length})</div>
+    {#each triples as t}
+      <div class="nv-triple-row">
+        <span class="nv-triple-pred">{t.predicate_id}</span>
+        <span class="nv-triple-obj">{tripleObjectLabel(t)}</span>
+      </div>
+    {:else}
+      <div class="nv-triple-empty">No triples.</div>
+    {/each}
   </div>
 </div>
 
@@ -254,8 +248,8 @@
   .nv-lang { background: #1a2a1a; color: #6fcf6f; border: 1px solid #2a4a2a; }
   .nv-meta-item { font-size: 0.75rem; color: var(--clr-sub); }
   .nv-media { display: flex; justify-content: center; background: #1a1a2e; border: 1px solid #2a2a3e; border-radius: 6px; padding: 0.5rem; overflow: hidden; }
-  .nv-image { max-width: 100%; max-height: 70vh; object-fit: contain; border-radius: 4px; }
-  .nv-video { max-width: 100%; max-height: 70vh; border-radius: 4px; }
+  .nv-image { max-width: 100%; max-height: 50vh; object-fit: contain; border-radius: 4px; }
+  .nv-video { max-width: 100%; max-height: 50vh; border-radius: 4px; }
   .nv-file-area { display: flex; flex-direction: column; gap: 8px; align-items: center; padding: 1.5rem; background: #1a1a2e; border: 1px solid #2a2a3e; border-radius: 6px; }
   .nv-file-icon { font-size: 2.5rem; }
   .nv-download-link { display: inline-flex; align-items: center; gap: 6px; padding: 0.5rem 1rem; background: #2a2a4e; border: 1px solid #444; border-radius: 4px; color: #6fc0cf; text-decoration: none; font-size: 0.85rem; }
@@ -275,7 +269,12 @@
   .nv-canonical a:hover { text-decoration: underline; }
   .nv-loading { color: var(--clr-sub); text-align: center; padding: 1rem; }
   .nv-error { color: #f77; background: #2a1a1a; border: 1px solid #a33; border-radius: 4px; padding: 0.5rem 0.75rem; font-size: 0.78rem; }
-  .nv-footer { margin-top: auto; padding-top: 0.5rem; }
-  .nv-triple-btn { padding: 0.3rem 0.75rem; background: #2a2a3e; border: 1px solid #444; border-radius: 3px; color: var(--clr-sub); cursor: pointer; font-family: monospace; font-size: 0.78rem; }
-  .nv-triple-btn:hover { background: #3a3a4e; color: #e0e0e0; }
+  /* Triples section */
+  .nv-triples-section { border-top: 1px solid #2a2a3e; padding-top: 0.5rem; }
+  .nv-section-title { font-size: 0.8rem; font-weight: 600; color: var(--clr-sub); margin-bottom: 0.4rem; }
+  .nv-triple-row { display: flex; gap: 0.5rem; padding: 0.2rem 0; font-size: 0.78rem; border-bottom: 1px solid #1e1e2e; }
+  .nv-triple-row:last-child { border-bottom: none; }
+  .nv-triple-pred { color: #8fc0df; min-width: 10rem; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nv-triple-obj { color: #d0d0d0; word-break: break-all; }
+  .nv-triple-empty { color: var(--clr-muted); font-size: 0.78rem; padding: 0.3rem 0; }
 </style>
