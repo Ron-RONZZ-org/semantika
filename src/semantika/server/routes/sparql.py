@@ -210,7 +210,11 @@ MAX_AUTOCOMPLETE_RESULTS = 20
 
 
 @router.get("/sparql/autocomplete")
-def sparql_autocomplete(q: str = "", limit: int = MAX_AUTOCOMPLETE_RESULTS) -> dict:
+def sparql_autocomplete(
+    q: str = "",
+    limit: int = MAX_AUTOCOMPLETE_RESULTS,
+    type: str = "",
+) -> dict:
     """Search for entities matching a partial query (Wikidata-style autocomplete).
 
     Searches both nodes and predicates by ID prefix and label text.
@@ -220,6 +224,7 @@ def sparql_autocomplete(q: str = "", limit: int = MAX_AUTOCOMPLETE_RESULTS) -> d
     Args:
         q: Partial entity ID or label text to match.
         limit: Maximum results (default 20, max 50).
+        type: Optional filter — ``"node"``, ``"predicate"``, or ``""`` (both).
 
     Returns:
         A dict with ``results``: list of ``{"id": str, "label": str,
@@ -233,6 +238,7 @@ def sparql_autocomplete(q: str = "", limit: int = MAX_AUTOCOMPLETE_RESULTS) -> d
 
     query = q.strip()
     actual_limit = min(max(limit, 1), 50)
+    filter_type = type.strip().lower() if type else ""
 
     results: list[dict] = []
     seen_ids: set[str] = set()
@@ -241,32 +247,34 @@ def sparql_autocomplete(q: str = "", limit: int = MAX_AUTOCOMPLETE_RESULTS) -> d
         svc = get_services()
 
         # Search nodes by ID prefix and label
-        nodes = svc["node"].search(query, limit=actual_limit)
-        for n in nodes:
-            nid = n["node_id"]
-            if nid in seen_ids:
-                continue
-            seen_ids.add(nid)
-            labels = _parse_json_labels(n.get("labels", "{}"))
-            label = labels.get("en") or next(
-                (v for v in labels.values() if isinstance(v, str) and v), nid
-            )
-            iri = _to_uri(nid).value
-            results.append({"id": nid, "label": label, "type": "node", "iri": iri})
+        if filter_type in ("", "node"):
+            nodes = svc["node"].search(query, limit=actual_limit)
+            for n in nodes:
+                nid = n["node_id"]
+                if nid in seen_ids:
+                    continue
+                seen_ids.add(nid)
+                labels = _parse_json_labels(n.get("labels", "{}"))
+                label = labels.get("en") or next(
+                    (v for v in labels.values() if isinstance(v, str) and v), nid
+                )
+                iri = _to_uri(nid).value
+                results.append({"id": nid, "label": label, "type": "node", "iri": iri})
 
         # Search predicates by ID prefix and label
-        preds = svc["predicate"].search(query, limit=actual_limit)
-        for p in preds:
-            pid = p["predicate_id"]
-            if pid in seen_ids:
-                continue
-            seen_ids.add(pid)
-            labels = _parse_json_labels(p.get("labels", "{}"))
-            label = labels.get("en") or next(
-                (v for v in labels.values() if isinstance(v, str) and v), pid
-            )
-            iri = _to_uri(pid).value
-            results.append({"id": pid, "label": label, "type": "predicate", "iri": iri})
+        if filter_type in ("", "predicate"):
+            preds = svc["predicate"].search(query, limit=actual_limit)
+            for p in preds:
+                pid = p["predicate_id"]
+                if pid in seen_ids:
+                    continue
+                seen_ids.add(pid)
+                labels = _parse_json_labels(p.get("labels", "{}"))
+                label = labels.get("en") or next(
+                    (v for v in labels.values() if isinstance(v, str) and v), pid
+                )
+                iri = _to_uri(pid).value
+                results.append({"id": pid, "label": label, "type": "predicate", "iri": iri})
 
     except Exception:
         import logging
