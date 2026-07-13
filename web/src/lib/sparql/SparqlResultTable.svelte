@@ -376,22 +376,26 @@
   }
 
   .cell-uri-rich {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    padding: 2px 0;
+    padding: 2px 10px;
+    line-height: 1.5;
   }
-
-  .uri-label {
+  .cell-uri-rich .uri-label {
+    display: block;
     color: #e0e0e0;
     font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-
-  .uri-value {
+  .cell-uri-rich .uri-value {
+    display: block;
     color: #7ec8e3;
     font-family: "SF Mono", "Fira Code", monospace;
     font-size: 11px;
     opacity: 0.7;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .cell-literal {

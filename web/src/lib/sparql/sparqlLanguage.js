@@ -104,10 +104,15 @@ const CACHE_TTL = 30000;
  * @param {import("@codemirror/autocomplete").CompletionContext} context
  * @returns {"node"|"predicate"} The inferred entity type filter.
  */
-function guessPosition(context) {
+function guessPosition(context, endPos) {
+  // Use endPos (start of current word) when available, so the current
+  // word being typed is NOT counted as a completed token.  Without this,
+  // typing the first word after "{" counts as 1 token → position=1 → predicate
+  // instead of position=0 → node (subject).
+  const sliceEnd = endPos ?? context.pos;
   const before = context.state.sliceDoc(
     Math.max(0, context.pos - 200),
-    context.pos,
+    sliceEnd,
   );
 
   // Determine the last structural delimiter and the text after it.
@@ -177,7 +182,7 @@ function entityToOption(entity) {
       el.innerHTML = `<strong>${entity.label}</strong><br><span style="color:#888;font-size:11px">${entity.iri}</span>`;
       return el;
     },
-    apply: entity.iri,
+    apply: `<${entity.iri}>`,
   };
 }
 
@@ -272,7 +277,7 @@ export function sparqlAutocomplete(extraPrefixes = []) {
         if (!word || word.text.length < 2) return null;
 
         const query = word.text;
-        const entityType = guessPosition(context);
+        const entityType = guessPosition(context, word.from);
         const entities = await fetchEntities(query, entityType);
         if (entities.length === 0) return null;
 

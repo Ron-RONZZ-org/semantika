@@ -10,10 +10,10 @@
    */
 
   import { onMount, onDestroy } from "svelte";
-  import { EditorView, basicSetup } from "codemirror";
+  import { basicSetup } from "codemirror";
+  import { EditorView, keymap } from "@codemirror/view";
   import { EditorState } from "@codemirror/state";
   import { oneDark } from "@codemirror/theme-one-dark";
-  import { keymap } from "@codemirror/view";
   import { indentWithTab } from "@codemirror/commands";
   import { sparql, sparqlAutocomplete } from "./sparqlLanguage.js";
   import { sparqlStore } from "./sparqlStore.svelte.js";
