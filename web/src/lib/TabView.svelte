@@ -1,6 +1,7 @@
 <script>
   import { tabStore } from "./tabStore.svelte.js";
   import { dirtyFormStore } from "./dirtyFormStore.svelte.js";
+  import { overlayStack } from "@lightercore/ui/overlayStack.svelte.js";
   import HomeTab from "./HomeTab.svelte";
   import LoadingPopup from "./LoadingPopup.svelte";
   import StatusPopup from "./StatusPopup.svelte";
@@ -73,6 +74,14 @@ import SparqlQueryEditor from "./sparql/SparqlQueryEditor.svelte";
       const type = tabStore.active?.type;
       if (type && LIST_TAB_TYPES.has(type)) return;
 
+      // If an overlay (modal, dialog, etc.) is active,
+      // close the top-most overlay instead of the tab.
+      if (overlayStack.top) {
+        overlayStack.top.close();
+        e.preventDefault();
+        return;
+      }
+
       if (tabStore.active && tabStore.active.closable && !tabStore.isHome) {
         handleCloseTab(tabStore.active.id);
         e.preventDefault();
@@ -105,8 +114,14 @@ import SparqlQueryEditor from "./sparql/SparqlQueryEditor.svelte";
       return;
     }
 
+    // Q / q — close current tab. When an overlay is active, close it instead.
     if ((e.key === "q" || e.key === "Q") && !tabStore.isHome) {
       if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.isContentEditable)) {
+        return;
+      }
+      if (overlayStack.top) {
+        overlayStack.top.close();
+        e.preventDefault();
         return;
       }
       if (tabStore.active && tabStore.active.closable) {

@@ -1,8 +1,20 @@
 <script>
+  import { overlayStack } from "@lightercore/ui/overlayStack.svelte.js";
+
   let {
     onConfigured = () => {},
     onDismiss = () => {},
   } = $props();
+
+  // Register with overlay stack so TabView defers to this modal on ESC/Q
+  let _overlayEntry = $state(null);
+  $effect(() => {
+    _overlayEntry = overlayStack.push("llm-setup-modal", () => onDismiss());
+    return () => {
+      if (_overlayEntry) overlayStack.remove(_overlayEntry.id);
+      _overlayEntry = null;
+    };
+  });
 
   let step = $state("checking");
   let providerType = $state("deepseek");
