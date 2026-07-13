@@ -78,8 +78,15 @@
   let codeError = $state("");
   let codeCopied = $state(false);
 
+  $effect(() => {
+    // Auto-load code content when viewing a code node or a text-typed document
+    if ((nodeType === "code" || nodeType === "document") && nodeId && !codeContent && !codeLoading) {
+      loadCodeContent();
+    }
+  });
+
   async function loadCodeContent() {
-    if (codeContent || codeLoading) return;
+    if (codeContent || codeLoading || codeError) return;
     codeLoading = true;
     codeError = "";
     try {
@@ -152,7 +159,7 @@
   <!-- Photo viewer -->
   {#if nodeType === "photo"}
     <div class="nv-media">
-      <img src={fileUrl} alt={label} class="nv-image" onerror="this.alt='Failed to load image'" />
+      <img src={fileUrl} alt={label} class="nv-image" onerror={(e) => { e.target.alt = 'Failed to load image'; }} />
     </div>
   {/if}
 
@@ -203,18 +210,18 @@
         <div class="nv-loading">Loading code…</div>
       {:else if codeError}
         <div class="nv-error">{codeError}</div>
-      {:else}
-        {#await loadCodeContent() then}
-          <div class="nv-code-block">
-            <div class="nv-code-header">
-              <span class="nv-code-filename">{filePath.split("/").pop() || "source"}</span>
-              <button class="nv-copy-btn" onclick={copyCode}>
-                {codeCopied ? "✓ Copied" : "📋 Copy"}
-              </button>
-            </div>
-            <pre class="nv-code-pre"><code>{codeContent}</code></pre>
+      {:else if codeContent}
+        <div class="nv-code-block">
+          <div class="nv-code-header">
+            <span class="nv-code-filename">{filePath.split("/").pop() || "source"}</span>
+            <button class="nv-copy-btn" onclick={copyCode}>
+              {codeCopied ? "✓ Copied" : "📋 Copy"}
+            </button>
           </div>
-        {/await}
+          <pre class="nv-code-pre"><code>{codeContent}</code></pre>
+        </div>
+      {:else}
+        <div class="nv-loading">Preparing…</div>
       {/if}
     </div>
   {/if}
