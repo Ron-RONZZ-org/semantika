@@ -1396,6 +1396,95 @@ async function run() {
     assert(hasSort, "Expected sort toggle button (\u21D5) in result header");
   });
 
+  await test("SPARQL: seed entities with and without --canonical", async () => {
+    // Create entities via the API so the E2E test can verify them
+    const seed = async (url, body) => {
+      const r = await page.evaluate(([u, b]) =>
+        fetch(u, { method: "POST", headers: { "Content-Type": "application/json" }, body: b })
+          .then((r) => r.json()),
+        [url, JSON.stringify(body)],
+      );
+      return r;
+    };
+    // Node with canonical IRI
+    const n1 = await seed("/api/v1/graph/nodes", { node_id: "E2E_CANON", labels: { en: "Canonical Node" }, iri: "https://e2e.test/canon-node" });
+    assert.equal(n1.node?.iri, "https://e2e.test/canon-node", "Node canonical IRI should be stored");
+    // Node without canonical (template default)
+    const n2 = await seed("/api/v1/graph/nodes", { node_id: "E2E_DEF", labels: { en: "Default Node" } });
+    assert.equal(n2.node?.iri, "", "Default node iri should be empty");
+    // Predicate with canonical IRI
+    const p1 = await seed("/api/v1/graph/predicates", { predicate_id: "e2e:canonPred", labels: { en: "Canonical Pred" }, iri: "https://e2e.test/canon-pred" });
+    assert.equal(p1.predicate?.iri, "https://e2e.test/canon-pred", "Pred canonical IRI should be stored");
+    // Predicate without canonical
+    const p2 = await seed("/api/v1/graph/predicates", { predicate_id: "e2e:defPred", labels: { en: "Default Pred" } });
+    assert.equal(p2.predicate?.iri, "", "Default pred iri should be empty");
+    // Triples
+    await seed("/api/v1/graph/triples", { subject_id: "E2E_CANON", predicate_id: "e2e:canonPred", object_value: "canonObj", object_type: "literal" });
+    await seed("/api/v1/graph/triples", { subject_id: "E2E_DEF", predicate_id: "e2e:defPred", object_value: "defObj", object_type: "literal" });
+    console.log("  [seed] Created canonical/default node+pred+triple pairs");
+  });
+
+  await test("SPARQL: query shows both canonical and default IRIs", async () => {
+    // Close the current SPARQL tab
+    const sparqlTab = page.locator('button[role="tab"]', { hasText: "SPARQL" });
+    if (await sparqlTab.isVisible().catch(() => false)) {
+      const closeBtn = sparqlTab.locator("xpath=../button[contains(@title,'Close')]");
+      if (await closeBtn.isVisible().catch(() => false)) { await closeBtn.click(); await sleep(300); }
+    }
+    await sleep(300);
+    await typeAndRun(
+      '!sparql query --query "SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 5"',
+    );
+    await sleep(1500);
+    const tabContent = page.locator('[role="tabpanel"]');
+    const text = await tabContent.textContent();
+    // Should show both the canonical IRI and the default template IRI
+    assert(text.includes("https://e2e.test/canon-node"), "Expected canonical node IRI in results");
+    assert(text.includes("https://e2e.test/canon-pred"), "Expected canonical predicate IRI in results");
+    assert(text.includes("https://semantika.local/node/E2E_DEF"), "Expected default node template IRI");
+    assert(text.includes("https://semantika.local/resource/e2e:defPred"), "Expected default predicate template IRI");
+  });
+
+  await test("SPARQL: clicking canonical node URI opens view tab with correct label", async () => {
+    await sleep(500);
+    // Click the canonical node cell via JS
+    await page.evaluate(() => {
+      const cell = document.querySelector('td[title="https://e2e.test/canon-node"]');
+      if (cell) cell.click();
+    });
+    await sleep(1500);
+    const tabContent = page.locator('[role="tabpanel"]');
+    const text = await tabContent.textContent();
+    // The view tab should show the node's label and triples
+    assert(text.includes("Canonical Node"), "Expected node label in view tab");
+    assert(text.includes("Triples"), "Expected triples section");
+    assert(text.includes("canonObj"), "Expected triple object in view tab");
+  });
+
+  await test("SPARQL: clicking default node URI opens view tab", async () => {
+    // Close the node view tab first
+    const nodeTab = page.locator('button[role="tab"]', { hasText: "Canonical Node" });
+    if (await nodeTab.isVisible().catch(() => false)) {
+      const closeBtn = nodeTab.locator("xpath=../button[contains(@title,'Close')]");
+      if (await closeBtn.isVisible().catch(() => false)) { await closeBtn.click(); await sleep(300); }
+    }
+    // Go to SPARQL tab and re-run
+    const sparqlTab = page.locator('button[role="tab"]', { hasText: "SPARQL" });
+    if (await sparqlTab.isVisible().catch(() => false)) { await sparqlTab.click(); await sleep(300); }
+    const runBtn = page.locator('[role="tabpanel"] button:has-text("Run")');
+    if (await runBtn.isVisible().catch(() => false)) { await runBtn.click(); await sleep(1500); }
+    // Click the default node cell
+    await page.evaluate(() => {
+      const cell = document.querySelector('td[title="https://semantika.local/node/E2E_DEF"]');
+      if (cell) cell.click();
+    });
+    await sleep(1500);
+    const tabContent = page.locator('[role="tabpanel"]');
+    const text = await tabContent.textContent();
+    assert(text.includes("Default Node"), "Expected node label for default entity");
+    assert(text.includes("Triples"), "Expected triples section");
+  });
+
   // ═══════════════════════════════════════════
   //  SUMMARY
   // ═══════════════════════════════════════════
