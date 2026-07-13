@@ -199,10 +199,26 @@
       if (displaySuggestions.length > 0) {
         const idx = selectedSuggestion >= 0 ? selectedSuggestion : 0;
         const completion = displaySuggestions[idx];
-        // Case-insensitive — /command prompt names may differ in casing
         const lastToken = cmd.split(/\s+/).pop() || "";
         if (completion.toLowerCase() !== lastToken.toLowerCase()) {
           applyCompletion(completion);
+          // After filling, if the completed command path has no more children
+          // (i.e. it's a leaf command), submit immediately.
+          const newCmd = value.trim();
+          const { completions: nextCompletions } = getCompletions(newCmd);
+          const isLeaf = nextCompletions.length === 0;
+          // For !sparql specifically, always submit after completing "query"
+          const isSparqlQuery = /^!sparql\s+query\s*$/i.test(newCmd);
+          if (isLeaf || isSparqlQuery) {
+            // Submit the now-completed command
+            history.push(newCmd);
+            value = "";
+            suggestions = [];
+            hints = [];
+            dataCompletions = [];
+            positionals = [];
+            if (onSubmit) onSubmit(newCmd);
+          }
           return;
         }
         // Completion is the same as what's already typed → clear suggestions and submit.

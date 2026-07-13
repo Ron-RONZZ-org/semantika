@@ -134,6 +134,42 @@ Write operations (deletes, trash actions, toggles) update the UI **instantly** �
 - `!user config --locale CODE` — set locale (e.g. `en`, `fr`, `de`, `eo`)
 - Persistent locale badge in the GUI header
 
+### SPARQL Endpoint
+Semantika includes a **standard SPARQL 1.1 Protocol endpoint** backed by an Oxigraph RocksDB cache with incremental sync from SQLite.
+
+**The SPARQL engine starts automatically** on first query — no special flags or configuration needed. Just install the dependencies and the engine is ready.
+
+**Usage:**
+
+```
+# Direct API call (GET)
+curl 'http://localhost:6015/api/v1/query/sparql?query=SELECT+*+WHERE+{+?s+?p+?o+}+LIMIT+10'
+
+# Direct API call (POST)
+curl -X POST http://localhost:6015/api/v1/query/sparql \
+  -H "Content-Type: application/sparql-query" \
+  -d 'SELECT * WHERE { ?s ?p ?o } LIMIT 10'
+
+# Via command bar — opens the SPARQL query editor tab
+!sparql
+
+# Execute inline
+!sparql query 'SELECT * WHERE { ?s ?p ?o } LIMIT 10'
+```
+
+**Features:**
+- Full SPARQL 1.1: SELECT, ASK, CONSTRUCT, DESCRIBE
+- Results enriched with human-readable labels from SQLite
+- Context-aware autocomplete (suggests nodes vs predicates based on cursor position)
+- Keyboard shortcut: `Ctrl+Enter` to run queries
+- Standard content negotiation (`application/sparql-results+json`, `text/turtle`)
+- Incremental sync — triples added/removed via `!` commands are immediately available via SPARQL
+
+**Architecture:**
+- SQLite remains the source of truth for all data (nodes, predicates, labels, FTS5, proofs)
+- Oxigraph RocksDB stores only bare ID-triples for fast SPARQL evaluation
+- Failed sync operations are queued in a backlog with exponential backoff (never silent)
+
 ## Architecture
 
 ```

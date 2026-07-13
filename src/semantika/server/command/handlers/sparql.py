@@ -29,14 +29,8 @@ def _ensure_engine():
 
 @group_command("sparql", description="Execute SPARQL queries against the triple store")
 def cmd_sparql_root(remaining: list[str], flags: dict[str, str]) -> dict:
-    """SPARQL command group help."""
-    return {"type": "status", "title": "SPARQL Commands", "data": {
-        "_summary": (
-            "Available !sparql commands:\n"
-            "  !sparql query 'SELECT ...' — Run a SPARQL SELECT query\n"
-            "  !sparql status — Show SPARQL engine status\n"
-        )
-    }}
+    """SPARQL command group — opens the SPARQL query editor by default."""
+    return {"type": "form-required", "title": "SPARQL Query", "data": {"form": "sparql-editor"}}
 
 
 @command("sparql.query", description="Run a SPARQL SELECT/ASK query",
