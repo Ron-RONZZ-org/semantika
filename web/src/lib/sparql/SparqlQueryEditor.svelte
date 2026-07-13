@@ -3,13 +3,10 @@
    * SPARQL Query Editor — full-featured query editor with CodeMirror 6.
    *
    * Provides:
-   *   - CodeMirror 6 editor with SPARQL syntax highlighting
-   *   - Run / Stop buttons
+   *   - CodeMirror 6 editor with SPARQL syntax highlighting + autocomplete
+   *   - Run (Ctrl+Enter) / Copy / Reset buttons with <kbd> shortcut hints
    *   - Result rendering (table for SELECT, status for ASK, Turtle for CONSTRUCT)
-   *   - Resizeable editor/result split
-   *
-   * Usage (via tabStore):
-   *   tabStore.open("sparql-editor", "SPARQL Query", {})
+   *   - Context-aware autocomplete for SPARQL keywords + known prefixes
    */
 
   import { onMount, onDestroy } from "svelte";
@@ -18,7 +15,7 @@
   import { oneDark } from "@codemirror/theme-one-dark";
   import { keymap } from "@codemirror/view";
   import { indentWithTab } from "@codemirror/commands";
-  import { sparql } from "./sparqlLanguage.js";
+  import { sparql, sparqlAutocomplete } from "./sparqlLanguage.js";
   import { sparqlStore } from "./sparqlStore.svelte.js";
   import SparqlResultTable from "./SparqlResultTable.svelte";
 
@@ -38,13 +35,25 @@
   onMount(() => {
     if (!editorContainer) return;
 
+    // Build autocomplete with prefixes from the store
+    const prefixes = sparqlStore.prefixes.map((p) => ({
+      prefix: p.prefix,
+      uri: p.uri,
+    }));
+
     const startState = EditorState.create({
       doc: sparqlStore.query,
       extensions: [
         basicSetup,
         oneDark,
         sparql(),
-        keymap.of([indentWithTab]),
+        sparqlAutocomplete(prefixes),
+        keymap.of([
+          indentWithTab,
+          // Ctrl+Enter / Cmd+Enter → run query
+          { key: "Ctrl-Enter", run: () => { handleRun(); return true; } },
+          { key: "Cmd-Enter", run: () => { handleRun(); return true; } },
+        ]),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             sparqlStore.query = update.state.doc.toString();
@@ -65,13 +74,6 @@
     });
   });
 
-  $effect(() => {
-    // Sync store changes back to editor
-    if (editorView && sparqlStore.query !== editorView.state.doc.toString()) {
-      // Don't overwrite editor content with store — the editor is the source of truth
-    }
-  });
-
   onDestroy(() => {
     if (editorView) {
       editorView.destroy();
@@ -82,12 +84,6 @@
   async function handleRun() {
     resultShown = true;
     await sparqlStore.execute();
-  }
-
-  function handleStop() {
-    // In a simple implementation, we just don't await the result.
-    // A full implementation would use AbortController.
-    resultShown = true;
   }
 
   function handleCopyQuery() {
@@ -119,15 +115,20 @@
           class="btn-run"
           onclick={handleRun}
           disabled={sparqlStore.loading}
-          title="Execute query (Ctrl+Enter)"
+          title="Execute query"
         >
           {sparqlStore.loading ? "…" : "▶ Run"}
+          <kbd class="shortcut-hint">Ctrl+Enter</kbd>
         </button>
         {#if copyMessage}
           <span class="copy-msg">{copyMessage}</span>
         {/if}
-        <button class="btn-icon" onclick={handleCopyQuery} title="Copy query">📋</button>
-        <button class="btn-icon" onclick={handleReset} title="Reset to default">↺</button>
+        <button class="btn-icon" onclick={handleCopyQuery} title="Copy query">
+          📋
+        </button>
+        <button class="btn-icon" onclick={handleReset} title="Reset to default">
+          ↺
+        </button>
       </div>
     </div>
     <div class="editor-container" bind:this={editorContainer}></div>
@@ -204,11 +205,25 @@
     font-weight: 500;
     cursor: pointer;
     line-height: 1.4;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
   }
   .btn-run:hover { background: #43a047; }
   .btn-run:disabled {
     background: #555;
     cursor: not-allowed;
+  }
+
+  .shortcut-hint {
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+    padding: 0 4px;
+    font-size: 10px;
+    font-family: inherit;
+    color: rgba(255, 255, 255, 0.7);
+    line-height: 1.5;
   }
 
   .btn-icon {

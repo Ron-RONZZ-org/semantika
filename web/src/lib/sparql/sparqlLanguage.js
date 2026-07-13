@@ -1,127 +1,229 @@
 /**
- * SPARQL CodeMirror 6 language support.
+ * SPARQL CodeMirror 6 language support with Wikidata-style autocomplete.
  *
- * Builds on @codemirror/lang-sql with SPARQL-specific keywords and
- * built-in functions. Registered as a StreamLanguage so it inherits
- * SQL-like highlighting while adding SPARQL semantics.
+ * Builds on @codemirror/lang-sql with SPARQL-specific keywords.
+ * Exports:
+ *   - sparql() — CodeMirror language extension for syntax highlighting
+ *   - sparqlAutocomplete() — CompletionSource for context-aware autocomplete
+ *     (SPARQL keywords + known RDF prefixes + entity search from backend)
  */
 
 import { SQLite, sql } from "@codemirror/lang-sql";
+import { autocompletion } from "@codemirror/autocomplete";
 
-/**
- * SPARQL keywords that differ from standard SQL.
- */
+// ---------------------------------------------------------------------------
+// SPARQL keywords
+// ---------------------------------------------------------------------------
+
 const SPARQL_KEYWORDS = [
-  "BASE",
-  "PREFIX",
-  "SELECT",
-  "CONSTRUCT",
-  "DESCRIBE",
-  "ASK",
-  "FROM",
-  "NAMED",
-  "WHERE",
-  "ORDER",
-  "BY",
-  "ASC",
-  "DESC",
-  "LIMIT",
-  "OFFSET",
-  "DISTINCT",
-  "REDUCED",
-  "FILTER",
-  "OPTIONAL",
-  "UNION",
-  "GRAPH",
-  "SERVICE",
-  "SILENT",
-  "BIND",
-  "IN",
-  "NOT",
-  "EXISTS",
-  "MINUS",
-  "REGEX",
-  "STR",
-  "LANG",
-  "LANGMATCHES",
-  "DATATYPE",
-  "BOUND",
-  "IRI",
-  "URI",
-  "BNODE",
-  "RAND",
-  "ABS",
-  "CEIL",
-  "FLOOR",
-  "ROUND",
-  "CONCAT",
-  "SUBSTR",
-  "STRLEN",
-  "UCASE",
-  "LCASE",
-  "ENCODE_FOR_URI",
-  "CONTAINS",
-  "STRSTARTS",
-  "STRENDS",
-  "STRBEFORE",
-  "STRAFTER",
-  "YEAR",
-  "MONTH",
-  "DAY",
-  "HOURS",
-  "MINUTES",
-  "SECONDS",
-  "TIMEZONE",
-  "TZ",
-  "NOW",
-  "UUID",
-  "STRUUID",
-  "MD5",
-  "SHA1",
-  "SHA256",
-  "SHA384",
-  "SHA512",
-  "COALESCE",
-  "IF",
-  "STRLANG",
-  "STRDT",
-  "ISIRI",
-  "ISURI",
-  "ISBLANK",
-  "ISLITERAL",
-  "ISNUMERIC",
-  "SAMETERM",
-  "TRUE",
-  "FALSE",
-  "UNDEF",
-  "ASC",
-  "DESC",
-  "SEPARATOR",
-  "GROUP_CONCAT",
-  "SAMPLE",
-  "SUM",
-  "MIN",
-  "MAX",
-  "AVG",
-  "COUNT",
-  "GROUP",
-  "BY",
-  "HAVING",
+  "BASE", "PREFIX", "SELECT", "CONSTRUCT", "DESCRIBE", "ASK",
+  "FROM", "NAMED", "WHERE", "ORDER", "BY", "ASC", "DESC",
+  "LIMIT", "OFFSET", "DISTINCT", "REDUCED",
+  "FILTER", "OPTIONAL", "UNION", "GRAPH", "SERVICE", "SILENT",
+  "BIND", "IN", "NOT", "EXISTS", "MINUS",
+  "REGEX", "STR", "LANG", "LANGMATCHES", "DATATYPE", "BOUND",
+  "IRI", "URI", "BNODE", "RAND", "ABS", "CEIL", "FLOOR", "ROUND",
+  "CONCAT", "SUBSTR", "STRLEN", "UCASE", "LCASE",
+  "ENCODE_FOR_URI", "CONTAINS", "STRSTARTS", "STRENDS",
+  "STRBEFORE", "STRAFTER",
+  "YEAR", "MONTH", "DAY", "HOURS", "MINUTES", "SECONDS",
+  "TIMEZONE", "TZ", "NOW", "UUID", "STRUUID",
+  "MD5", "SHA1", "SHA256", "SHA384", "SHA512",
+  "COALESCE", "IF", "STRLANG", "STRDT",
+  "ISIRI", "ISURI", "ISBLANK", "ISLITERAL", "ISNUMERIC", "SAMETERM",
+  "TRUE", "FALSE", "UNDEF",
+  "SEPARATOR", "GROUP_CONCAT", "SAMPLE", "SUM", "MIN", "MAX", "AVG", "COUNT",
+  "GROUP", "HAVING",
 ];
 
+// ---------------------------------------------------------------------------
+// Known RDF prefixes
+// ---------------------------------------------------------------------------
+
+const KNOWN_PREFIXES = [
+  { prefix: "rdf", uri: "http://www.w3.org/1999/02/22-rdf-syntax-ns#" },
+  { prefix: "rdfs", uri: "http://www.w3.org/2000/01/rdf-schema#" },
+  { prefix: "xsd", uri: "http://www.w3.org/2001/XMLSchema#" },
+  { prefix: "owl", uri: "http://www.w3.org/2002/07/owl#" },
+  { prefix: "skos", uri: "http://www.w3.org/2004/02/skos/core#" },
+  { prefix: "foaf", uri: "http://xmlns.com/foaf/0.1/" },
+  { prefix: "dc", uri: "http://purl.org/dc/elements/1.1/" },
+  { prefix: "dct", uri: "http://purl.org/dc/terms/" },
+];
+
+/** Full PREFIX declaration lines as completion options. */
+function prefixOptions(all) {
+  return all.map((p) => ({
+    label: `PREFIX ${p.prefix}: <${p.uri}>`,
+    type: "keyword",
+    detail: `PREFIX ${p.prefix}`,
+    apply: `PREFIX ${p.prefix}: <${p.uri}>`,
+  }));
+}
+
+/** Short prefix:name completions. */
+function prefixShortOptions(all) {
+  return all.map((p) => ({
+    label: `${p.prefix}:`,
+    type: "namespace",
+    detail: p.uri,
+  }));
+}
+
+/** SPARQL keyword completions. */
+const keywordOptions = SPARQL_KEYWORDS.map((kw) => ({
+  label: kw,
+  type: "keyword",
+  boost: kw === "SELECT" || kw === "WHERE" || kw === "PREFIX" ? 99 : 50,
+}));
+
+// ---------------------------------------------------------------------------
+// Entity autocomplete — fetches from backend
+// ---------------------------------------------------------------------------
+
+const AUTOCOMPLETE_ENDPOINT = "/api/v1/query/sparql/autocomplete";
+
+/** Simple in-memory cache for entity search (cleared after 30s). */
+let entityCache = { query: "", results: [], timestamp: 0 };
+const CACHE_TTL = 30000;
+
 /**
- * Create a CodeMirror 6 language extension for SPARQL.
- *
- * Uses `@codemirror/lang-sql`'s ``sql()`` configured with:
- * - ``SQLite`` dialect (closest match for built-in functions)
- * - SPARQL-specific keywords
- *
- * @returns {import("@codemirror/language").LanguageSupport}
+ * Fetch entity suggestions from the backend.
+ * Caches the last query to avoid redundant network calls while typing.
+ */
+async function fetchEntities(query) {
+  const now = Date.now();
+  if (entityCache.query === query && now - entityCache.timestamp < CACHE_TTL) {
+    return entityCache.results;
+  }
+  try {
+    const resp = await fetch(
+      `${AUTOCOMPLETE_ENDPOINT}?q=${encodeURIComponent(query)}&limit=10`,
+    );
+    if (!resp.ok) return [];
+    const data = await resp.json();
+    const results = data.results || [];
+    entityCache = { query, results, timestamp: now };
+    return results;
+  } catch {
+    return [];
+  }
+}
+
+/** Convert a backend entity result to a CodeMirror completion option. */
+function entityToOption(entity) {
+  const typeIcon = entity.type === "node" ? "●" : "◈";
+  return {
+    label: entity.id,
+    type: entity.type === "node" ? "keyword" : "property",
+    detail: `${typeIcon} ${entity.label}`,
+    info: () => {
+      const el = document.createElement("div");
+      el.style.cssText = "padding:4px 8px;font-size:12px;line-height:1.5";
+      el.innerHTML = `<strong>${entity.label}</strong><br><span style="color:#888;font-size:11px">${entity.iri}</span>`;
+      return el;
+    },
+    apply: entity.iri,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Exports
+// ---------------------------------------------------------------------------
+
+/**
+ * CodeMirror language extension for SPARQL syntax highlighting.
  */
 export function sparql() {
   return sql({
     dialect: SQLite,
     upperCaseKeywords: true,
     keywords: SPARQL_KEYWORDS,
+  });
+}
+
+/**
+ * Context-aware SPARQL autocomplete.
+ *
+ * Provides:
+ *   - SPARQL keywords (SELECT, WHERE, PREFIX, etc.)
+ *   - PREFIX declarations (`PREFIX rdf: <http://...>`)
+ *   - Known prefix names (`rdf:`, `rdfs:`, `owl:`, etc.)
+ *   - **Entity search** — suggests nodes and predicates from the store
+ *     (Wikidata-style, matching partial IDs and labels)
+ *
+ * @param {Array<{prefix:string, uri:string}>} [extraPrefixes]
+ * @returns {import("@codemirror/state").Extension}
+ */
+export function sparqlAutocomplete(extraPrefixes = []) {
+  // Merge prefixes
+  const allPrefixes = [...KNOWN_PREFIXES];
+  for (const ep of extraPrefixes) {
+    if (!allPrefixes.find((p) => p.prefix === ep.prefix)) {
+      allPrefixes.push(ep);
+    }
+  }
+
+  const prefOpts = prefixOptions(allPrefixes);
+  const prefShort = prefixShortOptions(allPrefixes);
+
+  return autocompletion({
+    activateOnTyping: true,
+    maxRenderedOptions: 15,
+    override: [
+      // ── Synchronous: keywords + prefixes ──────────────────────────
+      (context) => {
+        const word = context.matchBefore(/\w*/);
+        if (!word || (word.from === word.to && !context.explicit)) return null;
+
+        const prefix = word.text.toLowerCase();
+        const options = [];
+
+        // SPARQL keywords
+        for (const opt of keywordOptions) {
+          if (opt.label.toLowerCase().startsWith(prefix)) {
+            options.push(opt);
+          }
+        }
+
+        // After "PREFIX " → suggest prefix names
+        const lineBefore = context.state.sliceDoc(
+          Math.max(0, context.pos - 40),
+          context.pos - word.from,
+        );
+        if (/PREFIX\s+$/i.test(lineBefore)) {
+          for (const opt of prefShort) {
+            if (opt.label.toLowerCase().startsWith(prefix)) {
+              options.push(opt);
+            }
+          }
+        }
+
+        // Full PREFIX lines
+        if (prefix.length >= 2 && options.length < 5) {
+          for (const opt of prefOpts) {
+            if (opt.label.toLowerCase().startsWith(prefix)) {
+              options.push(opt);
+            }
+          }
+        }
+
+        if (options.length > 0) return { from: word.from, options };
+        return null;
+      },
+
+      // ── Async: entity autocomplete ────────────────────────────────
+      async (context) => {
+        const word = context.matchBefore(/\w{2,}/);
+        if (!word || word.text.length < 2) return null;
+
+        const query = word.text;
+        const entities = await fetchEntities(query);
+        if (entities.length === 0) return null;
+
+        const options = entities.map(entityToOption);
+        return { from: word.from, options };
+      },
+    ],
   });
 }

@@ -6,11 +6,25 @@ import logging
 
 from lightercore.permissions import PermissionLevel
 
-from semantika.graph.db import get_sparql_engine
+from semantika.graph.db import get_sparql_engine, init_sparql_engine
 from semantika.server.command.errors import CommandValidationError
 from semantika.server.command.registry import command, group_command
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_engine():
+    """Get the SPARQL engine, lazy-initializing if needed."""
+    engine = get_sparql_engine()
+    if engine is not None:
+        return engine
+    engine = init_sparql_engine()
+    if engine is None:
+        raise CommandValidationError(
+            "SPARQL engine is not available. "
+            "The pyoxigraph library is required (pip install pyoxigraph)."
+        )
+    return engine
 
 
 @group_command("sparql", description="Execute SPARQL queries against the triple store")
@@ -39,12 +53,7 @@ def cmd_sparql_query(remaining: list[str], flags: dict[str, str]) -> dict:
         !sparql query 'SELECT * WHERE { ?s ?p ?o } LIMIT 10'
         !sparql query --query 'ASK { ?s :hasAuthor ?o }'
     """
-    engine = get_sparql_engine()
-    if not engine:
-        raise CommandValidationError(
-            "SPARQL engine is not available. "
-            "The server must be started with a SPARQL engine to use this command."
-        )
+    engine = _ensure_engine()
 
     query = flags.get("query") or (remaining[0] if remaining else "")
     if not query:
@@ -100,8 +109,9 @@ def cmd_sparql_query(remaining: list[str], flags: dict[str, str]) -> dict:
          permission_level=PermissionLevel.READ)
 def cmd_sparql_status(remaining: list[str], flags: dict[str, str]) -> dict:
     """Show SPARQL engine status: backlog size, cache info."""
-    engine = get_sparql_engine()
-    if not engine:
+    try:
+        engine = _ensure_engine()
+    except CommandValidationError:
         return {"type": "status", "data": {
             "available": False,
             "message": "SPARQL engine not available (pyoxigraph not installed).",

@@ -204,6 +204,108 @@ def sparql_preview() -> dict:
     return {"prefixes": prefixes}
 
 
+# ── Entity autocomplete (for frontend inline autocomplete) ──────────────────
+
+MAX_AUTOCOMPLETE_RESULTS = 20
+
+
+@router.get("/sparql/autocomplete")
+def sparql_autocomplete(q: str = "", limit: int = MAX_AUTOCOMPLETE_RESULTS) -> dict:
+    """Search for entities matching a partial query (Wikidata-style autocomplete).
+
+    Searches both nodes and predicates by ID prefix and label text.
+    Used by the SPARQL editor's inline autocomplete to suggest entities
+    as the user types.
+
+    Args:
+        q: Partial entity ID or label text to match.
+        limit: Maximum results (default 20, max 50).
+
+    Returns:
+        A dict with ``results``: list of ``{"id": str, "label": str,
+        "type": "node"|"predicate", "iri": str}``.
+    """
+    from semantika.graph.db import get_db, get_services
+    from semantika.graph.sparql.engine import _to_uri
+
+    if not q or not q.strip():
+        return {"results": []}
+
+    query = q.strip()
+    actual_limit = min(max(limit, 1), 50)
+
+    results: list[dict] = []
+    seen_ids: set[str] = set()
+
+    try:
+        svc = get_services()
+
+        # Search nodes by ID prefix and label
+        nodes = svc["node"].search(query, limit=actual_limit)
+        for n in nodes:
+            nid = n["node_id"]
+            if nid in seen_ids:
+                continue
+            seen_ids.add(nid)
+            labels = _parse_json_labels(n.get("labels", "{}"))
+            label = labels.get("en") or next(
+                (v for v in labels.values() if isinstance(v, str) and v), nid
+            )
+            iri = _to_uri(nid).value
+            results.append({"id": nid, "label": label, "type": "node", "iri": iri})
+
+        # Search predicates by ID prefix and label
+        preds = svc["predicate"].search(query, limit=actual_limit)
+        for p in preds:
+            pid = p["predicate_id"]
+            if pid in seen_ids:
+                continue
+            seen_ids.add(pid)
+            labels = _parse_json_labels(p.get("labels", "{}"))
+            label = labels.get("en") or next(
+                (v for v in labels.values() if isinstance(v, str) and v), pid
+            )
+            iri = _to_uri(pid).value
+            results.append({"id": pid, "label": label, "type": "predicate", "iri": iri})
+
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning(
+            "SPARQL autocomplete: search failed", exc_info=True
+        )
+
+    # Sort by relevance: exact prefix match first, then label starts-with, then rest
+    def _sort_key(r: dict) -> tuple:
+        q_lower = query.lower()
+        rid = r["id"].lower()
+        rlabel = r["label"].lower()
+        # Exact ID match → highest priority
+        if rid == q_lower:
+            return (0, 0)
+        # ID starts with query
+        if rid.startswith(q_lower):
+            return (1, len(r["id"]))
+        # label starts with query
+        if rlabel.startswith(q_lower):
+            return (2, len(r["label"]))
+        # anything else
+        return (3, len(r["id"]))
+
+    results.sort(key=_sort_key)
+    return {"results": results[:actual_limit]}
+
+
+def _parse_json_labels(raw: str | dict) -> dict:
+    """Parse JSON labels field, tolerating already-parsed dicts."""
+    if isinstance(raw, dict):
+        return raw
+    try:
+        import json
+        return json.loads(raw) if raw else {}
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+
 class UpdateRequest:
     """Pydantic model for SPARQL UPDATE requests."""
     query: str
