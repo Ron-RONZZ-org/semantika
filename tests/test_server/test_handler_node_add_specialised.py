@@ -283,3 +283,63 @@ class TestSpecialisedNodeInTree:
         assert meta is not None
         flags = {f["name"] for f in meta.get("flags", [])}
         assert "lang" in flags
+
+
+# ── Node-view response type tests ────────────────────────────────────────
+
+
+class TestNodeViewType:
+    """Verify node.view returns ``node-view`` type for built-in type nodes."""
+
+    def test_regular_node_returns_status(self, services: dict):
+        """A plain node without built-in type returns type ``status``."""
+        ns = services["node"]
+        ns.create({"node_id": "PLAIN", "labels": {"en": "Plain node"}})
+        result = dispatch(["node", "view", "PLAIN"], {})
+        assert result["type"] == "status"
+
+    def test_builtin_node_without_file_returns_status(self, services: dict):
+        """A built-in type node without a file attachment still returns ``status``."""
+        bts = services["builtin_type"]
+        bts.ensure_builtins()
+        ns = services["node"]
+        ns.create({"node_id": "EMPTY_PHOTO", "labels": {"en": "Empty Photo"}})
+        # Add rdf:type triple to sm:Photo
+        ts = services["triple"]
+        ts.add("EMPTY_PHOTO", "rdf:type", "sm:Photo", object_type="uri")
+        result = dispatch(["node", "view", "EMPTY_PHOTO"], {})
+        assert result["type"] == "status"
+
+    def test_photo_node_with_file_returns_node_view(self, services: dict, tmp_path):
+        """A photo-type node with a file returns type ``node-view`` with file_url."""
+        # Create photo node via specialised command
+        p = tmp_path / "test_view.jpg"
+        p.write_bytes(b"\xff\xd8\xff\xe0")
+        result = dispatch(
+            ["node", "add", "photo"],
+            {"path": str(p), "no-copy": "true"},
+        )
+        assert result["type"] == "status"
+        node_id = result["data"]["node"]["node_id"]
+
+        # Now view it
+        view_result = dispatch(["node", "view"], {"id": node_id})
+        assert view_result["type"] == "node-view"
+        assert "file_url" in view_result["data"]
+        assert view_result["data"]["node_type"] == "photo"
+        assert view_result["data"]["file_url"].endswith(node_id)
+
+    def test_code_node_with_file_returns_node_view(self, services: dict, tmp_path):
+        """A code-type node with a file returns type ``node-view``."""
+        p = tmp_path / "test_view.py"
+        p.write_text("print('hello')")
+        result = dispatch(
+            ["node", "add", "code"],
+            {"path": str(p), "lang": "python", "no-copy": "true"},
+        )
+        assert result["type"] == "status"
+        node_id = result["data"]["node"]["node_id"]
+
+        view_result = dispatch(["node", "view"], {"id": node_id})
+        assert view_result["type"] == "node-view"
+        assert view_result["data"]["node_type"] == "code"

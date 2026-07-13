@@ -1,10 +1,12 @@
-"""File attachment API routes — upload, download, delete node attachments."""
+"""File attachment API routes — upload, download, delete node attachments, serve files."""
 
 from __future__ import annotations
 
+import mimetypes
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 from pydantic import BaseModel
 
 from semantika.graph.db import get_services
@@ -144,3 +146,75 @@ async def delete_attachments(node_id: str):
         svc["triple"].remove(subject_id=node["node_id"], predicate_id=pred)
 
     return {"deleted_files": deleted_files}
+
+
+# ── File serving ─────────────────────────────────────────────────────────
+
+
+def _resolve_file_path(svc: dict, node_id: str) -> Path:
+    """Resolve a node ID to its managed file path.
+
+    Returns the absolute path to the file.
+
+    Raises:
+        HTTPException: If the node or file is not found.
+    """
+    file_triples = svc["triple"].get_by_sp(node_id, ":hasFilePath")
+    if not file_triples:
+        raise HTTPException(404, f"No file attached to node '{node_id}'")
+    path_str = file_triples[0]["object_value"]
+    p = Path(path_str)
+    if not p.exists():
+        raise HTTPException(404, f"File not found on disk: {path_str}")
+    if not is_managed_file(p):
+        raise HTTPException(403, "File is outside managed storage")
+    return p
+
+
+@router.get("/{node_id}")
+async def serve_file(node_id: str):
+    """Serve a node's attached file (binary content with proper MIME type).
+
+    The node must have a ``:hasFilePath`` triple pointing to a managed file.
+    """
+    svc = get_services()
+    node = svc["node"].resolve_node_id_prefix(node_id)
+    if not node:
+        raise HTTPException(404, f"Node not found: {node_id}")
+
+    file_path = _resolve_file_path(svc, node["node_id"])
+
+    # Check for an explicit MIME triple
+    mime_triples = svc["triple"].get_by_sp(node["node_id"], ":hasFileMime")
+    media_type = mime_triples[0]["object_value"] if mime_triples else None
+    if not media_type:
+        media_type, _ = mimetypes.guess_type(str(file_path))
+    if not media_type:
+        media_type = "application/octet-stream"
+
+    return FileResponse(
+        path=file_path,
+        media_type=media_type,
+        filename=file_path.name,
+    )
+
+
+@router.get("/{node_id}/content")
+async def serve_file_content(node_id: str):
+    """Read and return a node's attached file as text.
+
+    Used for code snippets and text documents.
+    """
+    svc = get_services()
+    node = svc["node"].resolve_node_id_prefix(node_id)
+    if not node:
+        raise HTTPException(404, f"Node not found: {node_id}")
+
+    file_path = _resolve_file_path(svc, node["node_id"])
+
+    try:
+        content = file_path.read_text(encoding="utf-8", errors="replace")
+    except (OSError, UnicodeDecodeError) as e:
+        raise HTTPException(400, f"Cannot read file as text: {e}")
+
+    return PlainTextResponse(content=content, media_type="text/plain; charset=utf-8")

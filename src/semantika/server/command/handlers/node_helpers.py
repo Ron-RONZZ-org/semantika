@@ -327,23 +327,35 @@ def attach_file_and_create_node(
         )
         if file_triple_list:
             created_file_triples = file_triple_list
-            # Persist file metadata triples
-            file_arcs = [
-                (node_id_val, ft["predicate"], ft["object"])
-                for ft in file_triple_list
-            ]
-            combined_arcs.extend((o, p) for _, p, o in file_arcs)
             msg_parts.append("with file attachment")
+            # File metadata triples have object_type='literal' — create
+            # them directly (not through create_arc_triples which forces 'uri').
+            for ft in file_triple_list:
+                try:
+                    svc["triple"].add(
+                        subject_id=node_id_val,
+                        predicate_id=ft["predicate"],
+                        object_value=ft["object"],
+                        object_type=ft.get("object_type", "literal"),
+                        object_datatype=ft.get("object_datatype"),
+                    )
+                except ValueError:
+                    pass
 
-        # 5. Create rdf:type triple
-        combined_arcs.append((node_type, "rdf:type"))
+        # rdf:type and canonical-link are URI-type arcs — use create_arc_triples
+        arc_targets: list[tuple[str, str]] = []
+        arc_targets.append((node_type, "rdf:type"))
 
-        # 6. Canonical link
         if canonical_link:
             svc["builtin_type"].ensure_predicates(["sm:canonicalLink"])
-            combined_arcs.append((canonical_link, "sm:canonicalLink"))
+            arc_targets.append((canonical_link, "sm:canonicalLink"))
 
-        # 7. Extra semantic triples
+        # 5. Create URI arc triples
+        if arc_targets:
+            create_arc_triples(svc, node_id_val, arc_targets)
+            msg_parts.append(f"with {len(arc_targets)} triple(s)")
+
+        # 6. Extra semantic triples
         if extra_fields:
             svc["builtin_type"].ensure_predicates([ef[0] for ef in extra_fields])
             for pred_id, obj_val, obj_type, obj_dt in extra_fields:
@@ -358,11 +370,6 @@ def attach_file_and_create_node(
                     semantic_triples.append(triple)
                 except ValueError:
                     pass
-
-        # 8. Create all arc triples
-        create_arc_triples(svc, node_id_val, combined_arcs)
-        if combined_arcs:
-            msg_parts.append(f"with {len(combined_arcs)} triple(s)")
 
     except Exception:
         # Roll back node creation on failure

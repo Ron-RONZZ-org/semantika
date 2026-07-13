@@ -60,7 +60,12 @@ def cmd_node_search(remaining: list[str], flags: dict[str, str]) -> dict:
          permission_level=PermissionLevel.READ,
          params=[{"name": "id", "type": "string", "required": True}])
 def cmd_node_view(remaining: list[str], flags: dict[str, str]) -> dict:
-    """View a single node by ID or prefix."""
+    """View a single node by ID or prefix.
+
+    If the node has a built-in type (sm:Photo, sm:Video, sm:Document,
+    sm:SourceCode) and a file attachment, returns ``node-view`` response
+    with file serving URLs for rich frontend rendering.
+    """
     svc = get_services()
     node_id = flags.get("id") or (remaining[0] if remaining else "")
     if not node_id:
@@ -70,7 +75,46 @@ def cmd_node_view(remaining: list[str], flags: dict[str, str]) -> dict:
         raise CommandValidationError(f"Node not found: {node_id}")
     triples = svc["triple"].get_by_subject(node["node_id"])
     node["triples"] = triples
+
+    # Detect built-in type → switch to node-view response
+    builtin_type = _detect_builtin_type(triples)
+    if builtin_type:
+        file_path = _get_file_path(triples)
+        if file_path:
+            node["node_type"] = builtin_type
+            node["file_url"] = f"/api/v1/files/{node['node_id']}"
+            node["file_path"] = file_path
+            return {"type": "node-view", "data": node}
+
     return {"type": "status", "data": node}
+
+
+def _detect_builtin_type(triples: list[dict]) -> str | None:
+    """Check triples for an ``rdf:type`` pointing to a built-in type node.
+
+    Returns one of ``"photo"``, ``"video"``, ``"file"``, ``"code"``,
+    or ``None``.
+    """
+    type_map = {
+        "sm:Photo": "photo",
+        "sm:Video": "video",
+        "sm:Document": "document",
+        "sm:SourceCode": "code",
+    }
+    for t in triples:
+        if t.get("predicate_id") == "rdf:type" and t.get("object_type") == "uri":
+            mapped = type_map.get(t["object_value"])
+            if mapped:
+                return mapped
+    return None
+
+
+def _get_file_path(triples: list[dict]) -> str | None:
+    """Extract ``:hasFilePath`` value from triples."""
+    for t in triples:
+        if t.get("predicate_id") == ":hasFilePath":
+            return t.get("object_value")
+    return None
 
 
 @command("node.add", description="Create a new entity node in the knowledge graph",
