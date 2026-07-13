@@ -3,6 +3,8 @@
    *
    * Shows media/rendered content at the top, then a table of all triples below. */
 
+  import { tabStore } from "./tabStore.svelte.js";
+
   let { data = {} } = $props();
 
   let node = $derived(data?.data || data);
@@ -69,6 +71,12 @@
       loadCodeContent();
     }
   });
+
+  function openTripleView() {
+    tabStore.open("status", label, { ...node, triples }, {
+      idKey: `node-${nodeId}`, replaceable: false,
+    });
+  }
 
   async function loadCodeContent() {
     if (codeContent || codeLoading || codeError) return;
@@ -221,7 +229,10 @@
 
   <!-- Triples table -->
   <div class="nv-triples-section">
-    <div class="nv-section-title">Triples ({triples.length})</div>
+    <div class="nv-section-title">
+      <span>Triples ({triples.length})</span>
+      <button class="nv-raw-btn" onclick={openTripleView}>📋 View raw</button>
+    </div>
     {#each triples as t}
       <div class="nv-triple-row">
         <span class="nv-triple-pred">{t.predicate_id}</span>
@@ -271,7 +282,9 @@
   .nv-error { color: #f77; background: #2a1a1a; border: 1px solid #a33; border-radius: 4px; padding: 0.5rem 0.75rem; font-size: 0.78rem; }
   /* Triples section */
   .nv-triples-section { border-top: 1px solid #2a2a3e; padding-top: 0.5rem; }
-  .nv-section-title { font-size: 0.8rem; font-weight: 600; color: var(--clr-sub); margin-bottom: 0.4rem; }
+  .nv-section-title { display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; font-weight: 600; color: var(--clr-sub); margin-bottom: 0.4rem; }
+  .nv-raw-btn { padding: 0.15rem 0.5rem; background: #2a2a3e; border: 1px solid #444; border-radius: 3px; color: var(--clr-sub); cursor: pointer; font-family: monospace; font-size: 0.72rem; }
+  .nv-raw-btn:hover { background: #3a3a4e; color: #e0e0e0; }
   .nv-triple-row { display: flex; gap: 0.5rem; padding: 0.2rem 0; font-size: 0.78rem; border-bottom: 1px solid #1e1e2e; }
   .nv-triple-row:last-child { border-bottom: none; }
   .nv-triple-pred { color: #8fc0df; min-width: 10rem; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
