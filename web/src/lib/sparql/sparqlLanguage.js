@@ -90,31 +90,40 @@ const CACHE_TTL = 30000;
 /**
  * Guess the triple position at the cursor by scanning backward.
  *
- * In a SPARQL triple pattern ``?s ?p ?o`` the three positions are:
- *   - 0 (subject) → suggest **nodes**
- *   - 1 (predicate) → suggest **predicates**
- *   - 2 (object) → suggest **nodes** (or both)
+ * In SPARQL the three positions are:
+ *   - subject   → suggest **nodes**
+ *   - predicate → suggest **predicates**
+ *   - object    → suggest **nodes** (URI objects)
  *
- * Heuristic: scan backward from the cursor to the last structural delimiter
- * (``{``, ``.``, ``;``, ``}``), tokenise, filter out SPARQL keywords, and
- * count the remaining terms.
+ * Edge cases:
+ *   - ``;`` (semicolon) — same subject, next predicate → start at pos 1
+ *   - ``,`` (comma)     — same subject+predicate, next object → start at pos 2
+ *   - ``a`` keyword     — ``rdf:type`` predicate, already handled by keyword
+ *                         filtering; the type/class that follows is an object
  *
  * @param {import("@codemirror/autocomplete").CompletionContext} context
- * @returns {"node"|"predicate"|""} The inferred entity type filter, or ``""``
- *   when the position cannot be determined.
+ * @returns {"node"|"predicate"} The inferred entity type filter.
  */
 function guessPosition(context) {
-  // Scan backward up to 200 chars to find the last delimiter
   const before = context.state.sliceDoc(
     Math.max(0, context.pos - 200),
     context.pos,
   );
 
-  // Find the last structural delimiter
+  // Determine the last structural delimiter and the text after it.
+  // Delimiters: { } . ; ,
+  // ``;`` resets to predicate position (offset 1), ``,`` to object (offset 2).
   const delimMatch = before.match(
-    /[{}.]\s*[^;{}.]*$/,
+    /([{,;.])\s*[^{,;.}]*$/,
   );
-  const relevant = delimMatch ? delimMatch[0] : before;
+  let startOffset = 0; // 0=subject, 1=predicate, 2=object
+  let relevant = before;
+  if (delimMatch) {
+    relevant = delimMatch[0];
+    const delim = delimMatch[1];
+    if (delim === ";") startOffset = 1;       // ; → same subject, next predicate
+    else if (delim === ",") startOffset = 2;   // , → same SP, next object
+  }
 
   // Tokenise: split on whitespace, filter SPARQL keywords and punctuation
   const tokens = relevant
@@ -122,15 +131,10 @@ function guessPosition(context) {
     .map((t) => t.replace(/^[{}()[\];,.]/, "").replace(/[{}()[\];,.]$/, ""))
     .filter((t) => t.length > 0 && !/^(SELECT|WHERE|FILTER|OPTIONAL|UNION|GRAPH|SERVICE|BIND|VALUES|LIMIT|OFFSET|ORDER|BY|ASC|DESC|HAVING|GROUP|PREFIX|BASE|FROM|NAMED|CONSTRUCT|DESCRIBE|ASK|DISTINCT|REDUCED|AS|MINUS|NOT|IN|EXISTS|a)$/i.test(t));
 
-  // Count remaining non-keyword tokens
-  const nonKeywordCount = tokens.length;
+  const position = startOffset + tokens.length;
 
-  // Position 0 (subject) → nodes
-  if (nonKeywordCount <= 1) return "node";
-  // Position 1 (predicate) → predicates
-  if (nonKeywordCount === 2) return "predicate";
-  // Position 2+ (object) → both
-  return "";
+  if (position === 1) return "predicate";
+  return "node"; // subject (0) or object (2+)
 }
 
 /**
