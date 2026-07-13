@@ -15,6 +15,7 @@
   import TripleListTab from "./TripleListTab.svelte";
   import PromptListTab from "./PromptListTab.svelte";
   import TemplateYamlPopup from "./TemplateYamlPopup.svelte";
+  import NodeViewTab from "./NodeViewTab.svelte";
   import SettingsTab from "./SettingsTab.svelte";
   import TripleDetailTab from "./TripleDetailTab.svelte";
 
@@ -159,6 +160,8 @@
     <div class="tab-content" class:active={true} role="region" aria-label="Tab content">
       {#if tabStore.active.type === "loading"}
         <LoadingPopup message={tabStore.active.title} />
+      {:else if tabStore.active.type === "node-view"}
+        <NodeViewTab data={tabStore.active.data} />
       {:else if tabStore.active.type === "status"}
         <StatusPopup data={tabStore.active.data} />
       {:else if tabStore.active.type === "graph"}
@@ -263,6 +266,7 @@
   function tabIcon(type) {
     const icons = {
       home: "\u2302",
+      "node-view": "\ud83d\udcfa",
       status: "\ud83d\udccb",
       "node-list": "\u25c9",
       "predicate-list": "\u25ce",
