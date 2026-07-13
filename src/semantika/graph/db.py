@@ -97,6 +97,18 @@ def init_sparql_engine(cache_dir: Path | None = None) -> Any:
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     _sparql_engine = SparqlEngine(get_db(), cache_dir=cache_dir)
+
+    # Bulk-sync existing triples (handles lazy init where data already exists)
+    _sparql_engine.sync_all()
+
+    # Inject the engine into any already-cached services (lazy init path)
+    global _services_cache
+    if _services_cache is not None:
+        for svc_name in ("node", "predicate", "triple"):
+            svc = _services_cache.get(svc_name)
+            if svc is not None:
+                svc._sparql_engine = _sparql_engine
+
     logger.info("SPARQL engine initialized (cache: %s)", cache_dir)
     return _sparql_engine
 

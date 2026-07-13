@@ -485,6 +485,42 @@ class SparqlEngine:
 
     # ── Lifecycle ───────────────────────────────────────────────────────
 
+    def sync_all(self) -> int:
+        """Bulk-sync all existing triples from SQLite into the RocksDB cache.
+
+        Reads all triples from SQLite and streams them into the Oxigraph store.
+        Called by :func:`init_sparql_engine` so that the cache is populated
+        even if the engine is lazily initialised after data already exists.
+
+        Returns:
+            Number of triples synced.
+        """
+        # Guard against missing table (e.g. during test setup)
+        try:
+            rows = self._db.execute(
+                "SELECT * FROM triples ORDER BY subject_id"
+            )
+        except Exception:
+            return 0
+
+        count = 0
+        for row in rows:
+            try:
+                subj = _to_uri(row["subject_id"], self._base_uri)
+                pred = _to_uri(row["predicate_id"], self._base_uri)
+                obj = _to_rdf_term(row, self._base_uri)
+                self._store.add(ox.Quad(subj, pred, obj))
+                count += 1
+            except Exception as exc:
+                logger.warning(
+                    "SPARQL sync_all: skipping triple (%s, %s, %s): %s",
+                    row.get("subject_id"), row.get("predicate_id"),
+                    row.get("object_value"), exc,
+                )
+        if count:
+            logger.info("SPARQL cache synced %d existing triples", count)
+        return count
+
     def close(self) -> None:
         """Flush the Oxigraph store to disk (no explicit close in pyoxigraph)."""
         try:

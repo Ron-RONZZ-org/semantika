@@ -253,35 +253,41 @@
         onkeydown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); sel.handleRowClick(e, key); } }}>
         <span class="label-arc">
           <span class="entity-link s-link" role="button" tabindex="-1" title="Open subject node"
-            onclick={(e) => { e.stopPropagation(); openNode(triple.subject_id); }}>
+            onclick={(e) => { e.stopPropagation(); openNode(triple.subject_id); }}
+            onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); openNode(triple.subject_id); } }}>
             {subjLabel}
           </span>
           <span class="arrow">→</span>
           <span class="entity-link p-link" role="button" tabindex="-1" title="Open predicate"
-            onclick={(e) => { e.stopPropagation(); openPredicate(triple.predicate_id); }}>
+            onclick={(e) => { e.stopPropagation(); openPredicate(triple.predicate_id); }}
+            onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); openPredicate(triple.predicate_id); } }}>
             {predLabel}
           </span>
           <span class="arrow">→</span>
           <span class="entity-link o-link" role="button" tabindex="-1"
             title={triple.object_type === "uri" ? "Open object node" : ""}
-            onclick={(e) => { if (triple.object_type === "uri") { e.stopPropagation(); openNode(triple.object_value); } }}>
+            onclick={(e) => { if (triple.object_type === "uri") { e.stopPropagation(); openNode(triple.object_value); } }}
+            onkeydown={(e) => { if ((e.key === "Enter" || e.key === " ") && triple.object_type === "uri") { e.stopPropagation(); openNode(triple.object_value); } }}>
             {objLabel}
           </span>
         </span>
         <span class="arc-sep"></span>
         <span class="id-arc">
           <span class="entity-link s-link" role="button" tabindex="-1"
-            onclick={(e) => { e.stopPropagation(); openNode(triple.subject_id); }}>
+            onclick={(e) => { e.stopPropagation(); openNode(triple.subject_id); }}
+            onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); openNode(triple.subject_id); } }}>
             {triple.subject_id}
           </span>
           <span class="arrow">→</span>
           <span class="entity-link p-link" role="button" tabindex="-1"
-            onclick={(e) => { e.stopPropagation(); openPredicate(triple.predicate_id); }}>
+            onclick={(e) => { e.stopPropagation(); openPredicate(triple.predicate_id); }}
+            onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); openPredicate(triple.predicate_id); } }}>
             {triple.predicate_id}
           </span>
           <span class="arrow">→</span>
           <span class="entity-link o-link" role="button" tabindex="-1"
-            onclick={(e) => { if (triple.object_type === "uri") { e.stopPropagation(); openNode(triple.object_value); } }}>
+            onclick={(e) => { if (triple.object_type === "uri") { e.stopPropagation(); openNode(triple.object_value); } }}
+            onkeydown={(e) => { if ((e.key === "Enter" || e.key === " ") && triple.object_type === "uri") { e.stopPropagation(); openNode(triple.object_value); } }}>
             {triple.object_value}
           </span>
         </span>

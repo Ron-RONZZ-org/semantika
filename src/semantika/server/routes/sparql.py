@@ -177,6 +177,33 @@ def _build_response(result: dict[str, Any]) -> Response:
 # ── SPARQL UPDATE (gated) ─────────────────────────────────────────────────
 
 
+# ── Prefix preview (for frontend autocomplete) ────────────────────────────
+
+
+@router.get("/sparql/preview")
+def sparql_preview() -> dict:
+    """Return available prefix mappings for the frontend autocomplete.
+
+    Returns:
+        A dict with ``prefixes``: list of ``{"prefix": str, "uri": str}``.
+    """
+    from semantika.graph.sparql.engine import _KNOWN_PREFIXES
+    from semantika.graph.db import get_db
+
+    prefixes = [{"prefix": pfx, "uri": uri} for pfx, uri in _KNOWN_PREFIXES.items()]
+
+    # Try to load user-defined prefixes from the database
+    try:
+        db = get_db()
+        rows = db.execute("SELECT prefix, uri FROM prefixes ORDER BY prefix")
+        for row in rows:
+            prefixes.append({"prefix": row["prefix"], "uri": row["uri"]})
+    except Exception:
+        pass  # prefixes table may not exist yet
+
+    return {"prefixes": prefixes}
+
+
 class UpdateRequest:
     """Pydantic model for SPARQL UPDATE requests."""
     query: str

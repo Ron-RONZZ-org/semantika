@@ -48,7 +48,7 @@ def cmd_sparql_query(remaining: list[str], flags: dict[str, str]) -> dict:
 
     query = flags.get("query") or (remaining[0] if remaining else "")
     if not query:
-        raise CommandValidationError("Provide a SPARQL query string. Usage: !sparql query 'SELECT ...'")
+        return {"type": "form-required", "title": "SPARQL Query", "data": {"form": "sparql-editor"}}
 
     try:
         result = engine.execute(query)

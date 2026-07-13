@@ -634,9 +634,12 @@ class TestSparqlCommand:
         assert data["data"]["available"] is True
 
     def test_sparql_missing_query(self):
-        """!sparql query without query string raises error."""
+        """!sparql query without query string returns form-required."""
         resp = self.client.post(
             "/api/v1/command",
             json={"tokens": ["sparql", "query"], "flags": {}},
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "form-required"
+        assert data["data"]["form"] == "sparql-editor"
