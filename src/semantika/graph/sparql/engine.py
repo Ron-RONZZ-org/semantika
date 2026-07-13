@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
@@ -228,32 +227,6 @@ class SyncBacklog:
 
 
 # ---------------------------------------------------------------------------
-# Variable order extraction
-# ---------------------------------------------------------------------------
-
-_VAR_RE = re.compile(r"(?<![?])\?([a-zA-Z_][a-zA-Z0-9_]*)")
-
-def _extract_var_order(query: str) -> list[str]:
-    """Extract SPARQL variable names in order of first appearance in the query.
-
-    This matches the SPARQL 1.1 convention for ``SELECT *``: variables are
-    projected in the order they first appear in the query string (typically
-    the WHERE clause).  For ``SELECT ?o ?p ...`` the explicit SELECT order
-    is captured because variables appear there first.
-
-    Returns:
-        A list of variable names (without ``?`` prefix) in appearance order.
-    """
-    seen: set[str] = set()
-    order: list[str] = []
-    for m in _VAR_RE.finditer(query):
-        name = m.group(1)
-        if name not in seen:
-            seen.add(name)
-            order.append(name)
-    return order
-
-# ---------------------------------------------------------------------------
 # SparqlEngine
 # ---------------------------------------------------------------------------
 
@@ -311,12 +284,12 @@ class SparqlEngine:
         except Exception as exc:
             raise ValueError(f"SPARQL query failed: {exc}") from exc
 
-        return self._serialize(result, query)
+        return self._serialize(result)
 
-    def _serialize(self, result: ox.QueryResult, query: str = "") -> dict[str, Any]:
+    def _serialize(self, result: ox.QueryResult) -> dict[str, Any]:
         """Serialize an Oxigraph query result to the SPARQL JSON format."""
         if isinstance(result, ox.QuerySolutions):
-            return self._serialize_solutions(result, query)
+            return self._serialize_solutions(result)
         if isinstance(result, ox.QueryBoolean):
             return json.loads(result.serialize(format=ox.QueryResultsFormat.JSON))
         if isinstance(result, ox.QueryTriples):
@@ -325,9 +298,7 @@ class SparqlEngine:
                     "format": "turtle"}
         raise RuntimeError(f"Unexpected SPARQL result type: {type(result)}")
 
-    def _serialize_solutions(
-        self, solutions: ox.QuerySolutions, query: str = "",
-    ) -> dict[str, Any]:
+    def _serialize_solutions(self, solutions: ox.QuerySolutions) -> dict[str, Any]:
         """Serialize SELECT results with enrichment.
 
         Uses Oxigraph's built-in JSON serialization for correct SPARQL JSON
@@ -343,14 +314,6 @@ class SparqlEngine:
             truncated = bindings[:self.MAX_RESULTS]
             data["results"]["bindings"] = truncated
             data["truncated"] = True
-
-        # Reorder variables to match query appearance order.
-        # Oxigraph sorts head.vars alphabetically, which puts ?o before ?p
-        # even when ?p appears first in the triple pattern.
-        if query and "head" in data and "vars" in data["head"]:
-            desired = [v for v in _extract_var_order(query) if v in data["head"]["vars"]]
-            if desired:
-                data["head"]["vars"] = desired
 
         # Collect all URI bindings that need enrichment
         node_ids: set[str] = set()

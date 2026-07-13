@@ -12,11 +12,19 @@
    *   - Empty/null: nothing rendered
    */
 
+  import { sparqlStore } from "./sparqlStore.svelte.js";
+
   /** @type {import("@lightercore/ui/types").SparqlResult|null} */
   let { result } = $props();
 
   /** @type {number|null} */
   let selectedRowIndex = $state(null);
+
+  // ── Column sort mode ──────────────────────────────────────────────────
+  const STORAGE_KEY = "semantika:sparql-sort-mode";
+
+  /** @type {"query"|"alpha"} */
+  let sortMode = $state(localStorage.getItem(STORAGE_KEY) || "query");
 
   $effect(() => {
     selectedRowIndex = null;
@@ -34,12 +42,49 @@
     return r && r.data && r.format;
   }
 
-  function vars(r) {
+  function rawVars(r) {
     return r.head?.vars || [];
   }
 
   function bindings(r) {
     return r.results?.bindings || [];
+  }
+
+  /**
+   * Extract ?var names in first-appearance order from a SPARQL query.
+   * Mirrors the backend _extract_var_order helper.
+   */
+  function extractVarOrder(query) {
+    const re = /(?<![?])\?([a-zA-Z_][a-zA-Z0-9_]*)/g;
+    const seen = new Set();
+    const order = [];
+    let m;
+    while ((m = re.exec(query)) !== null) {
+      if (!seen.has(m[1])) {
+        seen.add(m[1]);
+        order.push(m[1]);
+      }
+    }
+    return order;
+  }
+
+  /**
+   * Get the displayed variable list, sorted per current sortMode.
+   */
+  function sortedVars(r) {
+    const raw = rawVars(r);
+    if (sortMode === "query" && sparqlStore.query) {
+      const desired = extractVarOrder(sparqlStore.query)
+        .filter((v) => raw.includes(v));
+      if (desired.length > 0) return desired;
+    }
+    // fallback: alphabetical
+    return [...raw].sort();
+  }
+
+  function toggleSortMode() {
+    sortMode = sortMode === "query" ? "alpha" : "query";
+    localStorage.setItem(STORAGE_KEY, sortMode);
   }
 
   function cellValue(binding, varName) {
@@ -96,7 +141,7 @@
    */
   function exportCsv() {
     if (!isSelect(result)) return;
-    const v = vars(result);
+    const v = sortedVars(result);
     const rows = bindings(result);
     const header = v.join(",");
     const data = rows.map((row) =>
@@ -139,14 +184,19 @@
     </div>
 
   {:else if isSelect(result)}
-    {@const v = vars(result)}
+    {@const v = sortedVars(result)}
     {@const rows = bindings(result)}
     <div class="select-result">
       <div class="result-header">
         <span class="result-count">{rows.length} row{rows.length !== 1 ? "s" : ""}</span>
         <div class="result-actions">
-          <button class="btn-icon" onclick={copyAsJson} title="Copy as JSON">📋</button>
           <button class="btn-icon" onclick={exportCsv} title="Export CSV">📄</button>
+          <button class="btn-icon" onclick={copyAsJson} title="Copy as JSON">📋</button>
+          <button
+            class="btn-icon btn-sort"
+            onclick={toggleSortMode}
+            title={sortMode === "query" ? "Columns: query order" : "Columns: alphabetical"}
+          >{sortMode === "query" ? "⇕Q" : "⇕A"}</button>
         </div>
       </div>
 
@@ -312,6 +362,17 @@
   .btn-icon:hover {
     background: rgba(255, 255, 255, 0.08);
     border-color: #666;
+  }
+
+  .btn-sort {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 2px 5px;
+    letter-spacing: 0.3px;
+  }
+  .btn-sort:hover {
+    border-color: #7ec8e3;
+    color: #7ec8e3;
   }
 
   .table-wrapper {
