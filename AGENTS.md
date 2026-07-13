@@ -145,28 +145,9 @@ The default fallback is `SEMANTIKA_PORT || 6015` in ``vite.config.js``.
 
 ## User-Simulation Testing
 
-When running user-simulation tests against the backend, **always use a dynamically-allocated free port**. Never kill a process on the default port (6015) — it may belong to the user's manual dev instance.
+See ``tests/AGENTS-tests.md`` for the full lifecycle: dev server with dynamically-allocated port, startup/teardown, cleanup, and data isolation.
 
-```bash
-# Find a free TCP port (never kill a foreign process on the default port)
-PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()")
-
-# Start isolated seeded server on that port (ephemeral)
-setsid uv run semantika-dev --seed --port $PORT > /tmp/semantika-dev.log 2>&1 &
-
-# Or start with persistent data (survives restarts)
-setsid uv run semantika-dev --data-dir ~/semantika-dev-data --seed --port $PORT > /tmp/semantika-dev.log 2>&1 &
-
-# Wait for server to accept connections
-for i in $(seq 1 30); do
-  curl -sf -o /dev/null http://127.0.0.1:$PORT/ && break
-  sleep 1
-done
-
-# Run tests or queries against http://127.0.0.1:$PORT
-```
-
-Always use `http://127.0.0.1:<port>` (IPv4) when connecting to a local dev server.
+Always use ``http://127.0.0.1:<port>`` (IPv4) when connecting to a local dev server.
 
 ---
 
@@ -616,8 +597,6 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 | Aspect | Convention |
 |--------|-----------|
 | Framework | pytest |
-| Run all tests | `uv run pytest tests/` |
-| Run single test file | `uv run pytest tests/test_graph/test_nodes.py -v` |
 | Test directory | `tests/` |
 
 ### Testing Principles
@@ -625,6 +604,8 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 1. **Test via the public API wherever possible.** Prefer integration tests over isolated unit tests.
 2. **Console errors in browser tests indicate real bugs** — fix them even if tests pass.
 3. **Every bug fix must include a test that would have caught the regression.**
+
+For execution commands, dev server lifecycle, and user-simulation testing, see ``tests/AGENTS-tests.md``.
 
 ---
 
@@ -684,6 +665,7 @@ pre-populated namespace (``command``, ``call_system_command``, etc. — no impor
 | Graph | `graph/AGENTS-graph.md` | Triple store services (node, predicate, triple, review, proof) |
 | Server | `server/AGENTS-server.md` | FastAPI routes, command engine, LLM, prompt commands, user config |
 | Scripts | `scripts/AGENTS-scripts.md` | Dev CLI, seed data generator, --seed prompt commands |
+| Tests | `tests/AGENTS-tests.md` | Dev server lifecycle, E2E execution, data isolation, user-simulation testing |
 | Web | `web/AGENTS-web.md` | Svelte SPA, command-bar UI, prompt command autocomplete, locale
 
 ---
@@ -693,11 +675,12 @@ pre-populated namespace (``command``, ``call_system_command``, etc. — no impor
 ```
 Root AGENTS.md (global rules)
     │
-    ├── core/AGENTS-core.md       DB, FTS5, paths, interactive helpers
-    ├── graph/AGENTS-graph.md     Triple store: nodes, predicates, triples, review, proof
-    ├── server/AGENTS-server.md   FastAPI backend, API routes, LLM
-    ├── scripts/AGENTS-scripts.md Dev CLI, seed data, test infra
-    └── web/AGENTS-web.md         Svelte SPA frontend
+    ├── core/AGENTS-core.md        DB, FTS5, paths, interactive helpers
+    ├── graph/AGENTS-graph.md      Triple store: nodes, predicates, triples, review, proof
+    ├── server/AGENTS-server.md    FastAPI backend, API routes, LLM
+    ├── scripts/AGENTS-scripts.md  Dev CLI, seed data, test infra
+    ├── tests/AGENTS-tests.md      Dev server lifecycle, E2E, data isolation
+    └── web/AGENTS-web.md          Svelte SPA frontend
 ```
 
 Local rules override global rules. Module-level files focus on domain-specific behavior, constraints, and invariants.
