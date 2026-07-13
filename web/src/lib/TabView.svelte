@@ -16,6 +16,12 @@
   import PromptListTab from "./PromptListTab.svelte";
   import TemplateYamlPopup from "./TemplateYamlPopup.svelte";
   import SettingsTab from "./SettingsTab.svelte";
+  import TripleDetailTab from "./TripleDetailTab.svelte";
+
+  // Tab types that manage their own Escape (selection mode, search, dialogs)
+  const LIST_TAB_TYPES = new Set([
+    "node-list", "predicate-list", "triple-list", "triple-detail",
+  ]);
 
   let showGlobalHelp = $state(false);
   let inputFocused = $state(false);
@@ -58,6 +64,13 @@
         return;
       }
       if (tabStore.isHome && inputFocused) return;
+
+      // List tabs manage their own Escape (selection mode, search, dialogs).
+      // TabView's handler fires before the list tab's window handler,
+      // so we return here and let the list tab process Escape first.
+      const type = tabStore.active?.type;
+      if (type && LIST_TAB_TYPES.has(type)) return;
+
       if (tabStore.active && tabStore.active.closable && !tabStore.isHome) {
         handleCloseTab(tabStore.active.id);
         e.preventDefault();
@@ -170,6 +183,8 @@
         <TemplateYamlPopup data={tabStore.active.data} />
       {:else if tabStore.active.type === "settings"}
         <SettingsTab data={tabStore.active.data} />
+      {:else if tabStore.active.type === "triple-detail"}
+        <TripleDetailTab data={tabStore.active.data} />
       {:else}
         <StatusPopup data={tabStore.active.data} />
       {/if}

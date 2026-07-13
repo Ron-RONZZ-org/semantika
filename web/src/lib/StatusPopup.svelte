@@ -161,6 +161,56 @@
   let entityLabel = $derived(isDetailView() ? (firstValue(d.labels, "en") || "") : "");
   let entityDef = $derived(isDetailView() ? (firstValue(d.definitions, "en") || "") : "");
 
+  /** Parse labels/definitions JSON into a {lang: text} dict or null. */
+  function parseLangDict(raw) {
+    const p = tryParseJson(raw);
+    return (p && typeof p === "object" && !Array.isArray(p)) ? p : null;
+  }
+
+  let langLabels = $derived(isDetailView() ? parseLangDict(d.labels) : null);
+  let langDefs = $derived(isDetailView() ? parseLangDict(d.definitions) : null);
+  let hasLangSections = $derived(
+    (langLabels && Object.keys(langLabels).length > 0) ||
+    (langDefs && Object.keys(langDefs).length > 0)
+  );
+
+  async function openNode(id) {
+    if (!id) return;
+    try {
+      const resp = await fetch(`/api/v1/graph/nodes/${encodeURIComponent(id)}`);
+      if (!resp.ok) return;
+      const result = await resp.json();
+      const node = result.node || result;
+      tabStore.open("status", (node.labels ? firstValue(node.labels, "en") : null) || id, { ...node, triples: result.triples || [] }, {
+        idKey: `node-${id}`, replaceable: false,
+      });
+    } catch { /* silent */ }
+  }
+
+  async function openPredicate(id) {
+    if (!id) return;
+    try {
+      const resp = await fetch(`/api/v1/graph/predicates/${encodeURIComponent(id)}`);
+      if (!resp.ok) return;
+      const result = await resp.json();
+      const pred = result.predicate || result;
+      tabStore.open("status", (pred.labels ? firstValue(pred.labels, "en") : null) || id, { ...pred, triples: result.triples || [] }, {
+        idKey: `pred-${id}`, replaceable: false,
+      });
+    } catch { /* silent */ }
+  }
+
+  /** Best label for a related entity in a triple row. */
+  function tripleLabel(triple, role) {
+    if (role === "subject") return triple._subject_label || triple.subject_id;
+    if (role === "predicate") return triple._predicate_label || triple.predicate_id;
+    if (role === "object") {
+      if (triple.object_type === "uri") return triple._object_label || triple.object_value;
+      return triple.object_value;
+    }
+    return "";
+  }
+
 </script>
 
 <div class="status">
@@ -202,28 +252,87 @@
       <p class="empty">No predicates.</p>
     {/each}
   {:else if isDetailView()}
-    {#if entityLabel}
-      <div class="detail-header">
-        <h3 class="detail-id">{entityId}</h3>
+    <div class="detail-header">
+      <h3 class="detail-id">{entityId}</h3>
+      {#if entityLabel}
         <div class="detail-label">{entityLabel}</div>
-        {#if entityDef}
-          <div class="detail-def">{entityDef}</div>
-        {/if}
-        <span class="detail-badge">{entityType}</span>
+      {/if}
+      {#if entityDef}
+        <div class="detail-def">{entityDef}</div>
+      {/if}
+      <span class="detail-badge">{entityType}</span>
+    </div>
+
+    {#if hasLangSections}
+      <div class="section-header">
+        <h3 class="title">Labels / Definitions</h3>
       </div>
-    {:else}
-      <div class="detail-header">
-        <h3 class="detail-id">{entityId}</h3>
-        <span class="detail-badge">{entityType}</span>
+      <div class="lang-section">
+        {#if langLabels}
+          {#each Object.entries(langLabels) as [lang, text]}
+            <div class="lang-row">
+              <span class="lang-code">{lang}</span>
+              <span class="lang-text">{text}</span>
+            </div>
+          {/each}
+        {/if}
+        {#if langDefs}
+          <div class="lang-def-sep"></div>
+          {#each Object.entries(langDefs) as [lang, text]}
+            <div class="lang-row def">
+              <span class="lang-code">{lang}</span>
+              <span class="lang-text">{text}</span>
+            </div>
+          {/each}
+        {/if}
       </div>
     {/if}
+
     <div class="section-header">
       <h3 class="title">Triples ({d.triples.length})</h3>
     </div>
     {#each d.triples as triple}
-      <div class="row">
-        <span class="key">{triple.subject_id?.slice(0, 8) || ""}</span>
-        <span class="val">{triple.predicate_id || ""} → {triple.object_value?.slice(0, 24) || ""}</span>
+      <div class="triple-row">
+        <span class="triple-label-arc">
+          <span class="ent-link" role="button" tabindex="-1"
+            onclick={(e) => { e.stopPropagation(); openNode(triple.subject_id); }}>
+            {tripleLabel(triple, "subject")}
+          </span>
+          <span class="arrow">→</span>
+          <span class="ent-link" role="button" tabindex="-1"
+            onclick={(e) => { e.stopPropagation(); openPredicate(triple.predicate_id); }}>
+            {tripleLabel(triple, "predicate")}
+          </span>
+          <span class="arrow">→</span>
+          {#if triple.object_type === "uri"}
+            <span class="ent-link" role="button" tabindex="-1"
+              onclick={(e) => { e.stopPropagation(); openNode(triple.object_value); }}>
+              {tripleLabel(triple, "object")}
+            </span>
+          {:else}
+            <span class="obj-literal">{tripleLabel(triple, "object")}</span>
+          {/if}
+        </span>
+        <span class="triple-id-arc">
+          <span class="id-link" role="button" tabindex="-1"
+            onclick={(e) => { e.stopPropagation(); openNode(triple.subject_id); }}>
+            {triple.subject_id}
+          </span>
+          <span class="arrow">→</span>
+          <span class="id-link" role="button" tabindex="-1"
+            onclick={(e) => { e.stopPropagation(); openPredicate(triple.predicate_id); }}>
+            {triple.predicate_id}
+          </span>
+          <span class="arrow">→</span>
+          {#if triple.object_type === "uri"}
+            <span class="id-link" role="button" tabindex="-1"
+              onclick={(e) => { e.stopPropagation(); openNode(triple.object_value); }}>
+              {triple.object_value}
+            </span>
+          {:else}
+            <span class="obj-literal id">{triple.object_value}</span>
+          {/if}
+        </span>
       </div>
     {:else}
       <p class="empty">No triples.</p>
@@ -269,9 +378,47 @@
       <h3 class="title">Triples ({d.triples.length})</h3>
     </div>
     {#each d.triples as triple}
-      <div class="row">
-        <span class="key">{triple.subject_id?.slice(0, 8) || ""}</span>
-        <span class="val">{triple.predicate_id || ""} → {triple.object_value?.slice(0, 24) || ""}</span>
+      <div class="triple-row">
+        <span class="triple-label-arc">
+          <span class="ent-link" role="button" tabindex="-1"
+            onclick={(e) => { e.stopPropagation(); openNode(triple.subject_id); }}>
+            {tripleLabel(triple, "subject")}
+          </span>
+          <span class="arrow">→</span>
+          <span class="ent-link" role="button" tabindex="-1"
+            onclick={(e) => { e.stopPropagation(); openPredicate(triple.predicate_id); }}>
+            {tripleLabel(triple, "predicate")}
+          </span>
+          <span class="arrow">→</span>
+          {#if triple.object_type === "uri"}
+            <span class="ent-link" role="button" tabindex="-1"
+              onclick={(e) => { e.stopPropagation(); openNode(triple.object_value); }}>
+              {tripleLabel(triple, "object")}
+            </span>
+          {:else}
+            <span class="obj-literal">{tripleLabel(triple, "object")}</span>
+          {/if}
+        </span>
+        <span class="triple-id-arc">
+          <span class="id-link" role="button" tabindex="-1"
+            onclick={(e) => { e.stopPropagation(); openNode(triple.subject_id); }}>
+            {triple.subject_id}
+          </span>
+          <span class="arrow">→</span>
+          <span class="id-link" role="button" tabindex="-1"
+            onclick={(e) => { e.stopPropagation(); openPredicate(triple.predicate_id); }}>
+            {triple.predicate_id}
+          </span>
+          <span class="arrow">→</span>
+          {#if triple.object_type === "uri"}
+            <span class="id-link" role="button" tabindex="-1"
+              onclick={(e) => { e.stopPropagation(); openNode(triple.object_value); }}>
+              {triple.object_value}
+            </span>
+          {:else}
+            <span class="obj-literal id">{triple.object_value}</span>
+          {/if}
+        </span>
       </div>
     {:else}
       <p class="empty">No triples.</p>
@@ -490,6 +637,29 @@
     opacity: 0.65;
     font-size: 0.78rem;
   }
+
+  /* ── Language labels/definitions section ────────────── */
+  .lang-section { padding: 0.25rem 0.75rem 0.5rem; border-bottom: 1px solid #2a2a3e; }
+  .lang-row { display: flex; gap: 0.5rem; padding: 0.15rem 0; align-items: baseline; }
+  .lang-code { color: var(--clr-sub); font-size: 0.75rem; min-width: 2.5rem; text-transform: uppercase; }
+  .lang-text { color: #e0e0e0; font-size: 0.85rem; }
+  .lang-row.def .lang-text { color: var(--clr-sub); font-style: italic; }
+  .lang-def-sep { height: 0.3rem; }
+
+  /* ── Triple row with dual-arc ───────────────────────── */
+  .triple-row {
+    display: flex; align-items: center; gap: 0.3rem;
+    padding: 0.3rem 0.75rem; border-bottom: 1px solid #2a2a3e;
+  }
+  .triple-row:last-child { border-bottom: none; }
+  .triple-label-arc { flex: 1; min-width: 0; display: flex; align-items: center; gap: 0.25rem; overflow: hidden; }
+  .triple-id-arc { display: flex; align-items: center; gap: 0.2rem; flex-shrink: 0; max-width: 45%; color: var(--clr-dim); font-size: 0.78rem; overflow: hidden; }
+  .ent-link { cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 2px; border-radius: 2px; transition: background 0.1s; color: #7cf; font-weight: 500; }
+  .ent-link:hover { background: rgba(255,255,255,0.08); text-decoration: underline; }
+  .id-link { cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 2px; border-radius: 2px; color: #5ab; }
+  .id-link:hover { background: rgba(255,255,255,0.08); text-decoration: underline; }
+  .obj-literal { color: #e0e0e0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .obj-literal.id { color: #aaa; font-size: 0.78rem; }
 
   /* ── Prompt file view ────────────────────────────────── */
   .prompt-view { padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; height: 100%; }

@@ -181,8 +181,12 @@
         <span class="label">{getLabel(pred.labels, getLocale()) || pred.predicate_id}</span>
         <span class="id">{pred.predicate_id}</span>
         <span class="actions">
-          <button class="btn-icon" title="Copy ID" onclick={(e) => { e.stopPropagation(); uuidCopy.copyToClipboard(pred.predicate_id); }}>
-            {uuidCopy.copiedKey === pred.predicate_id ? "\u2713" : "\u2349"}
+          <button class="btn-icon copy-btn" title="Copy ID" onclick={(e) => { e.stopPropagation(); uuidCopy.copyToClipboard(pred.predicate_id); }}>
+            {#if uuidCopy.copiedKey === pred.predicate_id}
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            {:else}
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="10" y="10" width="11" height="11" rx="1.5" opacity="0.5"/><rect x="5" y="4" width="11" height="11" rx="1.5"/></svg>
+            {/if}
           </button>
         </span>
       </div>
