@@ -250,3 +250,8 @@ async function handleDelete(ids) {
 - Animations under 150ms; no keyframe animations on structural elements
 - **Never duplicate CSS patterns** — import shared components from `@lightercore/ui` or `web/src/lib/` instead of re-creating them
 - If you need a new component, model it after the closest existing component above
+
+## Keyboard Shortcut Key Placement
+- When a keyboard shortcut triggers a button action (e.g. `v` toggles selection mode), the shortcut key **must appear in the button label itself** — e.g. `v Select`, `/ Search`, `n New`. Do **not** add separate standalone key-hint text when a corresponding button already shows the key.
+- Global shortcuts that do not have a corresponding GUI button (`h` help, `i` focus input, `Esc`/`q` close tab) should remain as standalone `<kbd>` hints in the tab bar.
+- Exception: when search is open, "Esc close" may be displayed in the search bar input area since there is no dedicated button for it.
