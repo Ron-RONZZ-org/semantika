@@ -24,8 +24,8 @@ from semantika.graph.db import (
     init_sparql_engine,
     reset_services,
 )
+from semantika.core.config import get_iri_template
 from semantika.graph.sparql.engine import (
-    _DEFAULT_BASE_URI,
     _from_uri,
     _to_rdf_term,
     _to_uri,
@@ -43,13 +43,18 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════════════════
 
 
+# Template for default config (used when no semantika.jsonc exists)
+_NODE_TPL = get_iri_template("node")  # "https://semantika.local/node/$id"
+_PRED_TPL = get_iri_template("predicate")  # "https://semantika.local/resource/$id"
+
+
 class TestIRIMapping:
     """Test internal ID ↔ RDF IRI conversion."""
 
     def test_bare_node_id(self):
-        """Bare labels without colons get the node namespace."""
+        """Bare labels without colons get the node template."""
         uri = _to_uri("BOOK_001")
-        assert uri.value == f"{_DEFAULT_BASE_URI}node/BOOK_001"
+        assert uri.value == _NODE_TPL.replace("$id", "BOOK_001")
 
     def test_known_prefix(self):
         """Known prefixes get their standard namespace."""
@@ -57,9 +62,9 @@ class TestIRIMapping:
         assert uri.value == "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 
     def test_unknown_prefix(self):
-        """Unknown prefixes get the resource namespace."""
+        """Unknown prefixes get the predicate template."""
         uri = _to_uri("rs:hasAuthor")
-        assert uri.value == f"{_DEFAULT_BASE_URI}resource/rs:hasAuthor"
+        assert uri.value == _PRED_TPL.replace("$id", "rs:hasAuthor")
 
     def test_full_http_uri(self):
         """Full http/https URIs pass through as-is."""
@@ -67,8 +72,8 @@ class TestIRIMapping:
         assert uri.value == "http://example.org/foo"
 
     def test_from_uri_node(self):
-        """Reverse mapping of node namespace."""
-        internal = _from_uri(f"{_DEFAULT_BASE_URI}node/BOOK_001")
+        """Reverse mapping of node template namespace."""
+        internal = _from_uri(_NODE_TPL.replace("$id", "BOOK_001"))
         assert internal == "BOOK_001"
 
     def test_from_uri_known_prefix(self):
@@ -77,8 +82,8 @@ class TestIRIMapping:
         assert internal == "rdf:type"
 
     def test_from_uri_resource(self):
-        """Reverse mapping of resource namespace."""
-        internal = _from_uri(f"{_DEFAULT_BASE_URI}resource/rs:hasAuthor")
+        """Reverse mapping of predicate template namespace."""
+        internal = _from_uri(_PRED_TPL.replace("$id", "rs:hasAuthor"))
         assert internal == "rs:hasAuthor"
 
     def test_from_uri_full_http(self):
@@ -95,7 +100,7 @@ class TestIRIMapping:
         """URI object creates NamedNode."""
         term = _to_rdf_term({"object_value": "BOOK_001", "object_type": "uri"})
         assert isinstance(term, ox.NamedNode)
-        assert term.value == f"{_DEFAULT_BASE_URI}node/BOOK_001"
+        assert term.value == _NODE_TPL.replace("$id", "BOOK_001")
 
     def test_to_rdf_term_literal(self):
         """Literal object creates Literal."""
@@ -190,6 +195,7 @@ def sparql_db(tmp_path: Path):
     db.execute(
         "CREATE TABLE IF NOT EXISTS nodes ("
         "  node_id TEXT PRIMARY KEY,"
+        "  iri TEXT NOT NULL DEFAULT '',"
         "  labels TEXT NOT NULL DEFAULT '{}',"
         "  label_text TEXT NOT NULL DEFAULT '',"
         "  definitions TEXT NOT NULL DEFAULT '{}',"
@@ -201,6 +207,7 @@ def sparql_db(tmp_path: Path):
     db.execute(
         "CREATE TABLE IF NOT EXISTS predicates ("
         "  predicate_id TEXT PRIMARY KEY,"
+        "  iri TEXT NOT NULL DEFAULT '',"
         "  source TEXT NOT NULL DEFAULT 'manual',"
         "  labels TEXT NOT NULL DEFAULT '{}',"
         "  descriptions TEXT NOT NULL DEFAULT '{}',"

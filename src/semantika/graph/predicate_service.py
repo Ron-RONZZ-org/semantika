@@ -233,10 +233,11 @@ class PredicateService(CRUDService):
         if normalize_ids:
             cleaned_id = strip_diacritics(cleaned_id)
         ts = now()
-        pred_iri = compute_iri(cleaned_id)
+        # iri column: empty for template-default, populated for custom --canonical
+        canonical_iri = data.get("iri", "")
         raw = {
             "predicate_id": cleaned_id,
-            "iri": pred_iri,
+            "iri": canonical_iri,
             "source": data.get("source", "manual"),
             "labels": json.dumps(data.get("labels", {})),
             "descriptions": json.dumps(data.get("descriptions", {})),

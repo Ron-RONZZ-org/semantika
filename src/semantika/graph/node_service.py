@@ -111,7 +111,10 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
         if no labels are provided.
 
         Args:
-            data: Node data dict.
+            data: Node data dict.  Supports an optional ``iri`` key for a
+                custom canonical IRI (``--canonical`` flag).  When absent,
+                the ``iri`` column is left empty, meaning the configured
+                template is used at query time.
             normalize_ids: If True, strip diacritics from the generated
                 node_id. ``None`` means no additional normalization (existing
                 ``sanitize_node_id`` still applies).
@@ -142,10 +145,11 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
                 node_id_val = str(_uuid.uuid4())
         ts = now()
 
-        node_iri = compute_iri(node_id_val)
+        # iri column: empty for template-default, populated for custom --canonical
+        canonical_iri = data.get("iri", "")
         raw = {
             "node_id": node_id_val,
-            "iri": node_iri,
+            "iri": canonical_iri,
             "labels": json.dumps(data.get("labels", {})),
             "label_text": extract_label_text(data.get("labels", {})),
             "definitions": json.dumps(data.get("definitions", {})),

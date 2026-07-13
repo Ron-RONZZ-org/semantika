@@ -197,20 +197,22 @@ KNOWN_PREFIXES: dict[str, str] = {
     "owl":  "http://www.w3.org/2002/07/owl#",
 }
 
-DEFAULT_BASE_URI = "https://semantika.local/"
 
-
-def compute_iri(internal_id: str, base_uri: str = DEFAULT_BASE_URI) -> str:
+def compute_iri(internal_id: str, template: str | None = None) -> str:
     """Return the canonical IRI string for an internal Semantika ID.
 
     Resolution rules (mirrors :func:`_to_uri` in ``engine.py``):
 
     1. Full ``http://`` / ``https://`` URI → pass through as-is.
     2. ``prefix:local`` with known prefix (e.g. ``rdf:type``) →
-       ``<known_prefix_uri>local``.
+       ``<known_prefix_uri>local`` (template is **ignored** for known prefixes).
     3. ``prefix:local`` with *unknown* prefix →
-       ``{base_uri}resource/prefix:local``.
-    4. Bare label (no colon) → ``{base_uri}node/label``.
+       ``template`` with ``$id`` replaced by the full ``prefix:local``.
+    4. Bare label (no colon) → ``template`` with ``$id`` replaced by the label.
+
+    If *template* is ``None``, the configured template for the entity kind is
+    used (see :func:`get_iri_template`).  When no template is configured and
+    none is supplied, a default is used.
     """
     if internal_id.startswith("http://") or internal_id.startswith("https://"):
         return internal_id
@@ -219,10 +221,24 @@ def compute_iri(internal_id: str, base_uri: str = DEFAULT_BASE_URI) -> str:
         ns = KNOWN_PREFIXES.get(prefix)
         if ns:
             return ns + local
-        return f"{base_uri}resource/{internal_id}"
-    if not internal_id:
-        raise ValueError("Cannot compute IRI for empty internal ID")
-    return f"{base_uri}node/{internal_id}"
+        kind = "predicate"
+    else:
+        if not internal_id:
+            raise ValueError("Cannot compute IRI for empty internal ID")
+        kind = "node"
+
+    tpl = template if template is not None else _get_template_for_kind(kind)
+    return tpl.replace("$id", internal_id)
+
+
+def _get_template_for_kind(kind: str) -> str:
+    """Return the IRI template from config, falling back to built-in default.
+
+    Imported lazily to avoid circular imports at module level.
+    """
+    from semantika.core.config import get_iri_template
+
+    return get_iri_template(kind)
 
 
 # ── Schema DDL ─────────────────────────────────────────────────────────
@@ -442,20 +458,16 @@ def _migrate_triples_schema(db: SemantikaDB) -> None:
 
 
 def _migrate_iri_column(db: SemantikaDB) -> None:
-    """Add ``iri`` column to nodes/predicates tables and backfill for existing rows."""
+    """Add ``iri`` column to nodes/predicates tables.
+
+    The column stays **empty** for entities using the default IRI template.
+    It is populated only for entities with an explicit ``--canonical`` override.
+    """
     for table in ("nodes", "nodes_trash", "predicates", "predicates_trash"):
         try:
             db.execute(f"ALTER TABLE {table} ADD COLUMN iri TEXT NOT NULL DEFAULT ''")
         except sqlite3.OperationalError:
             pass  # Column already exists
-
-    # Backfill empty iri columns for existing rows
-    for table, id_col in (("nodes", "node_id"), ("predicates", "predicate_id")):
-        rows = db.execute(f"SELECT {id_col} FROM {table} WHERE iri = ''")
-        for row in rows:
-            cid = row[id_col]
-            iri = compute_iri(cid)
-            db.execute(f"UPDATE {table} SET iri = ? WHERE {id_col} = ?", (iri, cid))
 
 
 def _ensure_fts(
@@ -550,9 +562,25 @@ def _seed_default_predicates(db: SemantikaDB) -> None:
 
     ts = now()
     for pred_id, source, labels, descriptions in defaults:
-        iri = compute_iri(pred_id)
+        # Store IRI only when it is NOT produced by the user's current
+        # template.  Known-prefix predicates (rdf:type, etc.) have fixed
+        # standard namespaces that won't match any template, so they are
+        # always stored.  Unknown-prefix seeds (:hasFile*) use the template
+        # and stay empty.
+        iri = compute_iri(pred_id) if _iri_is_non_template(pred_id) else ""
         db.execute(
             "INSERT INTO predicates (predicate_id, iri, source, labels, descriptions, aliases, created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, '[]', ?, ?)",
             (pred_id, iri, source, json.dumps(labels), json.dumps(descriptions), ts, ts),
         )
+
+
+def _iri_is_non_template(internal_id: str) -> bool:
+    """Return True if *internal_id* produces an IRI that does NOT match the
+    current user template (i.e. it must be stored in the ``iri`` column)."""
+    if ":" in internal_id:
+        prefix, _ = internal_id.split(":", 1)
+        if prefix in KNOWN_PREFIXES:
+            return True  # e.g. rdf:type → fixed namespace, never matches user template
+    # Everything else follows the template → leave iri column empty
+    return False
