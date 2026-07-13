@@ -90,3 +90,39 @@ def test_config_accepts_semantika_json_fallback(tmp_path: Path, monkeypatch):
 
     reload_config()
     assert get_iri_template("node") == "https://test.local/item/$id"
+
+
+def test_compute_iri_with_custom_template(tmp_path: Path, monkeypatch):
+    """compute_iri() uses templates from config."""
+    from semantika.graph.db import compute_iri
+
+    config_dir = tmp_path / ".config" / "semantika"
+    config_dir.mkdir(parents=True)
+    config_file = config_dir / "semantika.jsonc"
+    config_file.write_text(
+        '{"node_iri": "https://ex.org/id/$id",'
+        ' "predicate_iri": "https://ex.org/rel/$id"}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("semantika.core.config.config_dir", lambda: config_dir)
+    monkeypatch.setattr("semantika.core.config.ensure_dirs", lambda: None)
+    reload_config()
+
+    # Node (bare ID) uses node_iri template
+    assert compute_iri("FOO") == "https://ex.org/id/FOO"
+    # Known-prefix predicate ignores template
+    assert compute_iri("rdf:type") == "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+    # Unknown-prefix predicate uses predicate_iri template
+    assert compute_iri("ex:knows") == "https://ex.org/rel/ex:knows"
+    # Full URI pass-through
+    assert compute_iri("http://external.org/foo") == "http://external.org/foo"
+
+
+def test_compute_iri_with_explicit_template():
+    """compute_iri() accepts an explicit template argument."""
+    from semantika.graph.db import compute_iri
+
+    assert compute_iri("FOO", template="https://custom.org/node/$id") == "https://custom.org/node/FOO"
+    assert compute_iri("ex:knows", template="https://custom.org/rel/$id") == "https://custom.org/rel/ex:knows"
+    # Known prefix still ignores template
+    assert compute_iri("rdf:type", template="https://custom.org/rel/$id") == "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"

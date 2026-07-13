@@ -1289,6 +1289,114 @@ async function run() {
   });
 
   // ═══════════════════════════════════════════
+  //  SPARQL
+  // ═══════════════════════════════════════════
+
+  // Seed a node via API so SPARQL has data
+  await test("SPARQL: seed test node via API", async () => {
+    const r = await page.evaluate(() =>
+      fetch("/api/v1/graph/nodes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          node_id: "E2E_SPARQL_NODE",
+          labels: { en: "E2E SPARQL Node" },
+        }),
+      }).then((r) => ({ status: r.status })),
+    );
+    assert.equal(r.status, 200);
+  });
+
+  await test("SPARQL: seed test predicate via API", async () => {
+    const r = await page.evaluate(() =>
+      fetch("/api/v1/graph/predicates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          predicate_id: "ex:e2eTestPred",
+          labels: { en: "E2E test predicate" },
+        }),
+      }).then((r) => ({ status: r.status })),
+    );
+    assert.equal(r.status, 200);
+  });
+
+  await test("SPARQL: seed test triple via API", async () => {
+    const r = await page.evaluate(() =>
+      fetch("/api/v1/graph/triples", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject_id: "E2E_SPARQL_NODE",
+          predicate_id: "ex:e2eTestPred",
+          object_value: "E2E test object",
+          object_type: "literal",
+        }),
+      }).then((r) => ({ status: r.status })),
+    );
+    assert.equal(r.status, 200);
+  });
+
+  await test("SPARQL: !sparql opens the editor tab", async () => {
+    await typeAndRun("!sparql");
+    await sleep(500);
+    const tabContent = page.locator('[role="tabpanel"]');
+    const text = await tabContent.textContent();
+    assert(text.includes("SPARQL"), `Expected SPARQL tab, got: ${text.substring(0, 100)}`);
+    assert(text.includes("Run"), "Expected Run button in editor");
+  });
+
+  await test("SPARQL: editor shows Run button", async () => {
+    const runBtn = page.locator("button", { hasText: "Run" });
+    await runBtn.waitFor({ state: "visible", timeout: 3000 });
+    assert(await runBtn.isVisible(), "Run button should be visible");
+  });
+
+  await test("SPARQL: run a query via command and see results", async () => {
+    // Use --query flag to pass the full SPARQL query as one argument
+    await typeAndRun(
+      '!sparql query --query "SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 5"',
+    );
+    await sleep(1500);
+    const tabContent = page.locator('[role="tabpanel"]');
+    const text = await tabContent.textContent();
+    // The result is a table — should have rows
+    assert(
+      text.includes("result") || text.includes("row"),
+      `Expected result table, got: ${text.substring(0, 200)}`,
+    );
+  });
+
+  await test("SPARQL: result table has column headers for ?s, ?p, ?o", async () => {
+    // Close the current SPARQL tab
+    const sparqlTab = page.locator('button[role="tab"]', { hasText: "SPARQL" });
+    if (await sparqlTab.isVisible().catch(() => false)) {
+      const closeBtn = sparqlTab.locator("xpath=../button[contains(@title,'Close')]");
+      if (await closeBtn.isVisible().catch(() => false)) {
+        await closeBtn.click();
+        await sleep(300);
+      }
+    }
+    // Run a fresh query
+    await typeAndRun(
+      '!sparql query --query "SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 5"',
+    );
+    await sleep(1500);
+    const tabContent = page.locator('[role="tabpanel"]');
+    const text = await tabContent.textContent();
+    assert(text.includes("?s"), `Expected ?s column, got: ${text.substring(0, 200)}`);
+    assert(text.includes("?p"), "Expected ?p column");
+    assert(text.includes("?o"), "Expected ?o column");
+  });
+
+  await test("SPARQL: column sort toggle button present", async () => {
+    const tabContent = page.locator('[role="tabpanel"]');
+    const buttons = await tabContent.locator("button").allTextContents();
+    const hasSort = buttons.some((b) => b.includes("\u21D5"));
+    assert(hasSort, "Expected sort toggle button (\u21D5) in result header");
+  });
+
+  // ═══════════════════════════════════════════
   //  SUMMARY
   // ═══════════════════════════════════════════
   console.log(`\n${"=".repeat(50)}`);
