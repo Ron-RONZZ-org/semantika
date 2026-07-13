@@ -186,6 +186,11 @@
             }
             const result = await execute(cmd);
             if (result.type === "form-required") {
+              const form = result.data?.form;
+              if (form === "sparql-editor") {
+                tabStore.open("sparql-editor", result.title || "SPARQL Query", {}, { idKey: "sparql-editor" });
+                continue;
+              }
               tabStore.open("error", "Skipped", {
                 message: `Command "${cmd}" requires interactive input. Run it separately.`,
               });
@@ -240,6 +245,11 @@
 
         if (result.type === "form-required") {
           const { form, initialData } = result.data || {};
+          if (form === "sparql-editor") {
+            tabStore.open("sparql-editor", result.title || "SPARQL Query", {}, { idKey: "sparql-editor" });
+            scrollToBottom();
+            return;
+          }
           if (form) {
             tabStore.open("form", result.title || "Complete Form", {
               form, initialData: initialData || {},
