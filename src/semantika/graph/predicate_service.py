@@ -28,6 +28,7 @@ class PredicateService(CRUDService):
                          trash_table="predicates_trash")
         self._fts_initialized: bool = False
         self._fts_mgr_cache: FTS5Manager | None = None
+        self._sparql_engine: object | None = None
 
     @property
     def _fts_mgr(self) -> FTS5Manager:
@@ -44,10 +45,31 @@ class PredicateService(CRUDService):
 
     # ── Delete / Trash ──────────────────────────────────────────────────
 
+    def _capture_triples_for_predicate(self, predicate_id: str) -> list[dict]:
+        """Read triples referencing this predicate before deletion (for SPARQL sync)."""
+        if not self._sparql_engine:
+            return []
+        return self.db.execute(
+            "SELECT * FROM triples WHERE predicate_id = ?", (predicate_id,)
+        )
+
+    def _sync_removed_triples(self, triples: list[dict]) -> None:
+        """Fire SPARQL sync hooks for removed triples."""
+        if not self._sparql_engine or not triples:
+            return
+        engine = self._sparql_engine  # type: ignore[union-attr]
+        for t in triples:
+            engine.on_triple_removed(t)
+
     def delete(self, pk: str, soft: bool = True) -> bool:
         """Delete a predicate: soft (trash) or permanent."""
+        # SPARQL sync: capture affected triples before deletion
+        removed_triples = self._capture_triples_for_predicate(pk)
+
         if soft and self._trash_table:
-            return self._move_to_trash(pk)
+            result = self._move_to_trash(pk)
+            self._sync_removed_triples(removed_triples)
+            return result
         # Hard delete: cascade-delete triples and proofs first
         entry = self.db.execute_one(
             "SELECT predicate_id FROM predicates WHERE predicate_id = ?", (pk,)
@@ -58,6 +80,7 @@ class PredicateService(CRUDService):
             conn.execute("DELETE FROM proofs WHERE predicate_id = ?", (entry["predicate_id"],))
             conn.execute("DELETE FROM triples WHERE predicate_id = ?", (entry["predicate_id"],))
             conn.execute("DELETE FROM predicates WHERE predicate_id = ?", (entry["predicate_id"],))
+        self._sync_removed_triples(removed_triples)
         return True
 
     def _move_to_trash(self, predicate_id: str) -> bool:

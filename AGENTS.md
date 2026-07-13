@@ -67,6 +67,7 @@ The backend is forked from proven code in [A-semantika](../A-semantika) (triple 
 | Credential storage | System keyring (via `keyring` library) | Never store API keys in DB |
 | AI providers | OpenAI-compatible API + Ollama | BYOK: bring your own model/key; **multi-round tool-calling** (LLM sees all ``!commands`` as native tools, calls them via ``chat_with_tools``, permission gate returns ``confirm_tool`` for write/destructive commands) |
 | TTL parsing | `rdflib` | Standard Turtle (.ttl) import |
+| SPARQL engine | `pyoxigraph` | Rust-based SPARQL 1.1 engine with RocksDB persistence |
 | HTTP client | `httpx` | Async HTTP for LLM provider calls |
 | Package manager | `uv` (development), `pip` (user install) | Fast, modern, reproducible |
 | Build system | Hatchling | PEP 517 compliant, simple |
@@ -170,16 +171,17 @@ semantika/
 │       │   ├── __init__.py      # Re-exports SemantikaDB, paths, exceptions
 │       │   ├── db.py / paths.py / exceptions.py / backup.py / crud.py / fts.py
 │       │   └── reset.py         # Reset to fresh state
-│       ├── graph/               # Triple store services (16 source files + services/)
+│       ├── graph/               # Triple store services (17 source files + services/)
 │       │   ├── __init__.py + constants.py + db.py + file_helpers.py
-│   │   ├── node_helpers.py + node_service.py + node_merge_mixin.py + node_fts.py
-│   │   ├── predicate_service.py + predicate_group_service.py
-│   │   ├── triple_service.py + triple_turtle.py
-│   │   ├── review_service.py + proof_service.py
-│   │   ├── unit_service.py + unit_builder.py + unit_decomposition.py
-│   │   ├── unit_errors.py + unit_parser.py + unit_seed_data.py
-│   │   ├── builtin_type_service.py + builtin_seed_data.py
-│   │   └── services/__init__.py
+│       │   ├── node_helpers.py + node_service.py + node_merge_mixin.py + node_fts.py
+│       │   ├── predicate_service.py + predicate_group_service.py
+│       │   ├── triple_service.py + triple_turtle.py
+│       │   ├── review_service.py + proof_service.py
+│       │   ├── sparql/__init__.py + sparql/engine.py  # SPARQL engine (Oxigraph cache)
+│       │   ├── unit_service.py + unit_builder.py + unit_decomposition.py
+│       │   ├── unit_errors.py + unit_parser.py + unit_seed_data.py
+│       │   ├── builtin_type_service.py + builtin_seed_data.py
+│       │   └── services/__init__.py
 │       ├── scripts/             # CLI entry points
 │       │   ├── __init__.py
 │       │   └── dev_cli.py       # semantika-dev CLI: --data-dir, --seed, --prod, --no-hooks
@@ -219,6 +221,7 @@ semantika/
 │               ├── unit.py      # /api/v1/units/* — unit ontology
 │               ├── files.py     # /api/v1/files/* — file attachments
 │               ├── llm.py       # /api/v1/llm/* — chat, config, profiles, confirm
+│               ├── sparql.py    # /api/v1/query/sparql — SPARQL 1.1 Protocol endpoint
 │               ├── prompt_commands.py  # /api/v1/prompt-commands/* — list, expand, execute, SSE stream
 │               │   Turn prompts use named-only expansion ($ARGUMENTS, $TEMPLATE_DESCRIPTION, $STYLE_EXAMPLE).
 │               │   /template supports two-turn HITL: predicate.add in turn1, template.save in turn2.

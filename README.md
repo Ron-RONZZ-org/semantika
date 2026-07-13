@@ -1,6 +1,6 @@
 # Semantika
 
-Semantika — knowledge graph CLI+GUI with LLM. A semantic triple store with a Svelte frontend and BYOK (Bring Your Own Key) LLM-native integration. AGPL-3.0.
+Semantika — knowledge graph CLI+GUI with LLM. A semantic triple store with a Svelte frontend, BYOK (Bring Your Own Key) LLM-native integration, and a **standard SPARQL 1.1 endpoint**. AGPL-3.0.
 
 ## Project Family
 

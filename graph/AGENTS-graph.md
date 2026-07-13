@@ -74,6 +74,11 @@ Triple store services: NodeService, PredicateService, PredicateGroupService, Tri
 | `subject_uuid` | `subject_id` |
 | `object_node_uuid` | `object_node_id` |
 
+- **SPARQL engine** (`graph/sparql/engine.py`): Oxigraph RocksDB cache for standard SPARQL 1.1 queries.
+  - Only bare ID-triples stored in the cache (no labels/descriptions) — enrichment happens via SQLite lookups on query.
+  - Incremental sync: ``TripleService.add()`` / ``.remove()`` / ``.update_metadata()`` fire sync hooks to keep the cache in sync.
+  - Cascade deletes from ``NodeService.delete()`` and ``PredicateService.delete()`` also fire sync hooks.
+  - Failed sync operations are queued in a ``SyncBacklog`` with exponential backoff and logged as ERROR after 5 retries.
 - FTS5 on node `label_text` + `definition_text` for full-text search
 - The `_trash_table` for NodeService is `nodes_trash` with pk_column=`node_id`
 - The `_trash_table` for PredicateService is `predicates_trash` with pk_column=`predicate_id`

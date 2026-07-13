@@ -90,12 +90,13 @@ def create_app(no_hooks: bool = False) -> FastAPI:
     # API routes — import triggers @command decorators (system handlers register)
     from semantika.server.routes import command as cmd
     from semantika.server.routes import (
-        files, graph, llm, prompt_commands, prompts, proof, query, review, triple_templates, unit,
+        files, graph, llm, prompt_commands, prompts, proof, query, review, sparql, triple_templates, unit,
     )
     from semantika.server.routes import user_config as ucfg
 
     app.include_router(graph.router, prefix="/api/v1/graph")
     app.include_router(query.router, prefix="/api/v1/query")
+    app.include_router(sparql.router, prefix="/api/v1/query")
     app.include_router(cmd.router, prefix="/api/v1/command")
     app.include_router(review.router, prefix="/api/v1/review")
     app.include_router(proof.router, prefix="/api/v1/proof")

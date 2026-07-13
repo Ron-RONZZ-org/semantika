@@ -21,6 +21,9 @@ _DB_FILENAME = "semantika.db"
 _db_instance: SemantikaDB | None = None
 _db_path: Path | None = None
 
+# SPARQL engine singleton (injected at app startup)
+_sparql_engine: Any = None  # SparqlEngine | None — type is Any to avoid import at module level
+
 
 def get_db_path() -> Path:
     """Return the path to the SQLite database file."""
@@ -58,6 +61,58 @@ def close_db() -> None:
         _db_path = None
 
 
+def get_sparql_engine() -> Any:
+    """Return the SPARQL engine singleton, or ``None`` if not initialized.
+
+    The engine is set by :func:`init_sparql_engine` during app startup.
+    """
+    return _sparql_engine
+
+
+def init_sparql_engine(cache_dir: Path | None = None) -> Any:
+    """Initialize the SPARQL engine singleton.
+
+    Creates an :class:`~semantika.graph.sparql.engine.SparqlEngine` backed by
+    an Oxigraph RocksDB store at the given path (or a default under the
+    Semantika data directory).
+
+    Args:
+        cache_dir: Directory for the RocksDB store. Defaults to
+            ``{data_dir}/sparql-cache/``.
+
+    Returns:
+        The engine instance, or ``None`` if the SPARQL module is unavailable.
+
+    Call :func:`close_sparql_engine` to shut it down.
+    """
+    global _sparql_engine
+    try:
+        from semantika.graph.sparql.engine import SparqlEngine
+    except ImportError:
+        logger.warning("SPARQL engine not available (pyoxigraph not installed)")
+        return None
+
+    if cache_dir is None:
+        cache_dir = data_dir() / "sparql-cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    _sparql_engine = SparqlEngine(get_db(), cache_dir=cache_dir)
+    logger.info("SPARQL engine initialized (cache: %s)", cache_dir)
+    return _sparql_engine
+
+
+def close_sparql_engine() -> None:
+    """Shut down the SPARQL engine singleton."""
+    global _sparql_engine
+    if _sparql_engine is not None:
+        try:
+            _sparql_engine.close()
+        except Exception as exc:
+            logger.warning("Error closing SPARQL engine: %s", exc)
+        _sparql_engine = None
+        logger.info("SPARQL engine shut down")
+
+
 _services_cache: dict[str, Any] | None = None
 
 
@@ -85,11 +140,19 @@ def get_services() -> dict[str, Any]:
     from semantika.graph.builtin_type_service import BuiltinTypeService
 
     db = get_db()
+    engine = _sparql_engine
+    triple_svc = TripleService(db)
+    triple_svc._sparql_engine = engine
+    node_svc = NodeService(db)
+    node_svc._sparql_engine = engine
+    pred_svc = PredicateService(db)
+    pred_svc._sparql_engine = engine
+
     _services_cache = {
-        "node": NodeService(db),
-        "predicate": PredicateService(db),
+        "node": node_svc,
+        "predicate": pred_svc,
         "predicate_group": PredicateGroupService(db),
-        "triple": TripleService(db),
+        "triple": triple_svc,
         "review": ReviewService(db),
         "proof": ProofService(db),
         "builtin_type": BuiltinTypeService(

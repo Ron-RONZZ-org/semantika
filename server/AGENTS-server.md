@@ -11,6 +11,7 @@ FastAPI web server: application factory, API routes, middleware, command engine,
   - Both the chat endpoint and prompt command endpoints call :func:`load_system_prompt` which returns the combined result.
   - Never hardcode or duplicate the prompt text — always import from ``llm/system_prompt.py``.
 - **Raw SQL query limit**: The ``POST /api/v1/query/raw`` endpoint rejects queries longer than ``MAX_RAW_QUERY_LENGTH`` (10,000 chars) to prevent resource exhaustion.
+- **SPARQL 1.1 Protocol**: ``GET/POST /api/v1/query/sparql`` — standard SPARQL endpoint backed by an Oxigraph RocksDB cache. Supports SELECT, ASK, CONSTRUCT, DESCRIBE. Results are enriched with human-readable labels from SQLite. The SPARQL engine is lazy-initialised on first query. ``!sparql query`` and ``!sparql status`` commands available.
 
 ## Domain-Specific Rules for Agents
 - **Command response types**: `status` (simple message), `form-required` (redirect to GUI form), `table` (data table), `graph` (graph visualization data), `help` (auto-generated command reference, opens a help tab), `error`
