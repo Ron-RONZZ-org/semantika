@@ -290,6 +290,15 @@ wheels = [
 ]
 
 [[package]]
+name = "commentjson"
+version = "0.9.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "lark-parser" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c0/76/c4aa9e408dbacee3f4de8e6c5417e5f55de7e62fb5a50300e1233a2c9cb5/commentjson-0.9.0.tar.gz", hash = "sha256:42f9f231d97d93aff3286a4dc0de39bfd91ae823d1d9eba9fa901fe0c7113dd4", size = 8653, upload-time = "2020-10-05T18:49:06.524Z" }
+
+[[package]]
 name = "cryptography"
 version = "49.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -686,6 +695,12 @@ sdist = { url = "https://files.pythonhosted.org/packages/43/4b/674af6ef2f97d56f0
 wheels = [
     { url = "https://files.pythonhosted.org/packages/81/db/e655086b7f3a705df045bf0933bdd9c2f79bb3c97bfef1384598bb79a217/keyring-25.7.0-py3-none-any.whl", hash = "sha256:be4a0b195f149690c166e850609a477c532ddbfbaed96a404d4e43f8d5e2689f", size = 39160, upload-time = "2025-11-16T16:26:08.402Z" },
 ]
+
+[[package]]
+name = "lark-parser"
+version = "0.7.8"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/34/b8/aa7d6cf2d5efdd2fcd85cf39b33584fe12a0f7086ed451176ceb7fb510eb/lark-parser-0.7.8.tar.gz", hash = "sha256:26215ebb157e6fb2ee74319aa4445b9f3b7e456e26be215ce19fdaaa901c20a4", size = 276204, upload-time = "2019-11-01T12:45:26.558Z" }
 
 [[package]]
 name = "lightercore"
@@ -1318,6 +1333,7 @@ name = "semantika"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "commentjson" },
     { name = "cryptography" },
     { name = "fastapi" },
     { name = "httpx" },
@@ -1347,6 +1363,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "commentjson", specifier = ">=0.9.0" },
     { name = "cryptography", specifier = ">=42.0.0" },
     { name = "fastapi", specifier = ">=0.110.0" },
     { name = "httpx", specifier = ">=0.27.0" },

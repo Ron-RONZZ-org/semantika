@@ -551,6 +551,31 @@ next access will re-seed it fresh, re-appending your AGENTS.md content.
 - When writing tests that share a global ``get_services()``, call ``reset_services()`` between test runs to avoid state leakage.
 - The ``FTS5Manager`` in ``core/fts.py`` provides shared FTS5 index operations to both ``NodeService`` and ``PredicateService``, replacing the duplicated ``_ensure_fts`` / ``_index_fts`` / ``_remove_from_fts`` / ``_rebuild_fts`` pattern.
 
+## Global Configuration (``semantika.jsonc``)
+
+Semantika reads a global config file from ``~/.config/semantika/semantika.jsonc`` (JSONC — JSON with ``//`` comments).  Falls back to ``semantika.json`` if the ``.jsonc`` variant doesn't exist.  The file is optional; built-in defaults are used when absent.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| ``node_iri`` | ``https://semantika.local/node/$id`` | IRI template for nodes (``$id`` → internal ID) |
+| ``predicate_iri`` | ``https://semantika.local/resource/$id`` | IRI template for unknown-prefix predicates |
+
+Known-prefix predicates (``rdf:type``, ``rdfs:label``, etc.) always use their fixed standard namespaces regardless of the configured template.
+
+### Commands
+
+- ``!system reindex`` — Clear the SPARQL RocksDB cache and re-sync all triples from SQLite using the current IRI templates.  Run after changing ``node_iri`` / ``predicate_iri`` in ``semantika.jsonc``.  Requires ``--confirmed``.
+- ``!node add --canonical <iri>`` / ``!node modify --canonical <iri>`` — Set a custom canonical IRI for a node (stored in the ``iri`` column; overrides the configured template).
+- ``!predicate add --canonical <iri>`` — Same for predicates.
+
+### Implementation notes
+
+- The ``iri`` column in the ``nodes`` and ``predicates`` SQLite tables is **empty** for entities using the default template.  It is populated only when ``--canonical`` is specified.
+- SPARQL enrichment uses a **dual-path** lookup:
+  1. IRIs matching the template prefix → string-op → query by internal ID.
+  2. Other IRIs (custom ``--canonical``, known-prefix predicates) → query by ``iri`` column.
+- RocksDB sync hooks resolve IRIs via a cache-aware method (``_resolve_iri``) that checks the ``iri`` column first, falling back to template computation.
+
 ## User Configuration
 
 Semantika supports persistent user preferences stored as JSON at `~/.local/share/semantika/user_config.json`:

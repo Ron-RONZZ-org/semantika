@@ -123,6 +123,7 @@ def _get_file_path(triples: list[dict]) -> str | None:
                "help": "Labels as LANG::TEXT or JSON"}],
           flags=[
               {"name": "id", "type": "string", "help": "Explicit node ID (overrides auto-derivation from label)"},
+              {"name": "canonical", "type": "string", "help": "Custom canonical IRI (overrides the configured template)"},
               {"name": "copy", "type": "flag", "help": "Copy node ID to clipboard"},
               # Arc shortcuts
              {"name": "type", "type": "string", "help": "rdf:type target node ID"},
@@ -160,6 +161,9 @@ def cmd_node_add(remaining: list[str], flags: dict[str, str]) -> dict:
         payload = {"labels": {}}
     if explicit_id:
         payload["node_id"] = explicit_id
+    canonical = flags.get("canonical", "")
+    if canonical:
+        payload["iri"] = canonical
 
     # ── Resolve arc shortcuts ─────────────────────────────────────────
     arc_targets: list[tuple[str, str]] = []

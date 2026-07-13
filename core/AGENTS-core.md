@@ -28,6 +28,16 @@ The authoritative source for shared infrastructure is **[lightercore](../lighter
 - Uses `DELETE FROM fts_table WHERE rowid = ?` syntax (not the older `INSERT...VALUES('delete',?)`) for FTS5 row removal
 - `sanitize_query()` static method provides safe keyword-aware query tokenization for FTS5 MATCH
 
+### Additional: `config.py`
+- Reads `~/.config/semantika/semantika.jsonc` (JSONC format — supports ``//`` comments)
+- Falls back to `semantika.json` if `.jsonc` doesn't exist
+- Provides `get_config()`, `reload_config()`, `get_iri_template(kind)`
+- Config keys:
+  - `node_iri` — IRI template for nodes (default: ``https://semantika.local/node/$id``)
+  - `predicate_iri` — IRI template for predicates (default: ``https://semantika.local/resource/$id``)
+- Uses `commentjson` library for parsing
+- Cached in memory; `reload_config()` clears the cache
+
 ### Additional: `reset.py`
 - Resets the knowledge graph to a fresh state (drops and recreates tables)
 - Optionally creates a backup before resetting
