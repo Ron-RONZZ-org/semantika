@@ -225,23 +225,23 @@ class TestRemovedFlags:
     def test_img_flag_raises(self):
         """Old --img flag should raise a clear error."""
         with pytest.raises(Exception, match="has been removed"):
-            dispatch(["node", "add"], {"labels": "Test", "img": "/path.jpg"})
+            dispatch(["node", "add", "concept"], {"labels": "Test", "img": "/path.jpg"})
 
     def test_attachment_flag_raises(self):
         with pytest.raises(Exception, match="has been removed"):
-            dispatch(["node", "add"], {"labels": "Test", "attachment": "/path.mp4"})
+            dispatch(["node", "add", "concept"], {"labels": "Test", "attachment": "/path.mp4"})
 
     def test_file_flag_raises(self):
         with pytest.raises(Exception, match="has been removed"):
-            dispatch(["node", "add"], {"labels": "Test", "file": "/path.pdf"})
+            dispatch(["node", "add", "concept"], {"labels": "Test", "file": "/path.pdf"})
 
     def test_in_place_flag_raises(self):
         with pytest.raises(Exception, match="has been removed"):
-            dispatch(["node", "add"], {"labels": "Test", "in-place": "true"})
+            dispatch(["node", "add", "concept"], {"labels": "Test", "in-place": "true"})
 
     def test_move_flag_raises(self):
         with pytest.raises(Exception, match="has been removed"):
-            dispatch(["node", "add"], {"labels": "Test", "move": "true"})
+            dispatch(["node", "add", "concept"], {"labels": "Test", "move": "true"})
 
 
 # ── Command tree verification ──────────────────────────────────────────
@@ -304,9 +304,9 @@ class TestNodeViewType:
         bts.ensure_builtins()
         ns = services["node"]
         ns.create({"node_id": "EMPTY_PHOTO", "labels": {"en": "Empty Photo"}})
-        # Add rdf:type triple to sm:Photo
+        # Add rdf:type triple to PHOTO
         ts = services["triple"]
-        ts.add("EMPTY_PHOTO", "rdf:type", "sm:Photo", object_type="uri")
+        ts.add("EMPTY_PHOTO", "rdf:type", "PHOTO", object_type="uri")
         result = dispatch(["node", "view", "EMPTY_PHOTO"], {})
         assert result["type"] == "status"
 

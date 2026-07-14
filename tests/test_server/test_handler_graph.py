@@ -163,11 +163,11 @@ class TestCmdNodeAdd:
     """!node add"""
 
     def test_add_with_labels(self, services: dict) -> None:
-        result = dispatch(["node", "add"], {"id": "NEWNODE", "labels": "New node"})
+        result = dispatch(["node", "add", "concept"], {"id": "NEWNODE", "labels": "New node"})
         assert result["type"] == "status"
 
     def test_add_auto_id(self, services: dict) -> None:
-        result = dispatch(["node", "add"], {"labels": "Auto node"})
+        result = dispatch(["node", "add", "concept"], {"labels": "Auto node"})
         assert result["type"] == "status"
 
 

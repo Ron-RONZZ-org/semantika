@@ -15,7 +15,8 @@ class TestBuiltinSeedData:
     def test_type_nodes_have_required_keys(self):
         for node in BUILTIN_TYPE_NODES:
             assert "node_id" in node
-            assert node["node_id"].startswith("sm:")
+            # Concept type nodes are all-caps A-Z0-9_ (no prefix)
+            assert node["node_id"].isupper() or "_" in node["node_id"]
             assert "labels" in node
             assert "en" in node["labels"]
             assert "eo" in node["labels"]
@@ -98,8 +99,8 @@ class TestBuiltinTypeService:
 
     def test_get_type_node_id(self, services: dict):
         bts = services["builtin_type"]
-        assert bts.get_type_node_id("photo") == "sm:Photo"
-        assert bts.get_type_node_id("video") == "sm:Video"
-        assert bts.get_type_node_id("file") == "sm:Document"
-        assert bts.get_type_node_id("code") == "sm:SourceCode"
+        assert bts.get_type_node_id("photo") == "PHOTO"
+        assert bts.get_type_node_id("video") == "VIDEO"
+        assert bts.get_type_node_id("file") == "DOCUMENT"
+        assert bts.get_type_node_id("code") == "SOURCE_CODE"
         assert bts.get_type_node_id("unknown") is None

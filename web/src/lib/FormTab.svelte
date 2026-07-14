@@ -10,7 +10,11 @@
 
   function _inferCommandPath(formType) {
     const map = {
-      "node-add": ["node", "add"],
+      "node-add": ["node", "add", "concept"],
+      "node-add-photo": ["node", "add", "photo"],
+      "node-add-video": ["node", "add", "video"],
+      "node-add-file": ["node", "add", "file"],
+      "node-add-code": ["node", "add", "code"],
       "node-delete": ["node", "delete"],
       "predicate-add": ["predicate", "add"],
       "predicate-delete": ["predicate", "delete"],

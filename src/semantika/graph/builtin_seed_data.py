@@ -10,7 +10,7 @@ from __future__ import annotations
 
 BUILTIN_TYPE_NODES: list[dict] = [
     {
-        "node_id": "sm:Photo",
+        "node_id": "PHOTO",
         "labels": {
             "en": "Photo",
             "eo": "Foto",
@@ -22,7 +22,7 @@ BUILTIN_TYPE_NODES: list[dict] = [
         },
     },
     {
-        "node_id": "sm:Video",
+        "node_id": "VIDEO",
         "labels": {
             "en": "Video",
             "eo": "Filmeto",
@@ -34,7 +34,7 @@ BUILTIN_TYPE_NODES: list[dict] = [
         },
     },
     {
-        "node_id": "sm:Document",
+        "node_id": "DOCUMENT",
         "labels": {
             "en": "Document",
             "eo": "Dosiero",
@@ -46,7 +46,7 @@ BUILTIN_TYPE_NODES: list[dict] = [
         },
     },
     {
-        "node_id": "sm:SourceCode",
+        "node_id": "SOURCE_CODE",
         "labels": {
             "en": "Source code",
             "eo": "Komputika kodo",

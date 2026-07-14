@@ -276,7 +276,7 @@ def attach_file_and_create_node(
         labels_raw: Label string (JSON or LANG::TEXT) for the node.
         file_path: Path or URL to the file.
         attachment_type: ``"img"``, ``"vid"``, or ``"doc"``.
-        node_type: The builtin type node ID (e.g. ``"sm:Photo"``).
+        node_type: The builtin type node ID (e.g. ``"PHOTO"``).
         explicit_id: Optional explicit node ID.
         no_copy: If True, store reference only (do not copy file).
         canonical_link: Optional canonical URL.

@@ -24,7 +24,7 @@ from semantika.server.command.handlers.node_helpers import (
     resolve_node_refs,
 )
 from semantika.server.command.helpers import parse_lang_tag_pairs
-from semantika.server.command.registry import command
+from semantika.server.command.registry import command, group_command
 
 logger = logging.getLogger(__name__)
 
@@ -35,12 +35,34 @@ logger = logging.getLogger(__name__)
 @command("node.list", description="List all nodes",
          permission_level=PermissionLevel.READ,
          params=[{"name": "limit", "type": "number", "default": 100}],
+         flags=[
+             {"name": "order_by", "type": "string", "help": "Sort column (created_at, node_id)"},
+             {"name": "direction", "type": "string", "help": "Sort direction (asc, desc)"},
+             {"name": "offset", "type": "number", "help": "Row offset for pagination"},
+         ],
          list_id_key="nodes")
 def cmd_node_list(remaining: list[str], flags: dict[str, str]) -> dict:
-    """List all non-trashed nodes."""
+    """List all non-trashed nodes.
+
+    Supports sorting via ``--order_by`` (default ``node_id``) and
+    ``--direction`` (default ``asc``). Supports pagination via ``--offset``.
+    """
     svc = get_services()
-    nodes = svc["node"].list(limit=int(flags.get("limit", 100)))
-    return {"type": "node-list", "data": nodes}
+    limit = int(flags.get("limit", 100))
+    offset = int(flags.get("offset", 0))
+    order_by = flags.get("order_by", "node_id") or "node_id"
+    direction = flags.get("direction", "asc") or "asc"
+    # Validate sort column to prevent SQL injection
+    allowed_columns = {"node_id", "created_at", "updated_at", "label_text"}
+    if order_by not in allowed_columns:
+        order_by = "node_id"
+    direction = "ASC" if direction.lower() == "asc" else "DESC"
+    nodes = svc["node"].list(
+        limit=limit, offset=offset,
+        order_by=order_by, direction=direction,
+    )
+    total = svc["node"].count()
+    return {"type": "node-list", "data": nodes, "total": total}
 
 
 @command("node.search", description="Search nodes by label",
@@ -62,8 +84,8 @@ def cmd_node_search(remaining: list[str], flags: dict[str, str]) -> dict:
 def cmd_node_view(remaining: list[str], flags: dict[str, str]) -> dict:
     """View a single node by ID or prefix.
 
-    If the node has a built-in type (sm:Photo, sm:Video, sm:Document,
-    sm:SourceCode) and a file attachment, returns ``node-view`` response
+    If the node has a built-in type (PHOTO, VIDEO, DOCUMENT,
+    SOURCE_CODE) and a file attachment, returns ``node-view`` response
     with file serving URLs for rich frontend rendering.
     """
     svc = get_services()
@@ -96,10 +118,10 @@ def _detect_builtin_type(triples: list[dict]) -> str | None:
     or ``None``.
     """
     type_map = {
-        "sm:Photo": "photo",
-        "sm:Video": "video",
-        "sm:Document": "document",
-        "sm:SourceCode": "code",
+        "PHOTO": "photo",
+        "VIDEO": "video",
+        "DOCUMENT": "document",
+        "SOURCE_CODE": "code",
     }
     for t in triples:
         if t.get("predicate_id") == "rdf:type" and t.get("object_type") == "uri":
@@ -117,9 +139,34 @@ def _get_file_path(triples: list[dict]) -> str | None:
     return None
 
 
-@command("node.add", description="Create a new entity node in the knowledge graph",
+@group_command("node.add", description="Create nodes in the knowledge graph")
+def cmd_node_add_root(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Node creation group — use subcommands.
+
+    Available:
+      !node add concept — Create a generic entity node
+      !node add photo   — Create a photo node with file attachment
+      !node add video   — Create a video node with file attachment
+      !node add file    — Create a document node with file attachment
+      !node add code    — Create a source code node with file attachment
+    """
+    return {"type": "status", "title": "Node Add Commands", "data": {
+        "_summary": (
+            "Available !node add commands:\n"
+            "  !node add concept — Create a generic entity node\n"
+            "  !node add photo   — Create a photo node with file attachment\n"
+            "  !node add video   — Create a video node with file attachment\n"
+            "  !node add file    — Create a document node with file attachment\n"
+            "  !node add code    — Create a source code node with file attachment"
+        )
+    }}
+
+
+@command("node.add.concept", description="Create a new entity node in the knowledge graph",
          interactive=True,
+         form_type="node-add",
          params=[{"name": "labels", "type": "string",
+               "required": True,
                "help": "Labels as LANG::TEXT or JSON"}],
           flags=[
               {"name": "id", "type": "string", "help": "Explicit node ID (overrides auto-derivation from label)"},
@@ -131,7 +178,7 @@ def _get_file_path(triples: list[dict]) -> str | None:
              {"name": "disjoint", "type": "string", "help": "owl:disjointWith target node ID"},
              {"name": "inverse", "type": "string", "help": "owl:inverseOf target node ID"},
          ])
-def cmd_node_add(remaining: list[str], flags: dict[str, str]) -> dict:
+def cmd_node_add_concept(remaining: list[str], flags: dict[str, str]) -> dict:
     """Add a new node with optional arc shortcuts.
 
     Arc shortcuts:
@@ -254,7 +301,7 @@ def cmd_node_add_photo(remaining: list[str], flags: dict[str, str]) -> dict:
 
     Auto-creates:
     - File metadata triples (``:hasFilePath``, ``:hasFileMime``, etc.)
-    - ``rdf:type`` triple to ``sm:Photo``
+    - ``rdf:type`` triple to ``PHOTO``
     - ``sm:depicts`` triples for each ``--object``
     - ``sm:dimension`` triple if ``--dimension`` is provided
     - ``sm:canonicalLink`` triple if ``--canonical-link`` is provided
@@ -286,7 +333,7 @@ def cmd_node_add_photo(remaining: list[str], flags: dict[str, str]) -> dict:
         extra_fields.append(("sm:dimension", dimension, "literal", ""))
 
     result = attach_file_and_create_node(
-        svc, labels_raw, path, "img", "sm:Photo",
+        svc, labels_raw, path, "img", "PHOTO",
         explicit_id=explicit_id,
         no_copy=no_copy,
         canonical_link=canonical_link,
@@ -322,7 +369,7 @@ def cmd_node_add_video(remaining: list[str], flags: dict[str, str]) -> dict:
 
     Auto-creates:
     - File metadata triples (``:hasFilePath``, ``:hasFileMime``, etc.)
-    - ``rdf:type`` triple to ``sm:Video``
+    - ``rdf:type`` triple to ``VIDEO``
     - ``sm:depicts`` triples for each ``--object``
     - ``sm:dimension`` triple if ``--dimension`` is provided
     - ``sm:canonicalLink`` triple if ``--canonical-link`` is provided
@@ -350,7 +397,7 @@ def cmd_node_add_video(remaining: list[str], flags: dict[str, str]) -> dict:
         extra_fields.append(("sm:dimension", dimension, "literal", ""))
 
     result = attach_file_and_create_node(
-        svc, labels_raw, path, "vid", "sm:Video",
+        svc, labels_raw, path, "vid", "VIDEO",
         explicit_id=explicit_id,
         no_copy=no_copy,
         canonical_link=canonical_link,
@@ -385,7 +432,7 @@ def cmd_node_add_file(remaining: list[str], flags: dict[str, str]) -> dict:
 
     Auto-creates:
     - File metadata triples
-    - ``rdf:type`` triple to ``sm:Document``
+    - ``rdf:type`` triple to ``DOCUMENT``
     - ``sm:theme`` triples for each ``--theme``
     - ``sm:canonicalLink`` triple if ``--canonical-link`` is provided
     """
@@ -409,7 +456,7 @@ def cmd_node_add_file(remaining: list[str], flags: dict[str, str]) -> dict:
         extra_fields.append(("sm:theme", theme_id, "uri", ""))
 
     result = attach_file_and_create_node(
-        svc, labels_raw, path, "doc", "sm:Document",
+        svc, labels_raw, path, "doc", "DOCUMENT",
         explicit_id=explicit_id,
         no_copy=no_copy,
         canonical_link=canonical_link,
@@ -444,7 +491,7 @@ def cmd_node_add_code(remaining: list[str], flags: dict[str, str]) -> dict:
 
     Auto-creates:
     - File metadata triples
-    - ``rdf:type`` triple to ``sm:SourceCode``
+    - ``rdf:type`` triple to ``SOURCE_CODE``
     - ``sm:programmingLanguage`` triple with the language value
     - ``sm:canonicalLink`` triple if ``--canonical-link`` is provided
     """
@@ -473,7 +520,7 @@ def cmd_node_add_code(remaining: list[str], flags: dict[str, str]) -> dict:
     extra_fields.append(("sm:programmingLanguage", lang, "literal", ""))
 
     result = attach_file_and_create_node(
-        svc, labels_raw, path, "doc", "sm:SourceCode",
+        svc, labels_raw, path, "doc", "SOURCE_CODE",
         explicit_id=explicit_id,
         no_copy=no_copy,
         canonical_link=canonical_link,

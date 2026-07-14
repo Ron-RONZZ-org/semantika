@@ -91,13 +91,18 @@ function resolveListCommand(node, tokens) {
   }
 
   if (node.interactive && tokens.length >= 2) {
-    // Use parent path instead of just the first token so that
-    // multi-word domains like "backup config add" resolve to
-    // "backup config list" rather than the incorrect "backup list".
-    const parentPath = tokens.slice(0, -1);
-    const listTokens = [...parentPath, "list"];
-    const listNode = findNode(listTokens);
-    if (listNode) return listTokens;
+    // Walk up the tree to find the list command.
+    // For "node add concept", parent is ["node", "add"] which has no "list"
+    // child, so we try grandparent ["node"] which has "node.list".
+    // For "backup config add", parent is ["backup", "config"] → "backup config list".
+    for (let depth = 1; depth <= tokens.length - 1; depth++) {
+      const ancestorPath = tokens.slice(0, -depth);
+      const listTokens = [...ancestorPath, "list"];
+      const listNode = findNode(listTokens);
+      // findNode may return a partial match (last non-null ancestor).
+      // Verify the resolved node is actually named "list".
+      if (listNode && listNode.name === "list") return listTokens;
+    }
   }
 
   return null;
@@ -139,7 +144,7 @@ function buildInitialData(node, leafName, paramTokens, flags) {
 function resolveAddFormType(tokens, leafName) {
   const path = tokens.join(" ");
 
-  if (/^node\s+add$/i.test(path)) return "node-add";
+  if (/^node\s+add\s+concept$/i.test(path)) return "node-add";
   if (/^node\s+add\s+photo$/i.test(path)) return "node-add-photo";
   if (/^node\s+add\s+video$/i.test(path)) return "node-add-video";
   if (/^node\s+add\s+file$/i.test(path)) return "node-add-file";
