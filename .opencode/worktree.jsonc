@@ -1,0 +1,26 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  // Custom base path for worktree storage (supports ~)
+  // Default: ~/.local/share/opencode/worktree
+  // "worktreePath": "~/my-worktrees",
+
+  // If true (default), open a new terminal window for the worktree.
+  // If false, attempt to open a tab in the current terminal (GNOME, Konsole, kitty).
+  // "newTerminal": true,
+
+  // If true (default), copy the parent session's conversation history into the worktree.
+  // If false, start with a fresh empty session (parentID is still linked for TUI navigation).
+  // "preserveHistory": true,
+
+  "sync": {
+    "copyFiles": [],
+    "symlinkDirs": [],
+    "exclude": []
+  },
+
+  "hooks": {
+    "postCreate": [],
+    "preDelete": []
+  }
+}

@@ -62,7 +62,7 @@ def cmd_node_list(remaining: list[str], flags: dict[str, str]) -> dict:
         order_by=order_by, direction=direction,
     )
     total = svc["node"].count()
-    return {"type": "node-list", "data": nodes, "total": total}
+    return {"type": "node-list", "data": {"nodes": nodes, "total": total}}
 
 
 @command("node.search", description="Search nodes by label",
