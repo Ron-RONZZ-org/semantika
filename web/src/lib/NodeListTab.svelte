@@ -18,6 +18,7 @@
   } from "./listSort.svelte.js";
 
   let { data = [] } = $props();
+  let initialData = data;
 
   /** All fetched nodes (append-only cumulative list). */
   let allNodes = $state([]);
