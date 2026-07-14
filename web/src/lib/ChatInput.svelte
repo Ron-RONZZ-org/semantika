@@ -195,6 +195,23 @@
       const cmd = value.trim();
       if (!cmd) return;
 
+      // ── Leaf command: submit immediately (all path tokens resolved) ──
+      // When getCompletions returns level: "params", the command path is a
+      // complete leaf node. ENTER should submit the command so that
+      // shouldIntercept can open the form, rather than filling flag
+      // suggestions (which is for TAB, not ENTER).
+      const { level: currentLevel } = getCompletions(cmd);
+      if (currentLevel === "params") {
+        history.push(cmd);
+        value = "";
+        suggestions = [];
+        hints = [];
+        dataCompletions = [];
+        positionals = [];
+        if (onSubmit) onSubmit(cmd);
+        return;
+      }
+
       // ── Completion fill mode: fill input on Enter when suggestions are visible ──
       if (displaySuggestions.length > 0) {
         const idx = selectedSuggestion >= 0 ? selectedSuggestion : 0;

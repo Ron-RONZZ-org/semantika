@@ -18,7 +18,6 @@
   } from "./listSort.svelte.js";
 
   let { data = [] } = $props();
-  let initialData = data;
 
   /** All fetched nodes (append-only cumulative list). */
   let allNodes = $state([]);
@@ -133,13 +132,14 @@
 
   /** Initialize from provided data, or fetch first page. */
   function init() {
-    const items = Array.isArray(initialData) ? initialData
-      : Array.isArray(initialData?.nodes) ? initialData.nodes
-      : Array.isArray(initialData?.data) ? initialData.data
+    const d = data;
+    const items = Array.isArray(d) ? d
+      : Array.isArray(d?.nodes) ? d.nodes
+      : Array.isArray(d?.data) ? d.data
       : null;
     if (items && items.length > 0) {
       allNodes = items;
-      total = initialData?.total || items.length;
+      total = d?.total || items.length;
       hasMore = allNodes.length < total;
     } else {
       resetAndLoad();
