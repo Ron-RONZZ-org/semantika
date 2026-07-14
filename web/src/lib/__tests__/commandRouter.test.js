@@ -9,12 +9,16 @@ vi.mock("../commandTree.js", () => {
       name: "node",
       description: "Node operations",
       children: [
+    {
+      name: "add",
+      description: "Node add commands",
+      children: [
         {
-          name: "add",
+          name: "concept",
           description: "Create a new entity node in the knowledge graph",
-          params: [{ name: "labels", type: "string" }],
+          params: [{ name: "labels", type: "string", required: true }],
           interactive: true,
-          children: [
+        },
             {
               name: "photo",
               description: "Create a photo node",
@@ -94,6 +98,12 @@ vi.mock("../commandTree.js", () => {
 import { shouldIntercept } from "../commandRouter.js";
 
 describe("commandRouter specialised node add", () => {
+  it("intercepts !node add concept with missing --labels", () => {
+    const result = shouldIntercept("!node add concept");
+    expect(result.intercept).toBe(true);
+    expect(result.addFormType).toBe("node-add");
+  });
+
   it("intercepts !node add photo with missing --path", () => {
     const result = shouldIntercept("!node add photo");
     expect(result.intercept).toBe(true);
@@ -123,10 +133,17 @@ describe("commandRouter specialised node add", () => {
     expect(result.intercept).toBe(false);
   });
 
+  it("produces correct listTokens for !node add concept", () => {
+    const result = shouldIntercept("!node add concept");
+    // Parent is ["node", "add"] (no "list") → walks up to ["node", "list"]
+    expect(result.listTokens).toEqual(["node", "list"]);
+    expect(result.listIdKey).toBe("nodes");
+  });
+
   it("produces correct listTokens for !node add photo", () => {
     const result = shouldIntercept("!node add photo");
-    // Falls back to parent-path pattern: ["node", "add", "list"]
-    expect(result.listTokens).toEqual(["node", "add", "list"]);
-    expect(result.listIdKey).toBe("adds");
+    // Parent is ["node", "add"] (no "list") → walks up to ["node", "list"]
+    expect(result.listTokens).toEqual(["node", "list"]);
+    expect(result.listIdKey).toBe("nodes");
   });
 });

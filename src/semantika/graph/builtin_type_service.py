@@ -108,7 +108,7 @@ class BuiltinTypeService:
                     (type_node["node_id"], labels, label_text, definitions, def_text, now_iso, now_iso),
                 )
 
-                # Auto-assign rdf:type = sm:Photo etc. referencing itself as a type concept
+                # Auto-assign rdf:type = PHOTO etc. referencing itself as a type concept
                 # Each builtin type node is an instance of itself (self-typing convention).
                 conn.execute(
                     "INSERT OR IGNORE INTO triples "
@@ -147,12 +147,12 @@ class BuiltinTypeService:
             media_type: One of ``"photo"``, ``"video"``, ``"file"``, ``"code"``.
 
         Returns:
-            The node ID (e.g. ``"sm:Photo"``) or ``None``.
+            The node ID (e.g. ``"PHOTO"``) or ``None``.
         """
         mapping = {
-            "photo": "sm:Photo",
-            "video": "sm:Video",
-            "file": "sm:Document",
-            "code": "sm:SourceCode",
+            "photo": "PHOTO",
+            "video": "VIDEO",
+            "file": "DOCUMENT",
+            "code": "SOURCE_CODE",
         }
         return mapping.get(media_type)

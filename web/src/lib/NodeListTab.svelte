@@ -1,9 +1,10 @@
 <script>
-  /** Node list tab — selection, batch delete, focused row, API-backed. */
+  /** Node list tab — selection, batch delete, infinite scroll, sort, filter. */
 
   import { tabStore } from "./tabStore.svelte.js";
   import { banner } from "./bannerStore.svelte.js";
   import { opt } from "./optimisticStore.svelte.js";
+  import ScrollList from "@lightercore/ui/ScrollList.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import {
     createSelectionManager,
@@ -11,27 +12,59 @@
     getLabel,
   } from "./listTabShared.svelte.js";
   import { getLocale } from "./userConfig.svelte.js";
+  import {
+    createSortState,
+    createFilterState,
+  } from "./listSort.svelte.js";
 
   let { data = [] } = $props();
+  let initialData = data;
 
-  let nodes = $derived(
-    Array.isArray(data) ? data
-    : Array.isArray(data?.nodes) ? data.nodes
-    : Array.isArray(data?.data) ? data.data
-    : []
-  );
+  /** All fetched nodes (append-only cumulative list). */
+  let allNodes = $state([]);
+  let total = $state(0);
+  let hasMore = $state(true);
+  let loading = $state(false);
+  let pageSize = 50;
+
   let showSearch = $state(false);
   let searchQuery = $state("");
   let searchTimeout;
   let showNewDropdown = $state(false);
+  let showFilters = $state(false);
+
+  /** Sort state — cycles created_at↓ → created_at↑ → node_id↑ → node_id↓ */
+  let sort = createSortState("node_id", "asc");
+
+  /** Filter state — which node categories to show. */
+  const FILTER_CATEGORIES = ["seeded", "unit", "concept"];
+  let filter = createFilterState(FILTER_CATEGORIES);
 
   const nodeTypes = [
-    { label: "Node (general)", command: ["node", "add"], formType: "node-add", icon: "\u25CB" },
+    { label: "Node (general)", command: ["node", "add", "concept"], formType: "node-add", icon: "\u25CB" },
     { label: "Photo", command: ["node", "add", "photo"], formType: "node-add-photo", icon: "\u{1F5BC}" },
     { label: "Video", command: ["node", "add", "video"], formType: "node-add-video", icon: "\u{1F3AC}" },
     { label: "Document", command: ["node", "add", "file"], formType: "node-add-file", icon: "\u{1F4C4}" },
     { label: "Source Code", command: ["node", "add", "code"], formType: "node-add-code", icon: "\u{1F4BB}" },
   ];
+
+  const BUILTIN_TYPE_IDS = new Set(["PHOTO", "VIDEO", "DOCUMENT", "SOURCE_CODE"]);
+  const UNIT_PATTERN = /^(unit:|:UnitType|:SingularUnit|:PrefixedUnit|:CompoundUnit|:UnitProduct|:UnitPower)/;
+
+  /** Classify a node into a filter category. */
+  function classifyNode(node) {
+    const id = node?.node_id || "";
+    if (BUILTIN_TYPE_IDS.has(id)) return "seeded";
+    if (UNIT_PATTERN.test(id)) return "unit";
+    return "concept";
+  }
+
+  /** Visible nodes after filtering and sorting. */
+  let displayNodes = $derived(
+    allNodes
+      .filter((n) => filter.isVisible(classifyNode(n)))
+      .toSorted(sort.comparator),
+  );
 
   function handleNew(type) {
     showNewDropdown = false;
@@ -41,36 +74,112 @@
     }, { idKey: type.formType });
   }
 
-  async function fetchNodes(query) {
+  /** Fetch a page of nodes from the command endpoint. */
+  async function loadPage(offset) {
+    const params = new URLSearchParams({
+      limit: String(pageSize),
+      offset: String(offset),
+      order_by: sort.mode.column,
+      direction: sort.mode.direction,
+    });
+    try {
+      const resp = await fetch(`/api/v1/graph/nodes?${params}`);
+      if (!resp.ok) return null;
+      const result = await resp.json();
+      return result;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Initial load or re-fetch (reset all). */
+  async function resetAndLoad() {
+    allNodes = [];
+    total = 0;
+    hasMore = true;
+    loading = true;
+    try {
+      const result = await loadPage(0);
+      if (result) {
+        allNodes = result.nodes || [];
+        total = result.total || 0;
+        hasMore = allNodes.length < total;
+      } else {
+        hasMore = false;
+      }
+    } finally {
+      loading = false;
+    }
+  }
+
+  /** Load next page (infinite scroll). */
+  async function loadMore() {
+    if (loading || !hasMore) return;
+    loading = true;
+    try {
+      const result = await loadPage(allNodes.length);
+      if (result) {
+        const newItems = result.nodes || [];
+        allNodes = [...allNodes, ...newItems];
+        total = result.total || 0;
+        hasMore = allNodes.length < total;
+      } else {
+        hasMore = false;
+      }
+    } finally {
+      loading = false;
+    }
+  }
+
+  /** Initialize from provided data, or fetch first page. */
+  function init() {
+    const items = Array.isArray(initialData) ? initialData
+      : Array.isArray(initialData?.nodes) ? initialData.nodes
+      : Array.isArray(initialData?.data) ? initialData.data
+      : null;
+    if (items && items.length > 0) {
+      allNodes = items;
+      total = initialData?.total || items.length;
+      hasMore = allNodes.length < total;
+    } else {
+      resetAndLoad();
+    }
+  }
+
+  $effect(init);
+
+  /** Re-fetch when sort mode changes. */
+  $effect(() => {
+    // Read sort.mode to track dependency
+    const _mode = sort.mode;
+    // Skip initial effect run (init handles that)
+    if (allNodes.length > 0) {
+      resetAndLoad();
+    }
+  });
+
+  async function fetchSearch(query) {
     try {
       let items;
-      if (query && query.length >= 2) {
-        const params = new URLSearchParams({ q: query, limit: "100" });
-        const resp = await fetch(`/api/v1/graph/nodes/search?${params}`);
-        if (!resp.ok) return;
-        const result = await resp.json();
-        items = result.results || result.data || result;
-      } else {
-        const params = new URLSearchParams({ limit: "100" });
-        const resp = await fetch(`/api/v1/graph/nodes?${params}`);
-        if (!resp.ok) return;
-        const result = await resp.json();
-        items = result.nodes || result.results || result.data || result;
-      }
-      tabStore.update(tabStore.active.id, { nodes: items, data: items });
+      const params = new URLSearchParams({ q: query, limit: "100" });
+      const resp = await fetch(`/api/v1/graph/nodes/search?${params}`);
+      if (!resp.ok) return;
+      const result = await resp.json();
+      items = result.results || result.data || result;
+      allNodes = items;
+      total = items.length;
+      hasMore = false;
     } catch { /* silent */ }
   }
 
   let sel = createSelectionManager(
-    () => nodes,
+    () => displayNodes,
     (id) => openNode(id),
     async (ids) => {
-      // 1. Optimistic removal: remove items from tab data immediately
       const activeId = tabStore.active?.id;
       const rollback = activeId
         ? opt.removeFromTab(activeId, ids, (item) => item.node_id, "nodes")
         : () => {};
-      // 2. Fire API calls in background
       try {
         for (const id of ids) {
           const resp = await fetch(`/api/v1/graph/nodes/${encodeURIComponent(id)}`, { method: "DELETE" });
@@ -79,15 +188,17 @@
             throw new Error(err.detail?.error || err.detail || `HTTP ${resp.status}`);
           }
         }
+        // Remove deleted items from allNodes
+        const deletedSet = new Set(ids);
+        allNodes = allNodes.filter((n) => !deletedSet.has(n.node_id));
       } catch (err) {
-        // 3. On failure: rollback + banner error
         rollback();
         banner.show(`Delete failed: ${err.message}`, "error");
-        throw err; // re-throw so selection manager keeps selection state
+        throw err;
       }
     },
-    () => {}, // no-op refresh: data already updated optimistically
-    { onNew: handleNew, getKey: (item) => item.node_id },
+    () => {},
+    { onNew: () => handleNew(nodeTypes[0]), getKey: (item) => item.node_id },
   );
 
   let uuidCopy = createCopyState();
@@ -111,20 +222,27 @@
     const val = e.target.value;
     searchQuery = val;
     clearTimeout(searchTimeout);
-    if (val.length === 0 || val.length >= 2) {
-      searchTimeout = setTimeout(() => fetchNodes(val), 300);
+    if (val.length === 0) {
+      resetAndLoad();
+      return;
+    }
+    if (val.length >= 2) {
+      searchTimeout = setTimeout(() => fetchSearch(val), 300);
     }
   }
 
   function closeSearch() {
     showSearch = false;
     searchQuery = "";
-    if (searchQuery.length > 0) fetchNodes("");
+    resetAndLoad();
   }
 
   function handleDocClick(e) {
     if (showNewDropdown && !e.target.closest('.new-dropdown-container')) {
       showNewDropdown = false;
+    }
+    if (showFilters && !e.target.closest('.filter-panel') && !e.target.closest('.btn-filter')) {
+      showFilters = false;
     }
   }
 
@@ -142,6 +260,12 @@
       case "v":
         if (plain && !sel.selectionMode) { sel.toggleSelectionMode(); e.preventDefault(); }
         return;
+      case "s":
+        if (plain && !sel.selectionMode && !showSearch) { sort.cycle(); e.preventDefault(); }
+        return;
+      case "f":
+        if (plain && !sel.selectionMode && !showSearch) { showFilters = !showFilters; e.preventDefault(); }
+        return;
       case "/":
         if (plain) {
           showSearch = !showSearch;
@@ -152,6 +276,7 @@
         return;
       case "Escape":
         if (showSearch) { closeSearch(); e.preventDefault(); return; }
+        if (showFilters) { showFilters = false; e.preventDefault(); return; }
         if (sel.selectionMode) { sel.toggleSelectionMode(); e.preventDefault(); return; }
         tabStore.close(tabStore.active?.id);
         return;
@@ -195,11 +320,42 @@
       <button class="btn-small" onclick={() => { showSearch = true; requestAnimationFrame(() => document.querySelector('.nl-search-input')?.focus()); }}>
         / Search</button>
       <button class="btn-small" onclick={() => sel.toggleSelectionMode()}>v Select</button>
+      <button class="btn-small btn-sort" onclick={() => sort.cycle()} title="Cycle sort mode">
+        Sort {sort.mode.icon}</button>
+      <button class="btn-small btn-filter" class:active={showFilters} onclick={() => { showFilters = !showFilters; }}>
+        Filter</button>
     {/if}
   </div>
 
-  <div class="list" role="listbox" aria-label="Nodes" aria-multiselectable="true">
-    {#each nodes as node, i (node.node_id)}
+  {#if showFilters}
+    <div class="filter-panel">
+      <label class="filter-label">
+        <input type="checkbox" checked={filter.isVisible("seeded")}
+          onchange={() => filter.toggle("seeded")} />
+        Seeded (PHOTO, VIDEO, …)
+      </label>
+      <label class="filter-label">
+        <input type="checkbox" checked={filter.isVisible("unit")}
+          onchange={() => filter.toggle("unit")} />
+        Units
+      </label>
+      <label class="filter-label">
+        <input type="checkbox" checked={filter.isVisible("concept")}
+          onchange={() => filter.toggle("concept")} />
+        Concepts
+      </label>
+    </div>
+  {/if}
+
+  <ScrollList
+    items={displayNodes}
+    hasMore={hasMore && !showSearch}
+    {loading}
+    getKey={(n) => n.node_id}
+    onLoadMore={loadMore}
+    emptyMessage="No nodes."
+  >
+    {#snippet children(node, i)}
       <div id="row-{CSS.escape(node.node_id)}" class="row"
         class:selected={sel.isSelected(node.node_id)}
         class:focused={i === sel.focusedIndex}
@@ -207,6 +363,7 @@
         tabindex="-1"
         onclick={(e) => sel.handleRowClick(e, node.node_id)}
         onkeydown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); sel.handleRowClick(e, node.node_id); } }}>
+        <span class="node-type-badge type-{classifyNode(node).charAt(0)}">{classifyNode(node).charAt(0).toUpperCase()}</span>
         <span class="label">{getLabel(node.labels, getLocale()) || node.node_id}</span>
         <span class="id">{node.node_id}</span>
         <span class="actions">
@@ -219,10 +376,8 @@
           </button>
         </span>
       </div>
-    {:else}
-      <p class="empty">No nodes.</p>
-    {/each}
-  </div>
+    {/snippet}
+  </ScrollList>
 
   {#if sel.confirmDelete}
     <ConfirmDialog
@@ -244,9 +399,11 @@
   .btn-small.danger { border-color: #a33; color: #f77; }
   .btn-small.danger:hover { background: #3a1a1a; }
   .btn-small:disabled { opacity: 0.4; cursor: default; }
+  .btn-small.btn-sort { border-color: #3a5a5a; color: #7cf; }
+  .btn-small.btn-filter { border-color: #5a4a3a; color: #fa7; }
+  .btn-small.btn-filter.active { background: #3a2a1a; border-color: #8a6a3a; }
   .btn-icon { background: none; border: none; color: var(--clr-sub); cursor: pointer; padding: 0 4px; font-size: 0.85rem; }
   .btn-icon:hover { color: #e0e0e0; }
-  .list { flex: 1; overflow-y: auto; padding: 0; }
   .row { display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0.75rem; border-bottom: 1px solid #2a2a3e; cursor: pointer; }
   .row:hover { background: #22223a; }
   .row.selected { background: #2a2a4a; }
@@ -254,10 +411,31 @@
   .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #e0e0e0; font-weight: 600; }
   .id { color: var(--clr-sub); font-size: 0.78rem; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .actions { flex-shrink: 0; }
-  .empty { color: var(--clr-muted); text-align: center; padding: 2rem; }
   .new-dropdown-container { position: relative; display: inline-block; }
   .new-dropdown { position: absolute; top: 100%; left: 0; min-width: 180px; background: #1a1a2e; border: 1px solid #444; border-radius: 4px; z-index: 100; margin-top: 2px; padding: 4px 0; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
   .dropdown-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 0.3rem 0.75rem; background: none; border: none; color: #e0e0e0; cursor: pointer; font-family: monospace; font-size: 0.78rem; text-align: left; }
   .dropdown-item:hover { background: #2a2a4e; }
   .dropdown-icon { font-size: 0.9rem; width: 20px; text-align: center; }
+
+  /* Filter panel */
+  .filter-panel {
+    display: flex; gap: 0.5rem; padding: 0.4rem 0.75rem;
+    border-bottom: 1px solid #2a2a3e; background: #1e1e34;
+    flex-wrap: wrap;
+  }
+  .filter-label {
+    display: flex; align-items: center; gap: 4px;
+    color: #e0e0e0; font-size: 0.78rem; cursor: pointer;
+  }
+  .filter-label input { accent-color: #7c7c9a; }
+
+  /* Node type badge */
+  .node-type-badge {
+    display: inline-block; width: 16px; height: 16px; line-height: 16px;
+    text-align: center; font-size: 0.65rem; font-weight: 700;
+    border-radius: 3px; flex-shrink: 0; text-transform: uppercase;
+  }
+  .type-s { background: #2a4a3a; color: #4f8; }
+  .type-u { background: #3a2a4a; color: #a7f; }
+  .type-c { background: #2a3a4a; color: #7cf; }
 </style>

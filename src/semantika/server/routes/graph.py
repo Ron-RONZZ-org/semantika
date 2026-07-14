@@ -131,10 +131,27 @@ class PredicateUpdate(BaseModel):
 # ── Nodes (static routes BEFORE dynamic {node_id}) ─────────────────────
 
 @router.get("/nodes")
-def list_nodes(limit: int = 100, offset: int = 0):
-    """List all nodes."""
+def list_nodes(
+    limit: int = 100,
+    offset: int = 0,
+    order_by: str = "node_id",
+    direction: str = "asc",
+):
+    """List all nodes with optional sorting and pagination.
+
+    Args:
+        limit: Max rows to return.
+        offset: Row offset for pagination.
+        order_by: Sort column (``node_id``, ``created_at``, ``updated_at``, ``label_text``).
+        direction: Sort direction (``asc`` or ``desc``).
+    """
     svc = _svc()["node"]
-    return {"nodes": svc.list(limit=limit, offset=offset), "total": svc.count()}
+    allowed_columns = {"node_id", "created_at", "updated_at", "label_text"}
+    if order_by not in allowed_columns:
+        order_by = "node_id"
+    direction = "ASC" if direction.lower() == "asc" else "DESC"
+    nodes = svc.list(limit=limit, offset=offset, order_by=order_by, direction=direction)
+    return {"nodes": nodes, "total": svc.count()}
 
 
 @router.get("/nodes/search")

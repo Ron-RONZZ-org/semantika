@@ -229,7 +229,7 @@
     {:else}
       <p class="empty">No results.</p>
     {/if}
-  {:else if d.nodes !== undefined}
+  {:else if Array.isArray(d.nodes)}
     <div class="section-header">
       <h3 class="title">Nodes ({d.nodes.length})</h3>
     </div>
@@ -241,7 +241,7 @@
     {:else}
       <p class="empty">No nodes.</p>
     {/each}
-  {:else if d.predicates !== undefined}
+  {:else if Array.isArray(d.predicates)}
     <div class="section-header">
       <h3 class="title">Predicates ({d.predicates.length})</h3>
     </div>
@@ -393,7 +393,7 @@
       />
     {/if}
 
-  {:else if d.triples !== undefined}
+  {:else if Array.isArray(d.triples)}
     <div class="section-header">
       <h3 class="title">Triples ({d.triples.length})</h3>
     </div>
