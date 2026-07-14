@@ -5,6 +5,9 @@ const disableWatch = process.env.DISABLE_WATCH === "true";
 
 export default defineConfig({
   plugins: [svelte()],
+  optimizeDeps: {
+    exclude: ["@lightercore/ui"],
+  },
   server: {
     port: 6016,
     watch: disableWatch ? null : undefined,
