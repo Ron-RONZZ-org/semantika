@@ -1,7 +1,7 @@
 """Command handlers for node management: list, search, view, add, update, delete, rename, merge.
 
-Specialised subcommands (``!node add photo|video|file|code``) create semantically
-typed nodes with file attachments and auto-generated triples.
+See ``node_specialised.py`` for the typed subcommands
+(``!node add photo|video|file|code``).
 """
 
 from __future__ import annotations
@@ -15,13 +15,9 @@ from semantika.graph.db import get_services
 from semantika.server.command.errors import CommandValidationError
 from semantika.server.command.handlers.node_helpers import (
     _ARC_PREDICATES,
-    attach_file_and_create_node,
     create_arc_triples,
-    create_semantic_triples,
     ensure_predicate,
-    parse_dimension,
     resolve_arc_target,
-    resolve_node_refs,
 )
 from semantika.server.command.helpers import parse_lang_tag_pairs
 from semantika.server.command.registry import command, group_command
@@ -167,16 +163,29 @@ def cmd_node_add_root(remaining: list[str], flags: dict[str, str]) -> dict:
          form_type="node-add",
          params=[{"name": "labels", "type": "string",
                "required": True,
-               "help": "Labels as LANG::TEXT or JSON"}],
+               "help": "Labels as LANG::TEXT pairs or JSON",
+               "placeholder": "en::Albert Einstein, eo::Albert Ejnŝtejno, fr::Albert Einstein"}],
           flags=[
-              {"name": "id", "type": "string", "help": "Explicit node ID (overrides auto-derivation from label)"},
-              {"name": "canonical", "type": "string", "help": "Custom canonical IRI (overrides the configured template)"},
+              {"name": "id", "type": "string",
+               "help": "Explicit node ID (overrides auto-derivation from label)",
+               "placeholder": "ALBERT_EINSTEIN"},
+              {"name": "canonical", "type": "string",
+               "help": "Custom canonical IRI (overrides the configured template)",
+               "placeholder": "https://example.org/node/albert-einstein"},
               {"name": "copy", "type": "flag", "help": "Copy node ID to clipboard"},
               # Arc shortcuts
-             {"name": "type", "type": "string", "help": "rdf:type target node ID"},
-             {"name": "superclass", "type": "string", "help": "rdfs:subClassOf target node ID"},
-             {"name": "disjoint", "type": "string", "help": "owl:disjointWith target node ID"},
-             {"name": "inverse", "type": "string", "help": "owl:inverseOf target node ID"},
+             {"name": "type", "type": "string",
+              "help": "rdf:type target node ID",
+              "placeholder": "PERSON"},
+             {"name": "superclass", "type": "string",
+              "help": "rdfs:subClassOf target node ID",
+              "placeholder": "SCIENTIST"},
+             {"name": "disjoint", "type": "string",
+              "help": "owl:disjointWith target node ID",
+              "placeholder": "ORGANIZATION"},
+             {"name": "inverse", "type": "string",
+              "help": "owl:inverseOf target node ID",
+              "placeholder": "EMPLOYS"},
          ])
 def cmd_node_add_concept(remaining: list[str], flags: dict[str, str]) -> dict:
     """Add a new node with optional arc shortcuts.
@@ -281,265 +290,7 @@ def _check_removed_flags(flags: dict[str, str]) -> None:
             )
 
 
-# ── Specialised node add subcommands ─────────────────────────────────────
-
-
-@command("node.add.photo", description="Create a photo node with file attachment",
-         interactive=True,
-         flags=[
-             {"name": "path", "type": "string", "required": True,
-              "help": "Path or URL to the photo file"},
-             {"name": "id", "type": "string", "help": "Explicit node ID"},
-             {"name": "dimension", "type": "string", "help": "Dimensions (e.g. 1920x1080)"},
-             {"name": "object", "type": "string",
-              "help": "Node IDs this photo depicts (comma-separated)"},
-             {"name": "canonical-link", "type": "string", "help": "Original source URL"},
-             {"name": "no-copy", "type": "flag", "help": "Store reference only, do not copy file"},
-         ])
-def cmd_node_add_photo(remaining: list[str], flags: dict[str, str]) -> dict:
-    """Create a photo node with file attachment and semantic triples.
-
-    Auto-creates:
-    - File metadata triples (``:hasFilePath``, ``:hasFileMime``, etc.)
-    - ``rdf:type`` triple to ``PHOTO``
-    - ``sm:depicts`` triples for each ``--object``
-    - ``sm:dimension`` triple if ``--dimension`` is provided
-    - ``sm:canonicalLink`` triple if ``--canonical-link`` is provided
-    """
-    svc = get_services()
-    path = flags.get("path", "")
-    if not path:
-        # Try positional arg
-        path = remaining[0] if remaining else ""
-    if not path:
-        raise CommandValidationError("Specify --path to the photo file")
-
-    labels_raw = flags.get("labels") or ""
-    explicit_id = flags.get("id", "")
-    no_copy = "no-copy" in flags or flags.get("no-copy", "").lower() in ("true", "1", "yes")
-    canonical_link = flags.get("canonical-link", "") or ""
-    dimension = parse_dimension(flags.get("dimension", "") or "")
-    object_nodes = resolve_node_refs(svc, flags.get("object", "") or "", "object")
-
-    # Build extra semantic triples
-    extra_fields: list[tuple[str, str, str, str]] = []
-
-    # Ensure predicates exist
-    svc["builtin_type"].ensure_predicates(["sm:depicts", "sm:dimension", "sm:canonicalLink"])
-
-    for obj_id in object_nodes:
-        extra_fields.append(("sm:depicts", obj_id, "uri", ""))
-    if dimension:
-        extra_fields.append(("sm:dimension", dimension, "literal", ""))
-
-    result = attach_file_and_create_node(
-        svc, labels_raw, path, "img", "PHOTO",
-        explicit_id=explicit_id,
-        no_copy=no_copy,
-        canonical_link=canonical_link,
-        extra_fields=extra_fields,
-    )
-
-    response_data: dict = {
-        "message": ". ".join(result["message_parts"]),
-        "node": result["node"],
-    }
-    if result["file_triples"]:
-        response_data["file_triples"] = result["file_triples"]
-    if result["semantic_triples"]:
-        response_data["semantic_triples"] = result["semantic_triples"]
-
-    return {"type": "status", "data": response_data}
-
-
-@command("node.add.video", description="Create a video node with file attachment",
-         interactive=True,
-         flags=[
-             {"name": "path", "type": "string", "required": True,
-              "help": "Path or URL to the video file"},
-             {"name": "id", "type": "string", "help": "Explicit node ID"},
-             {"name": "dimension", "type": "string", "help": "Dimensions (e.g. 1920x1080)"},
-             {"name": "object", "type": "string",
-              "help": "Node IDs this video depicts (comma-separated)"},
-             {"name": "canonical-link", "type": "string", "help": "Original source URL"},
-             {"name": "no-copy", "type": "flag", "help": "Store reference only, do not copy file"},
-         ])
-def cmd_node_add_video(remaining: list[str], flags: dict[str, str]) -> dict:
-    """Create a video node with file attachment and semantic triples.
-
-    Auto-creates:
-    - File metadata triples (``:hasFilePath``, ``:hasFileMime``, etc.)
-    - ``rdf:type`` triple to ``VIDEO``
-    - ``sm:depicts`` triples for each ``--object``
-    - ``sm:dimension`` triple if ``--dimension`` is provided
-    - ``sm:canonicalLink`` triple if ``--canonical-link`` is provided
-    """
-    svc = get_services()
-    path = flags.get("path", "")
-    if not path:
-        path = remaining[0] if remaining else ""
-    if not path:
-        raise CommandValidationError("Specify --path to the video file")
-
-    labels_raw = flags.get("labels") or ""
-    explicit_id = flags.get("id", "")
-    no_copy = "no-copy" in flags or flags.get("no-copy", "").lower() in ("true", "1", "yes")
-    canonical_link = flags.get("canonical-link", "") or ""
-    dimension = parse_dimension(flags.get("dimension", "") or "")
-    object_nodes = resolve_node_refs(svc, flags.get("object", "") or "", "object")
-
-    extra_fields: list[tuple[str, str, str, str]] = []
-    svc["builtin_type"].ensure_predicates(["sm:depicts", "sm:dimension", "sm:canonicalLink"])
-
-    for obj_id in object_nodes:
-        extra_fields.append(("sm:depicts", obj_id, "uri", ""))
-    if dimension:
-        extra_fields.append(("sm:dimension", dimension, "literal", ""))
-
-    result = attach_file_and_create_node(
-        svc, labels_raw, path, "vid", "VIDEO",
-        explicit_id=explicit_id,
-        no_copy=no_copy,
-        canonical_link=canonical_link,
-        extra_fields=extra_fields,
-    )
-
-    response_data: dict = {
-        "message": ". ".join(result["message_parts"]),
-        "node": result["node"],
-    }
-    if result["file_triples"]:
-        response_data["file_triples"] = result["file_triples"]
-    if result["semantic_triples"]:
-        response_data["semantic_triples"] = result["semantic_triples"]
-
-    return {"type": "status", "data": response_data}
-
-
-@command("node.add.file", description="Create a document node with file attachment",
-         interactive=True,
-         flags=[
-             {"name": "path", "type": "string", "required": True,
-              "help": "Path or URL to the file"},
-             {"name": "id", "type": "string", "help": "Explicit node ID"},
-             {"name": "theme", "type": "string",
-              "help": "Node IDs representing this document's themes (comma-separated)"},
-             {"name": "canonical-link", "type": "string", "help": "Original source URL"},
-             {"name": "no-copy", "type": "flag", "help": "Store reference only, do not copy file"},
-         ])
-def cmd_node_add_file(remaining: list[str], flags: dict[str, str]) -> dict:
-    """Create a document node with file attachment and theme triples.
-
-    Auto-creates:
-    - File metadata triples
-    - ``rdf:type`` triple to ``DOCUMENT``
-    - ``sm:theme`` triples for each ``--theme``
-    - ``sm:canonicalLink`` triple if ``--canonical-link`` is provided
-    """
-    svc = get_services()
-    path = flags.get("path", "")
-    if not path:
-        path = remaining[0] if remaining else ""
-    if not path:
-        raise CommandValidationError("Specify --path to the file")
-
-    labels_raw = flags.get("labels") or ""
-    explicit_id = flags.get("id", "")
-    no_copy = "no-copy" in flags or flags.get("no-copy", "").lower() in ("true", "1", "yes")
-    canonical_link = flags.get("canonical-link", "") or ""
-    theme_nodes = resolve_node_refs(svc, flags.get("theme", "") or "", "theme")
-
-    extra_fields: list[tuple[str, str, str, str]] = []
-    svc["builtin_type"].ensure_predicates(["sm:theme", "sm:canonicalLink"])
-
-    for theme_id in theme_nodes:
-        extra_fields.append(("sm:theme", theme_id, "uri", ""))
-
-    result = attach_file_and_create_node(
-        svc, labels_raw, path, "doc", "DOCUMENT",
-        explicit_id=explicit_id,
-        no_copy=no_copy,
-        canonical_link=canonical_link,
-        extra_fields=extra_fields,
-    )
-
-    response_data: dict = {
-        "message": ". ".join(result["message_parts"]),
-        "node": result["node"],
-    }
-    if result["file_triples"]:
-        response_data["file_triples"] = result["file_triples"]
-    if result["semantic_triples"]:
-        response_data["semantic_triples"] = result["semantic_triples"]
-
-    return {"type": "status", "data": response_data}
-
-
-@command("node.add.code", description="Create a source code node with file attachment",
-         interactive=True,
-         flags=[
-             {"name": "path", "type": "string", "required": True,
-              "help": "Path or URL to the source code file"},
-             {"name": "lang", "type": "string", "required": True,
-              "help": "Programming language (e.g. python, javascript)"},
-             {"name": "id", "type": "string", "help": "Explicit node ID"},
-             {"name": "canonical-link", "type": "string", "help": "Original source URL"},
-             {"name": "no-copy", "type": "flag", "help": "Store reference only, do not copy file"},
-         ])
-def cmd_node_add_code(remaining: list[str], flags: dict[str, str]) -> dict:
-    """Create a source code node with file attachment and language triple.
-
-    Auto-creates:
-    - File metadata triples
-    - ``rdf:type`` triple to ``SOURCE_CODE``
-    - ``sm:programmingLanguage`` triple with the language value
-    - ``sm:canonicalLink`` triple if ``--canonical-link`` is provided
-    """
-    svc = get_services()
-    path = flags.get("path", "")
-    if not path:
-        path = remaining[0] if remaining else ""
-    if not path:
-        raise CommandValidationError("Specify --path to the source code file")
-
-    lang = flags.get("lang", "")
-    if not lang:
-        # Try positional after path
-        lang = remaining[1] if len(remaining) > 1 else ""
-    if not lang:
-        raise CommandValidationError("Specify --lang for the programming language")
-
-    labels_raw = flags.get("labels") or ""
-    explicit_id = flags.get("id", "")
-    no_copy = "no-copy" in flags or flags.get("no-copy", "").lower() in ("true", "1", "yes")
-    canonical_link = flags.get("canonical-link", "") or ""
-
-    extra_fields: list[tuple[str, str, str, str]] = []
-    svc["builtin_type"].ensure_predicates(["sm:programmingLanguage", "sm:canonicalLink"])
-
-    extra_fields.append(("sm:programmingLanguage", lang, "literal", ""))
-
-    result = attach_file_and_create_node(
-        svc, labels_raw, path, "doc", "SOURCE_CODE",
-        explicit_id=explicit_id,
-        no_copy=no_copy,
-        canonical_link=canonical_link,
-        extra_fields=extra_fields,
-    )
-
-    response_data: dict = {
-        "message": ". ".join(result["message_parts"]),
-        "node": result["node"],
-    }
-    if result["file_triples"]:
-        response_data["file_triples"] = result["file_triples"]
-    if result["semantic_triples"]:
-        response_data["semantic_triples"] = result["semantic_triples"]
-
-    return {"type": "status", "data": response_data}
-
-
-# ── CRUD commands (unchanged) ────────────────────────────────────────────
+# ── CRUD commands ────────────────────────────────────────────────────────
 
 
 @command("node.update", description="Update node labels/definitions",

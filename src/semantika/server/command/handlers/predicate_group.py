@@ -45,7 +45,8 @@ def cmd_predicate_group_view(remaining: list[str], flags: dict[str, str]) -> dic
 
 
 @command("predicate.group.add", description="Create a predicate group", interactive=True,
-         params=[{"name": "name", "type": "string", "required": True}])
+         params=[{"name": "name", "type": "string", "required": True,
+                  "placeholder": "measurement-units or my-group-name"}])
 def cmd_predicate_group_add(remaining: list[str], flags: dict[str, str]) -> dict:
     """Create a new predicate group."""
     svc = get_services()

@@ -92,10 +92,16 @@ def cmd_predicate_view(remaining: list[str], flags: dict[str, str]) -> dict:
 
 
 @command("predicate.add", description="Create a predicate", interactive=True,
-         params=[{"name": "predicate_id", "type": "string", "required": True}],
-         flags=[{"name": "labels", "type": "string", "help": "Labels as LANG::TEXT"},
-                {"name": "descriptions", "type": "string", "help": "Descriptions"},
-                {"name": "wikidata", "type": "flag", "help": "Auto-fetch labels from Wikidata"}])
+         params=[{"name": "predicate_id", "type": "string", "required": True,
+                  "placeholder": "ex:knows or knows"}],
+         flags=[{"name": "labels", "type": "string",
+                 "help": "Labels as LANG::TEXT pairs",
+                 "placeholder": "en::knows, fr::connaître, eo::konas"},
+                {"name": "descriptions", "type": "string",
+                 "help": "Descriptions as LANG::TEXT pairs",
+                 "placeholder": "en::A predicate that represents knowing someone"},
+                {"name": "wikidata", "type": "flag",
+                 "help": "Auto-fetch labels from Wikidata"}])
 def cmd_predicate_add(remaining: list[str], flags: dict[str, str]) -> dict:
     """Add a new predicate."""
     svc = get_services()

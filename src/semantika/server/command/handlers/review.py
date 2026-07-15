@@ -75,12 +75,21 @@ def cmd_review_delete(remaining: list[str], flags: dict[str, str]) -> dict:
 
 
 @command("proof.add", description="Add a proof to a triple", interactive=True,
-         params=[{"name": "subject_id", "type": "string", "required": True},
-                 {"name": "predicate_id", "type": "string", "required": True},
-                 {"name": "object_value", "type": "string", "required": True}],
-         flags=[{"name": "proof_type", "type": "string", "help": "Type of proof"},
-                {"name": "source", "type": "string", "help": "Source citation"},
-                {"name": "notes", "type": "string", "help": "Additional notes"}])
+         params=[{"name": "subject_id", "type": "string", "required": True,
+                  "placeholder": "ALICE or ALI (node ID prefix)"},
+                 {"name": "predicate_id", "type": "string", "required": True,
+                  "placeholder": "ex:knows or know (predicate ID)"},
+                 {"name": "object_value", "type": "string", "required": True,
+                  "placeholder": "BOB (node ID) or \"a literal\""}],
+         flags=[{"name": "proof_type", "type": "string",
+                 "help": "Type of proof (e.g. observation, citation, experiment)",
+                 "placeholder": "observation"},
+                {"name": "source", "type": "string",
+                 "help": "Source citation (URL or reference)",
+                 "placeholder": "https://doi.org/10.1234/example"},
+                {"name": "notes", "type": "string",
+                 "help": "Additional notes about this proof",
+                 "placeholder": "This was verified by experiment X"}])
 def cmd_proof_add(remaining: list[str], flags: dict[str, str]) -> dict:
     """Add a proof (justification) for a triple."""
     svc = get_services()
