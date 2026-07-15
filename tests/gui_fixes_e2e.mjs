@@ -90,6 +90,28 @@ async function test(name, fn) {
     assert(panel.includes("labels"), "Form should have labels field");
   });
 
+  // 3b. !node add concept (trailing space) also opens form (regression: Enter was
+  //     auto-filling --id instead of submitting when input had trailing space)
+  await test("!node add concept (trailing space) opens Add Node form", async () => {
+    await typeAndRun("!node add concept ");
+    const panel = await page.evaluate(() => {
+      const p = document.querySelector(".tab-content.active");
+      return p ? p.textContent : "";
+    });
+    assert(panel.includes("Node Add"), `Form should have 'Node Add' heading, got: "${panel.slice(0, 100)}"`);
+    assert(panel.includes("labels"), "Form should have labels field");
+  });
+
+  // 3c. Same for !node add code (trailing space)
+  await test("!node add code (trailing space) opens Add Source Code form", async () => {
+    await typeAndRun("!node add code ");
+    const panel = await page.evaluate(() => {
+      const p = document.querySelector(".tab-content.active");
+      return p ? p.textContent : "";
+    });
+    assert(panel.includes("Node Add Code"), `Form should have 'Node Add Code' heading, got: "${panel.slice(0, 100)}"`);
+  });
+
   // 4-7. Specialized add commands
   const formTests = [
     { cmd: "!node add photo", heading: "Node Add Photo" },
