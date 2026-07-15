@@ -354,7 +354,6 @@
   .btn-small.btn-sort { border-color: #3a5a5a; color: #7cf; }
   .btn-icon { background: none; border: none; color: var(--clr-sub); cursor: pointer; padding: 0 4px; font-size: 0.85rem; }
   .btn-icon:hover { color: #e0e0e0; }
-  .list-wrapper { flex: 1; overflow-y: auto; }
   .row { display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0.75rem; border-bottom: 1px solid #2a2a3e; cursor: pointer; }
   .row:hover { background: #22223a; }
   .row.selected { background: #2a2a4a; }
@@ -362,5 +361,4 @@
   .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #e0e0e0; font-weight: 600; }
   .id { color: var(--clr-sub); font-size: 0.78rem; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .actions { flex-shrink: 0; }
-  .empty { color: var(--clr-muted); text-align: center; padding: 2rem; }
 </style>
