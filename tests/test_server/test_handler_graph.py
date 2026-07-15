@@ -253,7 +253,7 @@ class TestCmdPredicateSearch:
 
     def test_search(self, seeded: dict) -> None:
         result = dispatch(["predicate", "search", "knows"], {})
-        assert result["type"] == "table"
+        assert result["type"] == "predicate-list"
 
 
 class TestCmdPredicateView:

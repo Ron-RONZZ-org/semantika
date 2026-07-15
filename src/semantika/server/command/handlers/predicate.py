@@ -20,12 +20,35 @@ logger = logging.getLogger(__name__)
 
 @command("predicate.list", description="List all predicates",
          permission_level=PermissionLevel.READ,
+         params=[{"name": "limit", "type": "number", "default": 100}],
+         flags=[
+             {"name": "order_by", "type": "string", "help": "Sort column (predicate_id, created_at, updated_at)"},
+             {"name": "direction", "type": "string", "help": "Sort direction (asc, desc)"},
+             {"name": "offset", "type": "number", "help": "Row offset for pagination"},
+         ],
          list_id_key="predicates")
 def cmd_predicate_list(remaining: list[str], flags: dict[str, str]) -> dict:
-    """List all predicates."""
+    """List all predicates.
+
+    Supports sorting via ``--order_by`` (default ``predicate_id``) and
+    ``--direction`` (default ``asc``). Supports pagination via ``--offset``.
+    """
     svc = get_services()
-    preds = svc["predicate"].list()
-    return {"type": "predicate-list", "data": preds}
+    limit = int(flags.get("limit", 100))
+    offset = int(flags.get("offset", 0))
+    order_by = flags.get("order_by", "predicate_id") or "predicate_id"
+    direction = flags.get("direction", "asc") or "asc"
+    # Validate sort column to prevent SQL injection
+    allowed_columns = {"predicate_id", "created_at", "updated_at"}
+    if order_by not in allowed_columns:
+        order_by = "predicate_id"
+    direction = "ASC" if direction.lower() == "asc" else "DESC"
+    preds = svc["predicate"].list(
+        limit=limit, offset=offset,
+        order_by=order_by, direction=direction,
+    )
+    total = svc["predicate"].count()
+    return {"type": "predicate-list", "data": {"predicates": preds, "total": total}}
 
 
 @command("predicate.search", description="Search predicates",
@@ -48,7 +71,7 @@ def cmd_predicate_search(remaining: list[str], flags: dict[str, str]) -> dict:
                     results.append(wd)
         except Exception as exc:
             logger.warning("Wikidata predicate search failed: %s", exc)
-    return {"type": "table", "data": results, "label": f"Predicates matching '{q}'"}
+    return {"type": "predicate-list", "data": results}
 
 
 @command("predicate.view", description="View predicate details",

@@ -54,7 +54,7 @@ Svelte 5 SPA frontend — command-bar UI with rich result rendering for the Sema
 | Component | Purpose |
 |-----------|---------|
 | `NodeListTab.svelte` | Searchable node list with selection, batch delete |
-| `PredicateListTab.svelte` | Searchable predicate list with selection, batch delete |
+| `PredicateListTab.svelte` | Searchable predicate list with selection, batch delete, infinite scroll (ScrollList), sort (predicate_id/created_at), keyboard shortcuts (`s` sort, `/` search, `v` select) |
 | `TripleListTab.svelte` | Filterable triple list (by subject/predicate) |
 | `SparqlQueryEditor.svelte` | SPARQL query editor with CodeMirror 6 — syntax highlighting, Run/Stop, split-editor/result layout |
 | `SparqlResultTable.svelte` | SPARQL result renderer — table for SELECT, Yes/No for ASK, Turtle for CONSTRUCT, CSV export |
