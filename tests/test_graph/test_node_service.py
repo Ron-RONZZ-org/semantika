@@ -46,6 +46,42 @@ class TestNodeService:
         assert node["code_content"] == ""
         assert node["code_language"] == ""
 
+    def test_trash_preserves_code_content(self, services: dict):
+        """Moving a node to trash preserves code_content and code_language."""
+        ns = services["node"]
+        ns.create({
+            "node_id": "CODE_TRASH",
+            "labels": {"en": "Code Trash"},
+            "code_content": "def foo(): pass",
+            "code_language": "python",
+        })
+        ns.delete("CODE_TRASH", soft=True)
+        # Trash table should have code columns
+        trash_entry = ns.db.execute_one(
+            "SELECT * FROM nodes_trash WHERE node_id = ?", ("CODE_TRASH",)
+        )
+        assert trash_entry is not None
+        assert trash_entry["code_content"] == "def foo(): pass"
+        assert trash_entry["code_language"] == "python"
+
+    def test_batch_delete_preserves_code_content(self, services: dict):
+        """batch_delete should include code columns in trash entries."""
+        ns = services["node"]
+        ns.create({
+            "node_id": "BATCH_CODE",
+            "labels": {"en": "Batch Code"},
+            "code_content": "x = 1",
+            "code_language": "python",
+        })
+        deleted, errors = ns.batch_delete(["BATCH_CODE"], soft=True)
+        assert deleted == 1
+        trash_entry = ns.db.execute_one(
+            "SELECT * FROM nodes_trash WHERE node_id = ?", ("BATCH_CODE",)
+        )
+        assert trash_entry is not None
+        assert trash_entry["code_content"] == "x = 1"
+        assert trash_entry["code_language"] == "python"
+
     def test_search(self, services: dict):
         ns = services["node"]
         ns.create({"node_id": "DOG", "labels": {"en": "Dog"}})
@@ -201,6 +237,28 @@ class TestNodeService:
         count = ns.empty_all_trash()
         assert count >= 1
         assert len(ns.list_trash()) == 0
+
+    def test_migrate_code_columns(self, services: dict):
+        """_migrate_code_columns should add columns to existing tables idempotently."""
+        from semantika.graph.db import _migrate_code_columns
+        # Call migration
+        _migrate_code_columns(services["node"].db)
+        # Verify columns exist on nodes table
+        cols = services["node"].db.execute(
+            "PRAGMA table_info(nodes)"
+        )
+        col_names = {c["name"] for c in cols}
+        assert "code_content" in col_names
+        assert "code_language" in col_names
+        # Call again — should be idempotent
+        _migrate_code_columns(services["node"].db)
+        # Verify nodes_trash too
+        trash_cols = services["node"].db.execute(
+            "PRAGMA table_info(nodes_trash)"
+        )
+        trash_names = {c["name"] for c in trash_cols}
+        assert "code_content" in trash_names
+        assert "code_language" in trash_names
 
     def test_ensure_fts_creates_index(self, services: dict):
         """_ensure_fts creates the FTS table."""
