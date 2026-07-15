@@ -1,4 +1,5 @@
 <script>
+  import { onMount } from "svelte";
   import { overlayStack } from "@lightercore/ui/overlayStack.svelte.js";
 
   let {
@@ -7,12 +8,16 @@
   } = $props();
 
   // Register with overlay stack so TabView defers to this modal on ESC/Q
+  // Using onMount (not $effect) to avoid contributing to mount-time flush depth,
+  // since overlayStack.push() writes to module-level $state.
   let _overlayEntry = $state(null);
-  $effect(() => {
+  onMount(() => {
     _overlayEntry = overlayStack.push("llm-setup-modal", () => onDismiss());
     return () => {
-      if (_overlayEntry) overlayStack.remove(_overlayEntry.id);
-      _overlayEntry = null;
+      if (_overlayEntry) {
+        overlayStack.remove(_overlayEntry.id);
+        _overlayEntry = null;
+      }
     };
   });
 

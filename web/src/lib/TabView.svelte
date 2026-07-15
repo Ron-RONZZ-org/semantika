@@ -214,7 +214,7 @@ import SparqlQueryEditor from "./sparql/SparqlQueryEditor.svelte";
 
   {#if tabStore.count > 1}
     <div class="tab-bar" role="tablist" aria-label="Open tabs">
-      {#each tabStore.tabs as tab, i}
+      {#each tabStore.tabs as tab, i (tab.id)}
         <button
           role="tab"
           class="tab"

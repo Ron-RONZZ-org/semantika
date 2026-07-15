@@ -65,7 +65,7 @@
 
 {#if messages.length > 0}
   <div class="conversation">
-    {#each messages as msg, i}
+    {#each messages as msg, i (i)}
       <div class="message" class:user={msg.role === "user"} class:assistant={msg.role === "assistant"}>
         <div class="msg-header">
           <span class="msg-role">{msg.role === "user" ? "You" : "Semantika"}</span>
