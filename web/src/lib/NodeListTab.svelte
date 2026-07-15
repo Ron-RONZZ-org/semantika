@@ -148,12 +148,16 @@
 
   $effect(init);
 
-  /** Re-fetch when sort mode changes. */
+  /** Track previous sort key to avoid infinite re-fetch cycles. */
+  let _prevSortKey = $state("");
+
+  /** Re-fetch when sort mode changes (actual user action, not data reload). */
   $effect(() => {
-    // Read sort.mode to track dependency
-    const _mode = sort.mode;
-    // Skip initial effect run (init handles that)
-    if (allNodes.length > 0) {
+    const key = `${sort.mode.column}|${sort.mode.direction}`;
+    // Only re-fetch when the sort mode itself changes, not when allNodes
+    // is populated by init() or by a prior fetch response.
+    if (allNodes.length > 0 && key !== _prevSortKey) {
+      _prevSortKey = key;
       resetAndLoad();
     }
   });
