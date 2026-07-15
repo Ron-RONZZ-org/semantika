@@ -23,6 +23,29 @@ class TestNodeService:
         with pytest.raises(ValueError, match="already exists"):
             ns.create({"node_id": "DUP", "labels": {"en": "Second"}})
 
+    def test_create_with_code_content(self, services: dict):
+        """Node can be created with inline code content."""
+        ns = services["node"]
+        node = ns.create({
+            "node_id": "CODE_TEST",
+            "labels": {"en": "My Script"},
+            "code_content": "print('hello')",
+            "code_language": "python",
+        })
+        assert node["code_content"] == "print('hello')"
+        assert node["code_language"] == "python"
+        # Verify persisted
+        fetched = ns.get("CODE_TEST")
+        assert fetched["code_content"] == "print('hello')"
+        assert fetched["code_language"] == "python"
+
+    def test_create_without_code_content(self, services: dict):
+        """Node without code content should default to empty strings."""
+        ns = services["node"]
+        node = ns.create({"node_id": "NOCODE", "labels": {"en": "Plain"}})
+        assert node["code_content"] == ""
+        assert node["code_language"] == ""
+
     def test_search(self, services: dict):
         ns = services["node"]
         ns.create({"node_id": "DOG", "labels": {"en": "Dog"}})

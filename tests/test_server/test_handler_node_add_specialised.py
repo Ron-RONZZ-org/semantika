@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from semantika.server.command import handlers  # noqa: F401
+from semantika.server.command.handlers import node_specialised  # noqa: F401 — register specialised handlers
 from semantika.server.command.helpers import safe_json_loads as _sjs
 from semantika.server.command.registry import dispatch
 
@@ -186,8 +187,9 @@ class TestNodeAddFile:
 
 
 class TestNodeAddCode:
-    def test_code_missing_path(self):
-        with pytest.raises(Exception, match="Specify --path"):
+    def test_code_both_missing(self):
+        """Missing both --code and --path should raise a clear error."""
+        with pytest.raises(Exception, match="Provide source code via --code"):
             dispatch(["node", "add", "code"], {})
 
     def test_code_missing_lang(self, seeded: dict, tmp_path):
@@ -195,9 +197,55 @@ class TestNodeAddCode:
         p = tmp_path / "script.py"
         p.write_text("print('hello')")
         with pytest.raises(Exception, match="Specify --lang"):
-            dispatch(["node", "add", "code"], {"path": str(p), "no-copy": "true"})
+            dispatch(["node", "add", "code"], {"path": str(p)})
 
-    def test_code_no_copy(self, seeded: dict, tmp_path):
+    def test_code_inline_paste(self, seeded: dict):
+        """Inline --code paste should create node with code in DB."""
+        result = dispatch(
+            ["node", "add", "code"],
+            {"code": "print('hello world')", "lang": "python"},
+        )
+        assert result["type"] == "status"
+        data = result["data"]
+        node = data["node"]
+        assert node["code_content"] == "print('hello world')"
+        assert node["code_language"] == "python"
+        # Should have sm:programmingLanguage triple
+        assert len(data.get("semantic_triples", [])) >= 1
+
+    def test_code_inline_paste_with_id(self, seeded: dict):
+        """Inline --code paste with explicit --id."""
+        result = dispatch(
+            ["node", "add", "code"],
+            {"code": "def foo(): pass", "lang": "python", "id": "MY_SCRIPT"},
+        )
+        assert result["type"] == "status"
+        assert result["data"]["node"]["node_id"] == "MY_SCRIPT"
+        assert result["data"]["node"]["code_content"] == "def foo(): pass"
+
+    def test_code_inline_with_canonical_link(self, seeded: dict):
+        """Inline --code paste with --canonical-link."""
+        result = dispatch(
+            ["node", "add", "code"],
+            {"code": "console.log('hi')", "lang": "javascript",
+             "canonical-link": "https://example.com/app.js"},
+        )
+        assert result["type"] == "status"
+        # Should have sm:canonicalLink triple
+        triples = result["data"].get("semantic_triples", [])
+        assert any(t["predicate_id"] == "sm:canonicalLink" for t in triples)
+
+    def test_code_inline_with_labels(self, seeded: dict):
+        """Inline --code paste with --labels."""
+        result = dispatch(
+            ["node", "add", "code"],
+            {"code": "print(1)", "lang": "python", "labels": "Hello script"},
+        )
+        assert result["type"] == "status"
+        assert "Hello script" in result["data"].get("message", "")
+
+    def test_code_file_path(self, seeded: dict, tmp_path):
+        """File-based path should still work (backward compat)."""
         p = tmp_path / "script.py"
         p.write_text("print('hello')")
         result = dispatch(
@@ -205,10 +253,10 @@ class TestNodeAddCode:
             {"path": str(p), "lang": "python", "no-copy": "true"},
         )
         assert result["type"] == "status"
-        # Should have sm:programmingLanguage triple
         assert len(result["data"].get("semantic_triples", [])) >= 1
 
-    def test_code_with_canonical_link(self, seeded: dict, tmp_path):
+    def test_code_file_path_with_canonical_link(self, seeded: dict, tmp_path):
+        """File-based path with canonical link (backward compat)."""
         p = tmp_path / "app.js"
         p.write_text("console.log('hi')")
         result = dispatch(
@@ -217,7 +265,16 @@ class TestNodeAddCode:
         )
         assert result["type"] == "status"
 
-
+    def test_code_inline_takes_precedence(self, seeded: dict, tmp_path):
+        """When both --code and --path are given, --code wins."""
+        p = tmp_path / "other.py"
+        p.write_text("print('other')")
+        result = dispatch(
+            ["node", "add", "code"],
+            {"code": "print('code wins')", "path": str(p), "lang": "python"},
+        )
+        assert result["type"] == "status"
+        assert result["data"]["node"]["code_content"] == "print('code wins')"
 # ── Removed flags error messages ────────────────────────────────────────
 
 
@@ -277,12 +334,20 @@ class TestSpecialisedNodeInTree:
         assert "canonical-link" in flags
         assert "no-copy" in flags
 
-    def test_code_has_lang(self):
+    def test_code_has_flags(self):
         from semantika.server.command.registry import get_handler_metadata
         meta = get_handler_metadata("node.add.code")
         assert meta is not None
-        flags = {f["name"] for f in meta.get("flags", [])}
-        assert "lang" in flags
+        flag_names = {f["name"] for f in meta.get("flags", [])}
+        assert "code" in flag_names  # new inline paste flag
+        assert "path" in flag_names  # file upload (optional)
+        assert "lang" in flag_names
+        assert "no-copy" not in flag_names  # removed — code is text-only
+        # Verify group metadata
+        code_flag = next(f for f in meta["flags"] if f["name"] == "code")
+        path_flag = next(f for f in meta["flags"] if f["name"] == "path")
+        assert code_flag.get("group") == "source"
+        assert path_flag.get("group") == "source"
 
 
 # ── Node-view response type tests ────────────────────────────────────────
@@ -335,7 +400,7 @@ class TestNodeViewType:
         p.write_text("print('hello')")
         result = dispatch(
             ["node", "add", "code"],
-            {"path": str(p), "lang": "python", "no-copy": "true"},
+            {"path": str(p), "lang": "python"},
         )
         assert result["type"] == "status"
         node_id = result["data"]["node"]["node_id"]

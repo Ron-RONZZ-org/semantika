@@ -65,9 +65,12 @@ def cmd_unit_decompose(remaining: list[str], flags: dict[str, str]) -> dict:
 
 
 @command("unit.add", description="Create a new unit", interactive=True,
-         params=[{"name": "node_id", "type": "string"},
-                {"name": "labels", "type": "string"},
-                {"name": "symbol", "type": "string"}])
+         params=[{"name": "node_id", "type": "string",
+                  "placeholder": "METER or my_custom_unit"},
+                 {"name": "labels", "type": "string",
+                  "placeholder": "en::meter, eo::metro, fr::mètre"},
+                 {"name": "symbol", "type": "string",
+                  "placeholder": "m or m/s²"}])
 def cmd_unit_add(remaining: list[str], flags: dict[str, str]) -> dict:
     """Create a new unit in the ontology."""
     svc = get_services()

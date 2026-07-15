@@ -246,27 +246,31 @@ def _get_template_for_kind(kind: str) -> str:
 SCHEMA = {
     "nodes": """
         CREATE TABLE IF NOT EXISTS nodes (
-            node_id       TEXT PRIMARY KEY,
-            iri           TEXT NOT NULL DEFAULT '',
-            labels        TEXT NOT NULL DEFAULT '{}',   -- JSON: {"en": "Label"}
-            label_text    TEXT NOT NULL DEFAULT '',
-            definitions   TEXT NOT NULL DEFAULT '{}',   -- JSON: {"en": "Definition"}
+            node_id         TEXT PRIMARY KEY,
+            iri             TEXT NOT NULL DEFAULT '',
+            labels          TEXT NOT NULL DEFAULT '{}',   -- JSON: {"en": "Label"}
+            label_text      TEXT NOT NULL DEFAULT '',
+            definitions     TEXT NOT NULL DEFAULT '{}',   -- JSON: {"en": "Definition"}
             definition_text TEXT NOT NULL DEFAULT '',
-            created_at    TEXT NOT NULL,
-            updated_at    TEXT NOT NULL
+            code_content    TEXT NOT NULL DEFAULT '',      -- Inline code snippet (text only)
+            code_language   TEXT NOT NULL DEFAULT '',      -- Programming language tag
+            created_at      TEXT NOT NULL,
+            updated_at      TEXT NOT NULL
         )
     """,
     "nodes_trash": """
         CREATE TABLE IF NOT EXISTS nodes_trash (
-            node_id       TEXT PRIMARY KEY,
-            iri           TEXT NOT NULL DEFAULT '',
-            labels        TEXT NOT NULL DEFAULT '{}',
-            label_text    TEXT NOT NULL DEFAULT '',
-            definitions   TEXT NOT NULL DEFAULT '{}',
+            node_id         TEXT PRIMARY KEY,
+            iri             TEXT NOT NULL DEFAULT '',
+            labels          TEXT NOT NULL DEFAULT '{}',
+            label_text      TEXT NOT NULL DEFAULT '',
+            definitions     TEXT NOT NULL DEFAULT '{}',
             definition_text TEXT NOT NULL DEFAULT '',
-            created_at    TEXT NOT NULL,
-            updated_at    TEXT NOT NULL,
-            deleted_at    TEXT NOT NULL
+            code_content    TEXT NOT NULL DEFAULT '',
+            code_language   TEXT NOT NULL DEFAULT '',
+            created_at      TEXT NOT NULL,
+            updated_at      TEXT NOT NULL,
+            deleted_at      TEXT NOT NULL
         )
     """,
     "predicates": """
@@ -415,6 +419,7 @@ def init_db() -> None:
     _migrate_review_schema(db)
     _migrate_triples_schema(db)
     _migrate_iri_column(db)
+    _migrate_code_columns(db)
 
     # Seed default predicates if empty
     _seed_default_predicates(db)
@@ -520,6 +525,7 @@ def _ensure_nodes_fts(db: SemantikaDB) -> None:
             "node_id UNINDEXED",
             "label_text",
             "definition_text",
+            "code_content",
         ],
     )
 
@@ -537,6 +543,17 @@ def _ensure_predicates_fts(db: SemantikaDB) -> None:
             "aliases",
         ],
     )
+
+
+def _migrate_code_columns(db: SemantikaDB) -> None:
+    """Add ``code_content`` and ``code_language`` columns to nodes tables."""
+    for table in ("nodes", "nodes_trash"):
+        for col_name, col_def in [("code_content", "TEXT NOT NULL DEFAULT ''"),
+                                   ("code_language", "TEXT NOT NULL DEFAULT ''")]:
+            try:
+                db.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
 
 
 def _seed_default_predicates(db: SemantikaDB) -> None:

@@ -154,6 +154,8 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
             "label_text": extract_label_text(data.get("labels", {})),
             "definitions": json.dumps(data.get("definitions", {})),
             "definition_text": extract_definition_text(data.get("definitions", {})),
+            "code_content": data.get("code_content", ""),
+            "code_language": data.get("code_language", ""),
             "created_at": ts,
             "updated_at": ts,
         }
@@ -161,9 +163,9 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
             with self.db.transaction() as conn:
                 conn.execute(
                     "INSERT INTO nodes (node_id, iri, labels, label_text, definitions, "
-                    "definition_text, created_at, updated_at) "
+                    "definition_text, code_content, code_language, created_at, updated_at) "
                     "VALUES (:node_id, :iri, :labels, :label_text, :definitions, "
-                    ":definition_text, :created_at, :updated_at)",
+                    ":definition_text, :code_content, :code_language, :created_at, :updated_at)",
                     raw,
                 )
                 self._index_fts(node_id_val)
@@ -331,7 +333,8 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
         """Move a node to the trash table, removing related triples first."""
         entry = self.db.execute_one(
             "SELECT node_id, labels, label_text, definitions, definition_text, "
-            "created_at, updated_at FROM nodes WHERE node_id = ?", (node_id,)
+            "code_content, code_language, created_at, updated_at "
+            "FROM nodes WHERE node_id = ?", (node_id,)
         )
         if not entry:
             return
@@ -399,7 +402,7 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
         all_placeholders = ", ".join(["?"] * len(node_ids))
         existing = self.db.execute(
             f"SELECT node_id, rowid, labels, label_text, definitions, "
-            f"definition_text, created_at, updated_at "
+            f"definition_text, code_content, code_language, created_at, updated_at "
             f"FROM {self.table} WHERE node_id IN ({all_placeholders})",
             tuple(node_ids),
         )
@@ -428,7 +431,8 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
         if soft and self._trash_table:
             # Batch soft-delete: move to trash + cascade
             trash_columns = ["node_id", "labels", "label_text", "definitions",
-                             "definition_text", "created_at", "updated_at", "deleted_at"]
+                             "definition_text", "code_content", "code_language",
+                             "created_at", "updated_at", "deleted_at"]
             trash_ph = ", ".join(["?"] * len(trash_columns))
 
             with self.db.transaction() as conn:

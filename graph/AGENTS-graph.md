@@ -17,6 +17,7 @@ Triple store services: NodeService, PredicateService, PredicateGroupService, Tri
 - WAL mode for concurrent reads
 - Each service file must stay under 500 lines
 - Nodes table uses `node_id TEXT PRIMARY KEY` (not UUID) for human-readable IDs
+- Nodes table has optional `code_content TEXT` and `code_language TEXT` columns for inline source code storage (FTS5-indexed alongside label_text/definition_text)
 - Triple store schema uses compound primary key (subject_id, predicate_id, object_value, object_type) like RDF
 
 ## Input/Output Expectations

@@ -199,14 +199,15 @@ semantika/
 │           │   ├── helpers.py   # Shared helper utilities
 │           │   └── handlers/    # One file per domain (auto-registered via import)
 │           │       ├── __init__.py
-│           │       ├── graph.py / node.py / node_helpers.py
-│           │       ├── predicate.py / predicate_group.py / predicate_trash.py
-│           │       ├── triple.py / review.py
-│           │       ├── backup.py / reset.py
-│           │       ├── context.py  # Context store for multi-turn flows (!context.get)
-│           │       ├── help.py
-│           │       ├── llm.py
-│           │       ├── trash.py
+│               │   ├── graph.py / node.py / node_helpers.py
+│               │   ├── node_specialised.py  # !node add photo|video|file|code
+│               │   ├── predicate.py / predicate_group.py / predicate_trash.py
+│               │   ├── triple.py / review.py
+│               │   ├── backup.py / reset.py
+│               │   ├── context.py  # Context store for multi-turn flows (!context.get)
+│               │   ├── help.py
+│               │   ├── llm.py
+│               │   ├── trash.py
 │           │       ├── unit.py
 │           │       └── user_config.py
 │           ├── llm/             # LLM provider abstraction
@@ -591,6 +592,31 @@ Semantika supports persistent user preferences stored as JSON at `~/.local/share
 - API: `GET/PATCH /api/v1/user/config`
 - The frontend fetches config on startup and falls back to browser language
 - Normalisation applies only to new IDs (no retroactive cleanup)
+
+## Inline Code Storage
+
+Source code nodes (``!node add code``) support two modes:
+- **Inline paste** (default): Use ``--code`` to pass source text directly. Content is stored in the ``code_content`` and ``code_language`` columns of the ``nodes`` table, making it FTS5-searchable.
+- **File upload**: Use ``--path`` to reference a source file (existing behavior, still supported).
+
+The ``--code`` flag takes precedence over ``--path`` when both are provided. The ``--no-copy`` flag is removed for ``!node add code`` since text-only code has no file to copy.
+
+## Form Metadata Enhancements (Backend → Frontend)
+
+The ``@command`` decorator's param/flag dicts support these metadata keys for enhanced GUI rendering:
+
+| Key | Type | Effect |
+|-----|------|--------|
+| ``placeholder`` | string | Example input shown in the form field |
+| ``group`` | string | Mutual exclusion group — flags sharing a group render as a toggle |
+| ``suggestions`` | list of strings | Autocomplete suggestions rendered as ``<datalist>`` |
+| ``type: "code"`` | string | Renders a multi-line ``<textarea>`` with Preview (Ctrl+Shift+P) |
+
+All ``!xxx add`` commands (node, predicate, triple, unit, proof, predicate.group) now include ``placeholder`` text.
+
+## Node Handler Module Split
+
+``node.py`` exceeded 500 lines. The specialised subcommands (``!node add photo|video|file|code``) were extracted to ``node_specialised.py``. The core CRUD, concept add, merge, and rename remain in ``node.py``.
 
 ## Coding Guidelines
 

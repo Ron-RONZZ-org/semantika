@@ -229,7 +229,14 @@ async function handleDelete(ids) {
 - **Katex rendering**: Use `katex` npm package. Render in result panels when triples or nodes contain formula data.
 - **Code blocks**: Use `highlight.js` or similar for syntax highlighting in triple literal display.
 - **Command bar autocomplete**: Must suggest node IDs and predicate IDs as the user types, not just command names.
-- **Form popups**: `NodeAddForm`, `TripleAddForm`, `PredicateAddForm` — each maps to a `!command` with missing params.
+- **Form popups**: `DynamicForm.svelte` auto-generates forms from backend command metadata (`params`/`flags` from `@command` decorator). Features:
+  - **Required/Optional sections**: Params are grouped under a "Required" section label; flags under "Optional".
+  - **Field placeholders**: The `placeholder` field in param/flag metadata is rendered as placeholder text showing example input.
+  - **Field hints**: The `help` or `placeholder` text is shown as a hint alongside the field label (replaces the old type-name hint).
+  - **Group toggles**: Flags sharing a `group` key render as a segmented toggle (e.g. paste code vs upload file). Only the active option's input is shown.
+  - **Suggestions/datalist**: Flags with a `suggestions` array render as `<input>` + `<datalist>` for autocomplete (e.g. programming languages).
+  - **Code textarea**: `{type: "code"}` renders a multi-line `<textarea>` with monospace font.
+  - **Code preview**: Ctrl+Shift+P or the Preview button opens a modal with the code content rendered in a `<pre>` block.
 - **Prompt command autocomplete**: The `/` prefix shows all available prompt commands from the backend. After selecting a name, show placeholder hints for positional args.
 - **Locale**: The locale badge in HomeHeader lets users switch language. Sync via `PATCH /api/v1/user/config`.
 - **Shared components**: Before modifying a re-export file, check if the change should go into `@lightercore/ui` instead. Canonical implementations are in lightercore.

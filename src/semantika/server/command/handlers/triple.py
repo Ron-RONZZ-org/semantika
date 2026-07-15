@@ -272,17 +272,28 @@ def cmd_triple_view(remaining: list[str], flags: dict[str, str]) -> dict:
 
 
 @command("triple.add", description="Add a relationship statement between two nodes", interactive=True,
-         params=[{"name": "subject_id", "type": "string", "required": True},
-                 {"name": "predicate_id", "type": "string", "required": True},
-                 {"name": "object_value", "type": "string", "required": True}],
+         params=[{"name": "subject_id", "type": "string", "required": True,
+                  "placeholder": "ALICE or ALI (node ID prefix)"},
+                 {"name": "predicate_id", "type": "string", "required": True,
+                  "placeholder": "ex:knows or know (predicate ID)"},
+                 {"name": "object_value", "type": "string", "required": True,
+                  "placeholder": "BOB (node ID) or \"A person\" (literal)"}],
          flags=[{"name": "str", "type": "flag", "help": "Treat object as string literal"},
                 {"name": "int", "type": "flag", "help": "Treat object as integer literal"},
                 {"name": "float", "type": "flag", "help": "Treat object as float literal"},
                 {"name": "bool", "type": "flag", "help": "Treat object as boolean literal"},
-                {"name": "lang", "type": "string", "help": "Language tag"},
-                {"name": "unit", "type": "string", "help": "Unit for numeric literals"},
-                 {"name": "katex", "type": "string", "help": "KaTeX math expression"},
-                 {"name": "str-dosiero", "type": "string", "help": "Read content from file"}])
+                {"name": "lang", "type": "string",
+                 "help": "Language tag for string literals",
+                 "placeholder": "en or eo"},
+                {"name": "unit", "type": "string",
+                 "help": "Unit for numeric literals",
+                 "placeholder": "kg or m/s^2"},
+                 {"name": "katex", "type": "string",
+                  "help": "KaTeX math expression",
+                  "placeholder": "E = mc^2"},
+                 {"name": "str-dosiero", "type": "string",
+                  "help": "Read content from file",
+                  "placeholder": "/path/to/content.txt"}])
 def cmd_triple_add(remaining: list[str], flags: dict[str, str]) -> dict:
     """Add a single relationship statement between two nodes.
 
