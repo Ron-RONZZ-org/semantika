@@ -132,35 +132,6 @@
     finally { submitting = false; }
   }
 
-  /** Render a field input based on its type and definition. */
-  function renderInput(f, id) {
-    if (f.type === "flag") {
-      return `<label class="checkbox-label">
-        <input type="checkbox"${fieldValues[f.name] ? " checked" : ""}
-          onchange={(e) => setField("${f.name}", e.target.checked)} disabled={submitting} />
-        ${f.help || f.name}
-      </label>`;
-    }
-    if (f.type === "code") {
-      return `<textarea id="${id}" value={fieldValues["${f.name}"] || ""}
-        oninput={(e) => setField("${f.name}", e.target.value)}
-        disabled={submitting} placeholder={f.placeholder || ""}
-        rows="10" class="code-textarea"></textarea>`;
-    }
-    // Suggestions: render input + datalist
-    if (f.suggestions && f.suggestions.length > 0) {
-      const listId = id + "-list";
-      return `<input type="${fieldType(f)}" id="${id}" value={fieldValues["${f.name}"] || ""}
-        oninput={(e) => setField("${f.name}", e.target.value)}
-        disabled={submitting} placeholder={f.placeholder || ""} list="${listId}" />
-      <datalist id="${listId}">
-        ${f.suggestions.map(s => `<option value="${s}" />`).join("")}
-      </datalist>`;
-    }
-    return `<input type="${fieldType(f)}" id="${id}" value={fieldValues["${f.name}"] || ""}
-      oninput={(e) => setField("${f.name}", e.target.value)}
-      disabled={submitting} placeholder={f.placeholder || ""} />`;
-  }
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -170,7 +141,31 @@
     <div class="section-label required-section">Required</div>
     {#each params as p}
       <FormField label={p.name} hint={p.help || p.placeholder || ""} required={true} error={formErrors[p.name]}>
-        {@html renderInput({...p, type: p.type || "string", suggestions: p.suggestions}, p.name)}
+        {#if p.type === "flag"}
+          <label class="checkbox-label">
+            <input type="checkbox" checked={fieldValues[p.name] || false}
+              onchange={(e) => setField(p.name, e.target.checked)} disabled={submitting} />
+            {p.help || p.name}
+          </label>
+        {:else if p.type === "code"}
+          <textarea id={p.name} value={fieldValues[p.name] || ""}
+            oninput={(e) => setField(p.name, e.target.value)}
+            disabled={submitting} placeholder={p.placeholder || ""}
+            rows="10" class="code-textarea"></textarea>
+        {:else if p.suggestions && p.suggestions.length > 0}
+          <input type={fieldType(p)} id={p.name} value={fieldValues[p.name] || ""}
+            oninput={(e) => setField(p.name, e.target.value)}
+            disabled={submitting} placeholder={p.placeholder || ""} list={p.name + "-list"} />
+          <datalist id={p.name + "-list"}>
+            {#each p.suggestions as s}
+              <option value={s} />
+            {/each}
+          </datalist>
+        {:else}
+          <input type={fieldType(p)} id={p.name} value={fieldValues[p.name] || ""}
+            oninput={(e) => setField(p.name, e.target.value)}
+            disabled={submitting} placeholder={p.placeholder || ""} />
+        {/if}
       </FormField>
     {/each}
   {/if}
