@@ -200,7 +200,13 @@
       // complete leaf node. ENTER should submit the command so that
       // shouldIntercept can open the form, rather than filling flag
       // suggestions (which is for TAB, not ENTER).
-      const { level: currentLevel } = getCompletions(cmd);
+      // NOTE: use `value` (untrimmed) not `cmd` (trimmed) — trailing space
+      // is semantically significant: it signals that the last token is a
+      // complete command token, not a partial match. Without it,
+      // getCompletions returns level "child" and the Enter handler falls
+      // through to auto-fill the first flag suggestion (e.g. --id) instead
+      // of submitting the command.
+      const { level: currentLevel } = getCompletions(value);
       if (currentLevel === "params") {
         history.push(cmd);
         value = "";
