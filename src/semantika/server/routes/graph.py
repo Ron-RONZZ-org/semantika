@@ -307,10 +307,27 @@ def purge_trash(days: int = 30):
 # ── Predicates ─────────────────────────────────────────────────────────
 
 @router.get("/predicates")
-def list_predicates(limit: int = 100, offset: int = 0):
-    """List all predicates."""
+def list_predicates(
+    limit: int = 100,
+    offset: int = 0,
+    order_by: str = "predicate_id",
+    direction: str = "asc",
+):
+    """List all predicates with optional sorting and pagination.
+
+    Args:
+        limit: Max rows to return.
+        offset: Row offset for pagination.
+        order_by: Sort column (``predicate_id``, ``created_at``, ``updated_at``).
+        direction: Sort direction (``asc`` or ``desc``).
+    """
     svc = _svc()["predicate"]
-    return {"predicates": svc.list(limit=limit, offset=offset), "total": svc.count()}
+    allowed_columns = {"predicate_id", "created_at", "updated_at"}
+    if order_by not in allowed_columns:
+        order_by = "predicate_id"
+    direction = "ASC" if direction.lower() == "asc" else "DESC"
+    preds = svc.list(limit=limit, offset=offset, order_by=order_by, direction=direction)
+    return {"predicates": preds, "total": svc.count()}
 
 
 @router.get("/predicates/search")

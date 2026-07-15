@@ -69,6 +69,42 @@ class TestPredicateAPI:
         data = resp.json()
         assert len(data["results"]) >= 1
 
+    def test_list_predicates_sorted(self, client: TestClient):
+        """List predicates sorted by created_at descending."""
+        resp = client.get("/api/v1/graph/predicates?order_by=created_at&direction=desc")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] >= 7
+        assert len(data["predicates"]) <= 100
+
+    def test_list_predicates_paginated(self, client: TestClient):
+        """List predicates with pagination (offset/limit)."""
+        # Get the first two predicates via pagination (limit=2, offset=0)
+        first = client.get("/api/v1/graph/predicates?limit=2&offset=0")
+        assert first.status_code == 200
+        first_data = first.json()
+        assert len(first_data["predicates"]) == 2
+        first_ids = [p["predicate_id"] for p in first_data["predicates"]]
+
+        # Get next page (limit=2, offset=2)
+        second = client.get("/api/v1/graph/predicates?limit=2&offset=2")
+        assert second.status_code == 200
+        second_data = second.json()
+        if len(second_data["predicates"]) > 0:
+            second_ids = [p["predicate_id"] for p in second_data["predicates"]]
+            # Ensure no overlap between pages
+            for sid in second_ids:
+                assert sid not in first_ids
+
+    def test_list_predicates_rejects_invalid_order_by(self, client: TestClient):
+        """Invalid order_by falls back to predicate_id (no error)."""
+        resp = client.get("/api/v1/graph/predicates?order_by=nonexistent")
+        assert resp.status_code == 200
+        data = resp.json()
+        # Should still return sorted by predicate_id (asc default)
+        ids = [p["predicate_id"] for p in data["predicates"]]
+        assert ids == sorted(ids)
+
     def test_rename_predicate(self, client: TestClient):
         """Rename a predicate's predicate_id, cascading to triples."""
         client.post(
@@ -142,6 +178,26 @@ class TestPredicateCommand:
             json={"tokens": ["predicate", "update"], "flags": {"predicate_id": "rdf:type", "labels": "cmd updated"}},
         )
         assert resp.status_code == 200
+
+    def test_predicate_search_command_returns_predicate_list_type(self, client: TestClient):
+        """!predicate search now returns predicate-list type (not table)."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["predicate", "search"], "flags": {"q": "type"}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data.get("type") == "predicate-list"
+
+    def test_predicate_list_command_with_sort(self, client: TestClient):
+        """!predicate list with --order_by and --direction."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["predicate", "list"], "flags": {"order_by": "created_at", "direction": "desc"}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data.get("type") == "predicate-list"
 
     def test_predicate_delete_command(self, client: TestClient):
         # Create a predicate to delete via command

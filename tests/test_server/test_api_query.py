@@ -86,7 +86,7 @@ class TestQueryAPI:
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert data["type"] == "table"
+        assert data["type"] == "predicate-list"
 
     def test_triple_list_via_command(self, client: TestClient):
         """Verify triple.list command works (was 500 due to WITHOUT ROWID)."""
