@@ -331,14 +331,23 @@ async function run() {
   // ═══════════════════════════════════════════
   console.log("\n═══ PREDICATE — full options ═══");
 
+  await test("!predicate list", async () => {
+    await typeAndRun("!predicate list");
+    await verifyListTabVisible();
+    await verifyNoTabError();
+    // Verify sort button exists (new feature: ScrollList + sort)
+    const sortBtn = getActivePanel().locator(".btn-sort");
+    await sortBtn.waitFor({ state: "visible", timeout: 3000 });
+  });
+  await test("!predicate search routes to PredicateListTab", async () => {
+    await typeAndRun("!predicate search rdfs");
+    await verifyListTabVisible();
+    await verifyActiveTabContains("rdfs");
+  });
   await test("!predicate view", async () => {
     await typeAndRun("!predicate view rdfs:label");
     await verifyActiveTabContains("rdfs:label");
     await verifyNoTabError();
-  });
-  await test("!predicate search", async () => {
-    await typeAndRun("!predicate search rdfs");
-    await verifyActiveTabContains("rdfs");
   });
   await test("!predicate add", async () => {
     await typeAndRun("!predicate add ex:fullTestPred");
