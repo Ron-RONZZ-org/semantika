@@ -189,13 +189,9 @@ def reset_services() -> None:
 
 
 # ── Canonical IRI computation ──────────────────────────────────────────
+# KNOWN_PREFIXES imported from graph.constants (single source of truth).
 
-KNOWN_PREFIXES: dict[str, str] = {
-    "rdf":  "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
-    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
-    "xsd":  "http://www.w3.org/2001/XMLSchema#",
-    "owl":  "http://www.w3.org/2002/07/owl#",
-}
+from semantika.graph.constants import KNOWN_PREFIXES  # noqa: E402
 
 
 def compute_iri(internal_id: str, template: str | None = None) -> str:
@@ -557,39 +553,14 @@ def _migrate_code_columns(db: SemantikaDB) -> None:
 
 
 def _seed_default_predicates(db: SemantikaDB) -> None:
-    """Seed default RDF/OWL predicates if the predicates table is empty."""
-    count = db.execute_one("SELECT COUNT(*) AS cnt FROM predicates")
-    if count and count["cnt"] > 0:
-        return
+    """No-op — seeding moved to ``BuiltinTypeService.ensure_builtins()``.
 
-    defaults = [
-        ("rdf:type", "rdf", {"en": "type", "eo": "tipo"}, {"en": "Is a type of", "eo": "Estas tipo de"}),
-        ("rdfs:subClassOf", "rdfs", {"en": "subclass of", "eo": "subklaso de"}, {"en": "Is a subclass of", "eo": "Estas subklaso de"}),
-        ("rdfs:label", "rdfs", {"en": "label", "eo": "etikedo"}, {"en": "Label for an entity", "eo": "Etikedo por ento"}),
-        ("owl:sameAs", "owl", {"en": "same as", "eo": "sama kiel"}, {"en": "Same entity as", "eo": "Sama ento kiel"}),
-        ("owl:disjointWith", "owl", {"en": "disjoint from", "eo": "malapoga al"}, {"en": "Disjoint from", "eo": "Malapoga al"}),
-        ("owl:inverseOf", "owl", {"en": "inverse of", "eo": "inverso de"}, {"en": "Inverse property of", "eo": "Inversa eco de"}),
-        ("rdfs:seeAlso", "rdfs", {"en": "see also", "eo": "vidu ankau"}, {"en": "Related resource", "eo": "Rilata rimedo"}),
-        # File attachment predicates
-        (":hasFilePath", "manual", {"en": "file path", "eo": "dosiero-loko"}, {"en": "Path to attached file", "eo": "Loko de alkroĉita dosiero"}),
-        (":hasFileMime", "manual", {"en": "MIME type", "eo": "MIME-tipo"}, {"en": "MIME type of attached file", "eo": "MIME-tipo de alkroĉita dosiero"}),
-        (":hasFileSize", "manual", {"en": "file size", "eo": "grandeco"}, {"en": "File size in bytes", "eo": "Dosiergrandeco en bajtoj"}),
-        (":hasFileSource", "manual", {"en": "file source", "eo": "fontindiko"}, {"en": "Original source path/URL", "eo": "Origina fonta vojo/URL"}),
-    ]
-
-    ts = now()
-    for pred_id, source, labels, descriptions in defaults:
-        # Store IRI only when it is NOT produced by the user's current
-        # template.  Known-prefix predicates (rdf:type, etc.) have fixed
-        # standard namespaces that won't match any template, so they are
-        # always stored.  Unknown-prefix seeds (:hasFile*) use the template
-        # and stay empty.
-        iri = compute_iri(pred_id) if _iri_is_non_template(pred_id) else ""
-        db.execute(
-            "INSERT INTO predicates (predicate_id, iri, source, labels, descriptions, aliases, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, '[]', ?, ?)",
-            (pred_id, iri, source, json.dumps(labels), json.dumps(descriptions), ts, ts),
-        )
+    Kept as a no-op to avoid breaking callers during the migration.
+    All predicates (RDF/OWL/sm:/file) are now seeded by
+    :meth:`~semantika.graph.builtin_type_service.BuiltinTypeService.ensure_builtins`,
+    called from ``create_app()`` lifespan.
+    """
+    return
 
 
 def _iri_is_non_template(internal_id: str) -> bool:

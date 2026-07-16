@@ -165,6 +165,18 @@ curl -X POST http://localhost:6015/api/v1/query/sparql \
 - Standard content negotiation (`application/sparql-results+json`, `text/turtle`)
 - Incremental sync — triples added/removed via `!` commands are immediately available via SPARQL
 
+### Semantika Predicate Namespace (`sm:`)
+
+Semantika ships with **standard predicates** in the `sm:` namespace, giving users a shared vocabulary from day one. Key design:
+
+- `sm:` predicates **complement, never replace, W3C standards.** `rdf:type`, `rdfs:subClassOf`, `rdfs:label`, and `owl:*` are left completely untouched.
+- `sm:` fills gaps that W3C doesn't cover (media metadata, knowledge provenance, mereology, etc.)
+- Core `sm:` predicates are **soft-protected** from accidental deletion (`--force` to bypass)
+- All predicates are seeded at app startup via `BuiltinTypeService.ensure_builtins()` (idempotent)
+- The `sm:` namespace is registered in all IRI-resolution paths at `https://semantika.app/sm/`
+
+The full catalog (W3C + 14 `sm:` predicates + file metadata) is defined in `src/semantika/graph/builtin_seed_data.py`. See [issue #134](https://github.com/Ron-RONZZ-org/semantika/issues/134) for the design discussion.
+
 **Architecture:**
 - SQLite remains the source of truth for all data (nodes, predicates, labels, FTS5, proofs)
 - Oxigraph RocksDB stores only bare ID-triples for fast SPARQL evaluation

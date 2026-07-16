@@ -39,15 +39,10 @@ from semantika.core import SemantikaDB
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Known prefix → URI map (mirrors triple_turtle._KNOWN_PREFIXES)
+# Known prefix → URI map (single source of truth in graph/constants.py)
 # ---------------------------------------------------------------------------
 
-_KNOWN_PREFIXES: dict[str, str] = {
-    "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
-    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
-    "xsd": "http://www.w3.org/2001/XMLSchema#",
-    "owl": "http://www.w3.org/2002/07/owl#",
-}
+from semantika.graph.constants import KNOWN_PREFIXES as _KNOWN_PREFIXES  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # IRI mapping — internal IDs ↔ RDF IRIs

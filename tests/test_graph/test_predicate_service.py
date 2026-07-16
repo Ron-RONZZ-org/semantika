@@ -209,3 +209,45 @@ class TestPredicateServiceNormalizeIds:
         pred = ps.create({"predicate_id": "ex:te\u200bst", "labels": {"en": "Test"}})
         # Without invisible chars
         assert pred["predicate_id"] == "ex:test"
+
+
+class TestCorePredicateProtection:
+    """Tests for core sm: predicate soft protection."""
+
+    def test_is_core_predicate_recognises_tier1(self):
+        """Tier 1 sm: predicates are recognised as core."""
+        from semantika.graph.predicate_service import PredicateService
+        assert PredicateService.is_core_predicate("sm:depicts") is True
+        assert PredicateService.is_core_predicate("sm:partOf") is True
+        assert PredicateService.is_core_predicate("sm:attributedTo") is True
+
+    def test_is_core_predicate_rejects_custom(self):
+        """Custom predicates are not core."""
+        from semantika.graph.predicate_service import PredicateService
+        assert PredicateService.is_core_predicate("ex:custom") is False
+        assert PredicateService.is_core_predicate("rdf:type") is False
+
+    def test_delete_core_predicate_raises_without_force(self, services: dict):
+        """Deleting a core predicate without force raises PermissionError."""
+        ps = services["predicate"]
+        ps.create({"predicate_id": "sm:depicts", "source": "semantika",
+                   "labels": {"en": "depicts"}})
+        with pytest.raises(PermissionError, match="core Semantika predicate"):
+            ps.delete("sm:depicts", soft=True, force=False)
+
+    def test_delete_core_predicate_succeeds_with_force(self, services: dict):
+        """Deleting a core predicate with force=True succeeds."""
+        ps = services["predicate"]
+        ps.create({"predicate_id": "sm:partOf", "source": "semantika",
+                   "labels": {"en": "part of"}})
+        result = ps.delete("sm:partOf", soft=True, force=True)
+        assert result is True
+
+    def test_delete_core_predicate_hard_with_force(self, services: dict):
+        """Hard-deleting a core predicate with force=True succeeds."""
+        ps = services["predicate"]
+        ps.create({"predicate_id": "sm:theme", "source": "semantika",
+                   "labels": {"en": "theme"}})
+        result = ps.delete("sm:theme", soft=False, force=True)
+        assert result is True
+        assert ps.get("sm:theme") is None

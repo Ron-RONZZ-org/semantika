@@ -1,5 +1,8 @@
 """BuiltinTypeService — lazy seeding of built-in predicates and type nodes.
 
+Unified single entry point for all seeding (replaces the old
+``_seed_default_predicates()`` path in ``db.py``).
+
 Follows the same lazy-seeding pattern as :class:`UnitService._ensure_base_units`.
 Predicates and type nodes are auto-created on first access so they are
 always available without a separate seed step.
@@ -12,7 +15,8 @@ import logging
 from typing import TYPE_CHECKING
 
 from semantika.core.crud import now
-from semantika.graph.builtin_seed_data import BUILTIN_PREDICATES, BUILTIN_TYPE_NODES, REQUIRED_PREDICATES
+from semantika.graph.builtin_seed_data import SEED_PREDICATES, BUILTIN_TYPE_NODES, REQUIRED_PREDICATES
+from semantika.graph.db import compute_iri, _iri_is_non_template
 from semantika.graph.node_helpers import extract_label_text
 
 logger = logging.getLogger(__name__)
@@ -47,51 +51,34 @@ class BuiltinTypeService:
     # ── Lazy seeding ─────────────────────────────────────────────────
 
     def ensure_builtins(self) -> None:
-        """Seed built-in predicates and type nodes on first call.
+        """Seed all built-in predicates and type nodes on first call.
+
+        Seeds in order:
+        1. W3C predicates (rdf:/rdfs:/owl:)
+        2. Tier 1 sm: predicates (core, soft-protected)
+        3. Tier 2 sm: predicates (extended, deletable)
+        4. File attachment predicates (:hasFile*)
+        5. Type nodes (PHOTO, VIDEO, DOCUMENT, SOURCE_CODE)
 
         Idempotent — safe to call multiple times.
+        Uses ``INSERT OR IGNORE`` so existing data is never overwritten.
         """
         if self._builtins_ensured:
             return
 
         now_iso = now()
 
-        # 1. Ensure built-in predicates exist
-        for pid, source, labels, descriptions in BUILTIN_PREDICATES:
+        # 1. Seed all predicates from the unified catalog
+        for pid, source, labels, descriptions in SEED_PREDICATES:
+            iri = compute_iri(pid) if _iri_is_non_template(pid) else ""
             self.db.execute(
                 "INSERT OR IGNORE INTO predicates "
-                "(predicate_id, source, labels, descriptions, aliases, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, '[]', ?, ?)",
-                (pid, source, json.dumps(labels), json.dumps(descriptions), now_iso, now_iso),
+                "(predicate_id, iri, source, labels, descriptions, aliases, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, '[]', ?, ?)",
+                (pid, iri, source, json.dumps(labels), json.dumps(descriptions), now_iso, now_iso),
             )
 
-        # 2a. Ensure rdf:type predicate exists (needed for triple FK)
-        self.db.execute(
-            "INSERT OR IGNORE INTO predicates "
-            "(predicate_id, source, labels, descriptions, aliases, created_at, updated_at) "
-            "VALUES ('rdf:type', 'rdf', ?, ?, '[]', ?, ?)",
-            (json.dumps({"en": "type"}), json.dumps({"en": "Is a type of"}), now_iso, now_iso),
-        )
-
-        # 2b. Ensure file metadata predicates (reused from seed_defaults)
-        file_predicates = [
-            (":hasFilePath", {"en": "file path"}, {"en": "Path to attached file"}),
-            (":hasFileMime", {"en": "MIME type"}, {"en": "MIME type of attached file"}),
-            (":hasFileSize", {"en": "file size"}, {"en": "File size in bytes"}),
-            (":hasFileSource", {"en": "file source"}, {"en": "Original source path/URL"}),
-        ]
-        for pid, lbls, descs in file_predicates:
-            self.db.execute(
-                "INSERT OR IGNORE INTO predicates "
-                "(predicate_id, source, labels, descriptions, aliases, created_at, updated_at) "
-                "VALUES (?, 'manual', ?, ?, '[]', ?, ?)",
-                (pid, json.dumps(lbls), json.dumps(descs), now_iso, now_iso),
-            )
-
-        # 3. Create type nodes + rdf:type in a transaction
-        # Note: explicit BEGIN is needed because the transaction context
-        # manager does not auto-begin, and PRAGMA defer_foreign_keys only
-        # takes effect within an explicit transaction.
+        # 2. Create type nodes + rdf:type in a transaction
         with self.db.transaction() as conn:
             conn.execute("PRAGMA defer_foreign_keys=ON")
             conn.execute("BEGIN")
@@ -109,7 +96,6 @@ class BuiltinTypeService:
                 )
 
                 # Auto-assign rdf:type = PHOTO etc. referencing itself as a type concept
-                # Each builtin type node is an instance of itself (self-typing convention).
                 conn.execute(
                     "INSERT OR IGNORE INTO triples "
                     "(subject_id, predicate_id, object_value, object_type, created_at) "

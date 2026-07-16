@@ -43,7 +43,7 @@ Triple store services: NodeService, PredicateService, PredicateGroupService, Tri
 | `unit_parser.py` / `unit_errors.py` / `unit_seed_data.py` | Unit parser, errors, and seed data |
 | `builtin_type_service.py` / `builtin_seed_data.py` | Built-in type nodes and predicates (sm: namespace) — lazy seeding |
 | `db.py` | Graph DB init, schema DDL, `get_services()` factory |
-| `constants.py` | Shared constants (type prefixes, limits) |
+| `constants.py` | **Single source of truth** for ``KNOWN_PREFIXES`` (imported by ``db.py``, ``sparql/engine.py``, ``triple_turtle.py``), ``CORE_SM_PREDICATES``, FTS5 keywords, and heuristic helpers |
 | `file_helpers.py` | File attachment helpers |
 | `helpers.py` | General utility helpers |
 | `services/__init__.py` | Service registry |

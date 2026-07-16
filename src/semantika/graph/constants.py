@@ -18,6 +18,33 @@ FTS5_KEYWORDS: frozenset[str] = frozenset({
     "COLUMN",
 })
 
+# ── Known RDF prefix namespaces ─────────────────────────────────────────
+# Single source of truth — imported by db.py, sparql/engine.py, triple_turtle.py.
+# Never maintain duplicate copies in those files.
+
+SM_NAMESPACE = "https://semantika.app/sm/"
+
+KNOWN_PREFIXES: dict[str, str] = {
+    "rdf":  "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+    "xsd":  "http://www.w3.org/2001/XMLSchema#",
+    "owl":  "http://www.w3.org/2002/07/owl#",
+    "sm":   SM_NAMESPACE,
+}
+
+# ── Core sm: predicates (soft-protected from accidental deletion) ───────
+
+CORE_SM_PREDICATES: frozenset[str] = frozenset({
+    "sm:depicts",
+    "sm:programmingLanguage",
+    "sm:theme",
+    "sm:dimension",
+    "sm:canonicalLink",
+    "sm:hasSource",
+    "sm:attributedTo",
+    "sm:partOf",
+})
+
 _UUID_PREFIX_RE = re.compile(r"^[0-9a-f]{8}([0-9a-f]{1,8}|-[0-9a-f]{1,7})?$", re.IGNORECASE)
 
 
