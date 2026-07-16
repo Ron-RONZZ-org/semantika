@@ -450,6 +450,22 @@ class TestCmdTripleAdd:
         with pytest.raises(Exception):
             dispatch(["triple", "add", "ALICE", "ex:nonexistent", "BOB"], {})
 
+    def test_add_batch(self, seeded: dict) -> None:
+        """!triple add --batch creates multiple triples."""
+        import json
+        batch_data = json.dumps([
+            {"subject_id": "ALICE", "predicate_id": "ex:knows", "object_value": "CHARLIE"},
+            {"subject_id": "BOB", "predicate_id": "ex:knows", "object_value": "CHARLIE"},
+        ])
+        result = dispatch(["triple", "add"], {"batch": batch_data})
+        assert result["type"] == "status"
+        data = result.get("data", {})
+        assert data.get("created_count") == 2
+        assert data.get("error_count") == 0
+        assert data.get("duplicate_count") == 0
+        ts = seeded["triple"]
+        assert ts.count() == 4  # 2 original + 2 new
+
 
 class TestCmdTripleModify:
     """!triple modify"""
