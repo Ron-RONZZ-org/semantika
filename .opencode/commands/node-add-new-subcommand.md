@@ -34,8 +34,6 @@ The `!node add` command tree is:
 
 ## 2. Register new predicates (`sm:xxx`)
 
-**Option A — seed data** (preferred for stable ontology predicates):
-
 Add a tuple to `BUILTIN_PREDICATES` in `src/semantika/graph/builtin_seed_data.py`:
 
 ```python
@@ -47,11 +45,8 @@ Add a tuple to `BUILTIN_PREDICATES` in `src/semantika/graph/builtin_seed_data.py
 ),
 ```
 
-**Option B — inline** (for ad-hoc / dynamic predicates):
-
-Call `svc["builtin_type"].ensure_predicates(["sm:hasRecipe", "sm:hasCuisine"])` inside the handler.
-The `BUILTIN_PREDICATES` approach is preferred because it provides labels and descriptions
-that show up in `!predicate list` and SPARQL results.
+The handler calls `create_typed_node()` which runs `ensure_builtins()` internally,
+so predicates from `BUILTIN_PREDICATES` are auto-seeded on first use.
 
 **New type nodes** (if this introduces a new `rdf:type`):
 
@@ -251,4 +246,3 @@ is independently queryable via SPARQL.
 | `parse_duration()` | `node_helpers.py` | Parse `02:30:00` → `"9000"` (seconds) |
 | `resolve_node_refs()` | `node_helpers.py` | Resolve comma-separated node refs → list of node IDs |
 | `split_literals()` | `node_helpers.py` | Split comma-separated string → list of tokens |
-| `ensure_predicate()` | `node_helpers.py` | Idempotent predicate creation |
