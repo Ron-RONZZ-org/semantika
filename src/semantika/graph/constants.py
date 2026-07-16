@@ -22,7 +22,7 @@ FTS5_KEYWORDS: frozenset[str] = frozenset({
 # Single source of truth — imported by db.py, sparql/engine.py, triple_turtle.py.
 # Never maintain duplicate copies in those files.
 
-SM_NAMESPACE = "https://semantika.app/sm/"
+SM_NAMESPACE = "https://sm.ronzz.org/predicates/"
 
 KNOWN_PREFIXES: dict[str, str] = {
     "rdf":  "http://www.w3.org/1999/02/22-rdf-syntax-ns#",

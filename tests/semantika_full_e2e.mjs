@@ -1450,8 +1450,8 @@ async function run() {
     // Should show both the canonical IRI and the default template IRI
     assert(text.includes("https://e2e.test/canon-node"), "Expected canonical node IRI in results");
     assert(text.includes("https://e2e.test/canon-pred"), "Expected canonical predicate IRI in results");
-    assert(text.includes("https://semantika.local/node/E2E_DEF"), "Expected default node template IRI");
-    assert(text.includes("https://semantika.local/resource/e2e:defPred"), "Expected default predicate template IRI");
+    assert(text.includes("https://sm.ronzz.org/nodes/E2E_DEF"), "Expected default node template IRI");
+    assert(text.includes("https://sm.ronzz.org/predicates/e2e:defPred"), "Expected default predicate template IRI");
   });
 
   await test("SPARQL: clicking canonical node URI opens view tab with correct label", async () => {
@@ -1484,7 +1484,7 @@ async function run() {
     if (await runBtn.isVisible().catch(() => false)) { await runBtn.click(); await sleep(1500); }
     // Click the default node cell
     await page.evaluate(() => {
-      const cell = document.querySelector('td[title="https://semantika.local/node/E2E_DEF"]');
+      const cell = document.querySelector('td[title="https://sm.ronzz.org/nodes/E2E_DEF"]');
       if (cell) cell.click();
     });
     await sleep(1500);

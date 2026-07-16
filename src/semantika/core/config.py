@@ -11,8 +11,8 @@ File format (JSONC — JSON with ``//`` line comments):
 
     {
         // IRI templates — $id is replaced with the entity's internal ID
-        "node_iri": "https://semantika.local/node/$id",
-        "predicate_iri": "https://semantika.local/resource/$id"
+        "node_iri": "https://sm.ronzz.org/nodes/$id",
+        "predicate_iri": "https://sm.ronzz.org/predicates/$id"
     }
 
 The config file is optional.  If it does not exist, built-in defaults are used.
@@ -29,8 +29,8 @@ logger = logging.getLogger(__name__)
 
 # ── Defaults ────────────────────────────────────────────────────────────
 
-DEFAULT_NODE_IRI = "https://semantika.local/node/$id"
-DEFAULT_PREDICATE_IRI = "https://semantika.local/resource/$id"
+DEFAULT_NODE_IRI = "https://sm.ronzz.org/nodes/$id"
+DEFAULT_PREDICATE_IRI = "https://sm.ronzz.org/predicates/$id"
 
 _CONFIG_FILENAMES = ("semantika.jsonc", "semantika.json")
 

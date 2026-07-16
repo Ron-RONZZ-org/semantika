@@ -37,6 +37,20 @@ Semantika is the **third generation** in a toolchain. When implementing new feat
 | **[lightercore](../lightercore)** | Shared core library | **DB/paths/exceptions/CRUD/backup/permissions/prompt_commands/user_config**: Canonical implementations consumed by both lighterbird and semantika. Replaces the earlier vendored A-core. |
 | **[A-core](../A-core)** | First-gen core library | Historical reference only. Superseded by lightercore. |
 
+#### Disk Locations (absolute paths on this machine)
+
+All sibling repos live under `/home/rongzhou/kodo/autish/`:
+
+| Project | Absolute path |
+|---------|--------------|
+| **semantika** | `/home/rongzhou/kodo/autish/semantika/` — this repo |
+| **lighterbird** | `/home/rongzhou/kodo/autish/lighterbird/` |
+| **lightercore** | `/home/rongzhou/kodo/autish/lightercore/` |
+| **A-semantika** | `/home/rongzhou/kodo/autish/A-semantika/` |
+| **A-core** | `/home/rongzhou/kodo/autish/A-core/` |
+
+Relative references in this file (e.g., `../lightercore`) resolve correctly from within the semantika repo because all five projects share the same parent directory.
+
 **Key rule**: When the task is about graph business logic (nodes, predicates, triples, TTL, review, proof, units), look at **A-semantika** first. When the task is about UX patterns (command routing, LLM, autocomplete, tabs, forms, prompt commands, user config) or DB management, look at **lighterbird** first. For shared infrastructure (DB, paths, exceptions, CRUD, backup, permissions, prompt_commands), look at **lightercore** first — that is the canonical source.
 
 The backend is forked from proven code in [A-semantika](../A-semantika) (triple store services). Shared infrastructure (DB, paths, exceptions, CRUD, backup, permissions, prompt_commands) comes from [lightercore](../lightercore), which supersedes the earlier vendored [A-core](../A-core). The frontend is a Svelte SPA served by a FastAPI Python server, with UX patterns ported from [lighterbird](../lighterbird).
@@ -581,7 +595,8 @@ Known-prefix predicates (``rdf:type``, ``rdfs:label``, etc.) always use their fi
 
 ## Semantika Predicate Namespace (``sm:``)
 
-Semantika ships with a **standard predicate catalog** in the ``sm:`` (Semantika) namespace. The namespace is registered in all IRI-resolution code paths (``graph/constants.py`` — single source of truth), giving ``sm:`` predicates a stable IRI at ``https://semantika.app/sm/``.
+Semantika ships with a **standard predicate catalog** in the ``sm:`` (Semantika) namespace. The namespace is registered in all IRI-resolution code paths (``graph/constants.py`` — single source of truth), giving ``sm:`` predicates a stable IRI at ``https://sm.ronzz.org/predicates/``
+(``sm:depicts`` → ``https://sm.ronzz.org/predicates/depicts``).
 
 ### Design rules
 
@@ -613,7 +628,7 @@ KNOWN_PREFIXES = {
     "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
     "xsd":  "http://www.w3.org/2001/XMLSchema#",
     "owl":  "http://www.w3.org/2002/07/owl#",
-    "sm":   "https://semantika.app/sm/",
+    "sm":   "https://sm.ronzz.org/predicates/",
 }
 ```
 

@@ -173,7 +173,7 @@ Semantika ships with **standard predicates** in the `sm:` namespace, giving user
 - `sm:` fills gaps that W3C doesn't cover (media metadata, knowledge provenance, mereology, etc.)
 - Core `sm:` predicates are **soft-protected** from accidental deletion (`--force` to bypass)
 - All predicates are seeded at app startup via `BuiltinTypeService.ensure_builtins()` (idempotent)
-- The `sm:` namespace is registered in all IRI-resolution paths at `https://semantika.app/sm/`
+- The `sm:` namespace is registered in all IRI-resolution paths at `https://sm.ronzz.org/predicates/` (`sm:depicts` → `https://sm.ronzz.org/predicates/depicts`)
 
 The full catalog (W3C + 14 `sm:` predicates + file metadata) is defined in `src/semantika/graph/builtin_seed_data.py`. See [issue #134](https://github.com/Ron-RONZZ-org/semantika/issues/134) for the design discussion.
 
