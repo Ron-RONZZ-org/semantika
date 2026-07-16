@@ -1,6 +1,7 @@
 <script>
   import { banner } from "./bannerStore.svelte.js";
   import { tabStore } from "./tabStore.svelte.js";
+  import { dirtyFormStore } from "./dirtyFormStore.svelte.js";
   import AccountList from "@lightercore/ui/AccountList.svelte";
   import LlmProfileForm from "@lightercore/ui/LlmProfileForm.svelte";
 
@@ -15,7 +16,49 @@
   let editingName = $state(null);
   let editingContent = $state("");
   let editingDefault = $state("");
+  /** Snapshot of content when editing started (for dirty tracking). */
+  let originalContent = $state("");
   let saving = $state(false);
+  /** "save" | "discard" | null — inline confirm dialog state. */
+  let confirmAction = $state(null);
+
+  /** True when content differs from the original snapshot. */
+  let isDirty = $derived(
+    editingName !== null && editingContent !== originalContent,
+  );
+
+  // Sync dirty state with the global form store (for tab-close protection)
+  $effect(() => {
+    const tabId = tabStore.active?.id;
+    if (tabId) {
+      dirtyFormStore.setDirty(tabId, isDirty && editingName !== null);
+    }
+  });
+
+  // beforeunload protection for app close / navigate away
+  $effect(() => {
+    if (!editingName) return;
+    function onBeforeUnload(e) {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  });
+
+  // Intercept Escape / Q while editing to show save/discard/cancel
+  function handleEditingKeydown(e) {
+    if (!editingName) return;
+    if (e.key === "Escape" || e.key === "q" || e.key === "Q") {
+      if (isDirty) {
+        e.stopPropagation();
+        e.preventDefault();
+        promptCloseConfirm();
+      }
+    }
+  }
 
   async function startEditing(name) {
     if (!name) return;
@@ -23,9 +66,12 @@
       const resp = await fetch(`/api/v1/llm/prompts/view?name=${encodeURIComponent(name)}`);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
+      const content = data.current || data.default || "";
       editingName = name;
-      editingContent = data.current || data.default;
-      editingDefault = data.default;
+      editingContent = content;
+      editingDefault = data.default || "";
+      originalContent = content;
+      confirmAction = null;
     } catch (err) {
       banner.show(`Failed to load prompt: ${err.message}`, "error", 5000);
       editingName = null;
@@ -35,6 +81,7 @@
   async function handleSave() {
     if (!editingName) return;
     saving = true;
+    const name = editingName; // capture before nulling
     try {
       const resp = await fetch("/api/v1/llm/prompts/save", {
         method: "POST",
@@ -47,16 +94,19 @@
       }
       banner.show(`Prompt "${editingName}" saved`, "success");
       editingName = null;
+      dirtyFormStore.clear(tabStore.active?.id);
+      confirmAction = null;
       // Refresh the current tab data
-      const viewResp = await fetch(`/api/v1/llm/prompts/view?name=${encodeURIComponent(editingName)}`);
+      const viewResp = await fetch(`/api/v1/llm/prompts/view?name=${encodeURIComponent(name)}`);
       if (viewResp.ok) {
         const viewData = await viewResp.json();
         const activeTab = tabStore.active;
         if (activeTab && activeTab.id) {
           tabStore.update(activeTab.id, {
             ...viewData,
+            message: `**${name}** (${viewData.category}, ${viewData.exists ? `${(viewData.current || '').split('\n').length} lines` : 'not yet created'})`,
             details: viewData.current || viewData.default || "(empty)",
-            _edit_name: editingName,
+            _edit_name: name,
           });
         }
       }
@@ -67,8 +117,44 @@
     }
   }
 
+  /** Show the inline save/discard/cancel confirmation. */
+  function promptCloseConfirm() {
+    confirmAction = "prompt";
+  }
+
+  /** Handle the chosen action from the save/discard/cancel dialog. */
+  async function handleCloseDecision(action) {
+    confirmAction = null;
+    if (action === "save") {
+      await handleSave();
+      // After save, editingName is null — close the tab
+      const tabId = tabStore.active?.id;
+      if (tabId) {
+        dirtyFormStore.clear(tabId);
+        tabStore.close(tabId);
+      }
+    } else if (action === "discard") {
+      const tabId = tabStore.active?.id;
+      dirtyFormStore.clear(tabId);
+      editingName = null;
+      tabStore.close(tabId);
+    } // "cancel" → just dismiss
+  }
+
+  /** Cancel editing — with dirty check. */
   function cancelEdit() {
-    editingName = null;
+    if (isDirty) {
+      promptCloseConfirm();
+    } else {
+      editingName = null;
+    }
+  }
+
+  /** Restore default — with confirm. */
+  function handleRestoreDefault() {
+    if (editingContent === editingDefault) return;
+    if (!confirm("Restore default content? All your changes will be lost.")) return;
+    editingContent = editingDefault;
   }
 
   async function deleteProfile(item) {
@@ -458,12 +544,31 @@
           <p class="prompt-view-meta">{@html d.message}</p>
         {/if}
         {#if d._edit_name}
-          <button class="btn btn-edit" onclick={() => startEditing(d._edit_name)} title="Edit this prompt file">
-            Edit
-          </button>
+          {#if editingName === d._edit_name}
+            <button class="btn btn-save" onclick={handleSave} disabled={saving}>
+              {saving ? "Saving…" : "Save"}
+            </button>
+            <button class="btn btn-cancel" onclick={cancelEdit}>Cancel</button>
+            <button class="btn btn-reset" onclick={handleRestoreDefault} title="Restore default">
+              Restore Default
+            </button>
+          {:else}
+            <button class="btn btn-edit" onclick={() => startEditing(d._edit_name)} title="Edit this prompt file">
+              Edit
+            </button>
+          {/if}
         {/if}
       </div>
-      <pre class="prompt-content">{d.details}</pre>
+      {#if editingName === d._edit_name}
+        <textarea
+          class="prompt-editor"
+          bind:value={editingContent}
+          rows="20"
+          spellcheck="false"
+        ></textarea>
+      {:else}
+        <pre class="prompt-content">{d.details}</pre>
+      {/if}
     </div>
   {:else if d.message}
     <p class="message">{d.message}</p>
@@ -527,34 +632,23 @@
     {/if}
   {/if}
 
-  {#if editingName !== null}
-    <!-- Edit dialog overlay -->
-    <div class="edit-overlay" onclick={cancelEdit} role="dialog" aria-modal="true" aria-label="Edit prompt"
-         tabindex="0" onkeydown={(e) => { if (e.key === "Escape") cancelEdit(); }}>
-      <div class="edit-dialog" role="presentation" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
-        <div class="edit-header">
-          <h3>Edit: {editingName}</h3>
-          <button class="btn-close" onclick={cancelEdit}>✕</button>
-        </div>
-        <textarea
-          class="edit-textarea"
-          bind:value={editingContent}
-          rows="20"
-          spellcheck="false"
-        ></textarea>
-        <div class="edit-actions">
-          <button class="btn btn-save" onclick={handleSave} disabled={saving}>
-            {saving ? "Saving…" : "Save"}
-          </button>
-          <button class="btn btn-cancel" onclick={cancelEdit}>Cancel</button>
-          <button class="btn btn-reset" onclick={() => { editingContent = editingDefault; }} title="Restore default">
-            Restore Default
-          </button>
+  {#if confirmAction}
+    <!-- Save/discard/cancel inline dialog -->
+    <div class="confirm-overlay" onclick={() => { confirmAction = null; }}>
+      <div class="confirm-dialog" role="alertdialog" aria-label="Unsaved changes"
+           onclick={(e) => e.stopPropagation()}>
+        <p class="confirm-message">You have unsaved changes. What would you like to do?</p>
+        <div class="confirm-actions">
+          <button class="btn btn-save" onclick={() => handleCloseDecision("save")}>Save</button>
+          <button class="btn btn-cancel" onclick={() => handleCloseDecision("discard")}>Discard</button>
+          <button class="btn btn-reset" onclick={() => { confirmAction = null; }}>Cancel</button>
         </div>
       </div>
     </div>
   {/if}
 </div>
+
+<svelte:window onkeydown={handleEditingKeydown} />
 
 <style>
   .status {
@@ -709,33 +803,29 @@
   .btn-save { background: #2a4a3a; border-color: #3a7a4a; }
   .btn-cancel { background: #3a3a3a; border-color: #555; }
   .btn-reset { background: #3a2a2a; border-color: #7a3a3a; }
-  .btn-close { background: none; border: none; color: #888; cursor: pointer; font-size: 1rem; }
-  .btn-close:hover { color: #e0e0e0; }
+  .prompt-editor {
+    flex: 1; min-height: 200px; resize: vertical;
+    background: #111; color: #a0d0a0;
+    border: 1px solid #5a5a8a; border-radius: 4px;
+    padding: 0.75rem; font-family: monospace; font-size: 0.78rem;
+    line-height: 1.5; outline: none;
+  }
+  .prompt-editor:focus { border-color: #7a7aaa; }
 
-  /* ── Edit dialog overlay ─────────────────────────────── */
-  .edit-overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.6);
-    display: flex; align-items: center; justify-content: center; z-index: 100;
+  /* ── Save/discard/cancel inline confirm ────────────── */
+  .confirm-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    display: flex; align-items: center; justify-content: center; z-index: 200;
   }
-  .edit-dialog {
-    background: #1e1e32; border: 1px solid #444; border-radius: 8px;
-    padding: 1rem; width: 90%; max-width: 700px;
-    max-height: 85vh; display: flex; flex-direction: column;
+  .confirm-dialog {
+    background: #1e1e32; border: 1px solid #555; border-radius: 8px;
+    padding: 1.25rem; max-width: 400px; width: 90%;
   }
-  .edit-header {
-    display: flex; justify-content: space-between; align-items: center;
-    margin-bottom: 0.5rem;
+  .confirm-message {
+    color: #e0e0e0; font-size: 0.9rem; margin: 0 0 1rem;
+    font-family: monospace;
   }
-  .edit-header h3 { margin: 0; font-size: 0.95rem; color: #e0e0e0; }
-  .edit-textarea {
-    flex: 1; min-height: 300px;
-    background: #111; color: #a0d0a0; border: 1px solid #333; border-radius: 4px;
-    padding: 0.75rem; font-family: monospace; font-size: 0.8rem;
-    resize: vertical; outline: none; line-height: 1.5;
-  }
-  .edit-textarea:focus { border-color: #5a5a8a; }
-  .edit-actions {
+  .confirm-actions {
     display: flex; gap: 0.5rem; justify-content: flex-end;
-    margin-top: 0.75rem;
   }
 </style>
