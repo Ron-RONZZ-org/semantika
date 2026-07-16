@@ -72,7 +72,7 @@ def seeded_db(db: SemantikaDB) -> SemantikaDB:
     )
     db.execute(
         "INSERT INTO triples (subject_id, predicate_id, object_value, object_type, created_at) "
-        "VALUES (?, ':hasBase', 'unit:METER', 'uri', ?)",
+        "VALUES (?, ':hasBase', 'unit:METER', 'node', ?)",
         (power_m2_id, ts),
     )
     db.execute(
@@ -90,7 +90,7 @@ def seeded_db(db: SemantikaDB) -> SemantikaDB:
     )
     db.execute(
         "INSERT INTO triples (subject_id, predicate_id, object_value, object_type, created_at) "
-        "VALUES (?, ':hasBase', 'unit:KILOGRAM', 'uri', ?)",
+        "VALUES (?, ':hasBase', 'unit:KILOGRAM', 'node', ?)",
         (power_kg_id, ts),
     )
     db.execute(
@@ -108,12 +108,12 @@ def seeded_db(db: SemantikaDB) -> SemantikaDB:
     )
     db.execute(
         "INSERT INTO triples (subject_id, predicate_id, object_value, object_type, created_at) "
-        "VALUES (?, ':hasTerm1', ?, 'uri', ?)",
+        "VALUES (?, ':hasTerm1', ?, 'node', ?)",
         (product_id, power_m2_id, ts),
     )
     db.execute(
         "INSERT INTO triples (subject_id, predicate_id, object_value, object_type, created_at) "
-        "VALUES (?, ':hasTerm2', ?, 'uri', ?)",
+        "VALUES (?, ':hasTerm2', ?, 'node', ?)",
         (product_id, power_kg_id, ts),
     )
 
@@ -126,7 +126,7 @@ def seeded_db(db: SemantikaDB) -> SemantikaDB:
     )
     db.execute(
         "INSERT INTO triples (subject_id, predicate_id, object_value, object_type, created_at) "
-        "VALUES (?, ':hasBase', 'unit:SECOND', 'uri', ?)",
+        "VALUES (?, ':hasBase', 'unit:SECOND', 'node', ?)",
         (power_s2_id, ts),
     )
     db.execute(
@@ -144,7 +144,7 @@ def seeded_db(db: SemantikaDB) -> SemantikaDB:
     )
     db.execute(
         "INSERT INTO triples (subject_id, predicate_id, object_value, object_type, created_at) "
-        "VALUES ('unit:JOULE_impl', ':hasBase', ?, 'uri', ?)",
+        "VALUES ('unit:JOULE_impl', ':hasBase', ?, 'node', ?)",
         (product_id, ts),
     )
     db.execute(
@@ -236,7 +236,7 @@ class TestUnitDecomposer:
         )
         db.execute(
             "INSERT INTO triples (subject_id, predicate_id, object_value, object_type, created_at) "
-            "VALUES ('unit:PARTIAL', ':hasTerm1', 'unit:METER', 'uri', ?)",
+            "VALUES ('unit:PARTIAL', ':hasTerm1', 'unit:METER', 'node', ?)",
             (ts,),
         )
         decomposer = UnitDecomposer(db)
@@ -262,7 +262,7 @@ class TestUnitDecomposer:
         )
         db.execute(
             "INSERT INTO triples (subject_id, predicate_id, object_value, object_type, created_at) "
-            "VALUES ('unit:BASEONLY', ':hasBase', 'unit:METER', 'uri', ?)",
+            "VALUES ('unit:BASEONLY', ':hasBase', 'unit:METER', 'node', ?)",
             (ts,),
         )
         decomposer = UnitDecomposer(db)

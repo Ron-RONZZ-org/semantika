@@ -28,7 +28,7 @@ class TripleService:
         subject_id: str,
         predicate_id: str,
         object_value: str,
-        object_type: str = "uri",
+        object_type: str = "node",
         object_lang: str | None = None,
         object_datatype: str | None = None,
         object_unit: str | None = None,
@@ -39,7 +39,7 @@ class TripleService:
             subject_id: Subject node ID.
             predicate_id: Predicate ID.
             object_value: Object value (URI or literal).
-            object_type: ``'uri'`` or ``'literal'``.
+            object_type: ``'node'`` or ``'literal'``.
             object_lang: Language tag (for string literals).
             object_datatype: XSD datatype (for typed literals).
             object_unit: Unit node ID (for numeric literals with units).
@@ -81,7 +81,7 @@ class TripleService:
         subject_id: str,
         predicate_id: str,
         object_value: str,
-        object_type: str = "uri",
+        object_type: str = "node",
         object_lang: str | None = None,
         object_datatype: str | None = None,
         object_unit: str | None = None,
@@ -141,7 +141,7 @@ class TripleService:
         subject_id: str,
         predicate_id: str,
         object_value: str,
-        object_type: str = "uri",
+        object_type: str = "node",
     ) -> dict | None:
         """Get a single triple by its compound key."""
         return self.db.execute_one(
@@ -360,7 +360,7 @@ class TripleService:
         for t in triples:
             all_node_ids.add(t["subject_id"])
             all_pred_ids.add(t["predicate_id"])
-            if t["object_type"] == "uri":
+            if t["object_type"] == "node":
                 all_node_ids.add(t["object_value"])
 
         node_map: dict[str, dict] = {}
@@ -382,7 +382,7 @@ class TripleService:
             pred = pred_map.get(t["predicate_id"])
             t["_predicate_label"] = get_label_from_node(pred) if pred else t["predicate_id"]
 
-            if t["object_type"] == "uri":
+            if t["object_type"] == "node":
                 obj = node_map.get(t["object_value"])
                 t["_object_label"] = get_label_from_node(obj) if obj else t["object_value"]
             else:
@@ -406,7 +406,7 @@ class TripleService:
         placeholders = ", ".join(["?"] * len(node_ids))
         return self.db.execute(
             f"SELECT * FROM triples WHERE subject_id IN ({placeholders}) "
-            f"OR (object_type = 'uri' AND object_value IN ({placeholders}))",
+            f"OR (object_type = 'node' AND object_value IN ({placeholders}))",
             tuple(node_ids) + tuple(node_ids),
         )
 
@@ -415,7 +415,7 @@ class TripleService:
         subject_id: str,
         predicate_id: str,
         object_value: str,
-        object_type: str = "uri",
+        object_type: str = "node",
     ) -> bool:
         """Check if a triple exists."""
         row = self.db.execute_one(

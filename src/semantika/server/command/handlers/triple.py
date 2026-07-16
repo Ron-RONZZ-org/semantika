@@ -44,7 +44,7 @@ def _resolve_triple_type(
     kodlingvo = flags.get("kodlingvo")
 
     object_value = raw_object
-    object_type = "uri"
+    object_type = "node"
     object_datatype: str | None = None
     object_lang: str | None = None
     was_str = False
@@ -107,7 +107,7 @@ def _find_triple(
     """
     triple = svc["triple"].get_one(subject, predicate, object_val, object_type="literal")
     if not triple:
-        triple = svc["triple"].get_one(subject, predicate, object_val, object_type="uri")
+        triple = svc["triple"].get_one(subject, predicate, object_val, object_type="node")
     if not triple:
         try:
             obj_node = svc["node"].resolve_node_id_prefix(object_val)
@@ -115,7 +115,7 @@ def _find_triple(
             raise
         if obj_node:
             resolved = obj_node["node_id"]
-            triple = svc["triple"].get_one(subject, predicate, resolved, object_type="uri")
+            triple = svc["triple"].get_one(subject, predicate, resolved, object_type="node")
     return triple
 
 
@@ -137,7 +137,7 @@ def _batch_delete_triples(svc: dict, triples: list[dict]) -> int:
             subject_id=t["subject_id"],
             predicate_id=t["predicate_id"],
             object_value=t["object_value"],
-            object_type=t.get("object_type", "uri"),
+            object_type=t.get("object_type", "node"),
         )
         count += 1
     return count
@@ -235,7 +235,7 @@ def cmd_triple_search(remaining: list[str], flags: dict[str, str]) -> dict:
         clauses.append(f"subject_id IN ({placeholders})")
         params.extend(node_ids)
         # Also match URI objects (triples where object is a matching node)
-        clauses.append(f"(object_type = 'uri' AND object_value IN ({placeholders}))")
+        clauses.append(f"(object_type = 'node' AND object_value IN ({placeholders}))")
         params.extend(node_ids)
 
     if pred_ids:
@@ -310,7 +310,7 @@ def cmd_triple_add(remaining: list[str], flags: dict[str, str]) -> dict:
     object_value, object_type, object_datatype, object_lang = _resolve_triple_type(
         object_value, flags
     )
-    if object_type == "uri":
+    if object_type == "node":
         object_value = _resolve_object_node(svc, object_value)
 
     try:
@@ -402,7 +402,7 @@ def cmd_triple_modify(remaining: list[str], flags: dict[str, str]) -> dict:
     # For modify, if no type flag was specified, preserve the original triple's type/datatype/lang
     flags_specified = any(k in flags for k in ("str", "int", "float", "bool", "katex", "str_dosiero", "str-dosiero"))
     if not flags_specified:
-        new_type = triple.get("object_type", "uri")
+        new_type = triple.get("object_type", "node")
         new_datatype = triple.get("object_datatype", None)
         new_lang = triple.get("object_lang", None)
     else:
@@ -411,11 +411,11 @@ def cmd_triple_modify(remaining: list[str], flags: dict[str, str]) -> dict:
 
     new_unit = unit or triple.get("object_unit", None)
     noop = (triple["subject_id"] == new_subject and triple["predicate_id"] == new_predicate
-            and triple["object_value"] == new_object and triple.get("object_type", "uri") == new_type
+            and triple["object_value"] == new_object and triple.get("object_type", "node") == new_type
             and triple.get("object_unit") == new_unit)
     if noop:
         return {"type": "status", "data": {"message": "No change — triple remains unchanged"}}
-    old_type = triple.get("object_type", "uri")
+    old_type = triple.get("object_type", "node")
     # Migrate proofs to the new triple key instead of deleting them
     svc["proof"].migrate_proofs(
         old=(triple["subject_id"], triple["predicate_id"], triple["object_value"]),

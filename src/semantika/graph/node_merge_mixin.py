@@ -63,7 +63,7 @@ class NodeMergeMixin:
 
         old_obj_triples = self.db.execute(
             "SELECT subject_id, predicate_id, object_type FROM triples "
-            "WHERE object_type = 'uri' AND object_value = ?", (old_id,),
+            "WHERE object_type = 'node' AND object_value = ?", (old_id,),
         )
         for t in old_obj_triples:
             coll = self.db.execute_one(
@@ -127,7 +127,7 @@ class NodeMergeMixin:
                 )
                 conn.execute(
                     "UPDATE triples SET object_value = ? "
-                    "WHERE object_type = 'uri' AND object_value = ?",
+                    "WHERE object_type = 'node' AND object_value = ?",
                     (new_id, old_id),
                 )
 
@@ -221,10 +221,10 @@ class NodeMergeMixin:
 
                 conn.execute(
                     """UPDATE triples SET object_value = ?
-                       WHERE object_type = 'uri' AND object_value = ?
+                       WHERE object_type = 'node' AND object_value = ?
                          AND NOT EXISTS (
                            SELECT 1 FROM triples AS t2
-                           WHERE t2.object_type = 'uri'
+                           WHERE t2.object_type = 'node'
                              AND t2.object_value = ?
                              AND t2.subject_id = triples.subject_id
                              AND t2.predicate_id = triples.predicate_id
@@ -235,7 +235,7 @@ class NodeMergeMixin:
 
                 conn.execute(
                     "DELETE FROM triples WHERE subject_id = ? "
-                    "OR (object_type = 'uri' AND object_value = ?)",
+                    "OR (object_type = 'node' AND object_value = ?)",
                     (source_id, source_id),
                 )
 

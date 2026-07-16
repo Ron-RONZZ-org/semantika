@@ -313,7 +313,7 @@ class TestTripleValidation:
                                 "subject_id": "SUBJ",
                                 "predicate_id": "ex:rel",
                                 "object_value": "OBJ",
-                                "object_type": "uri",
+                                "object_type": "node",
                             }),
                         }
                     }
@@ -341,7 +341,7 @@ class TestTripleValidation:
                                 "subject_id": "MISSING_SUBJ",
                                 "predicate_id": "ex:rel",
                                 "object_value": "OBJ",
-                                "object_type": "uri",
+                                "object_type": "node",
                             }),
                         }
                     }
@@ -428,7 +428,7 @@ class TestTripleValidation:
                                 "subject_id": "MISSING",
                                 "predicate_id": "ex:rel",
                                 "object_value": "obj",
-                                "object_type": "uri",
+                                "object_type": "node",
                             }),
                         }
                     },
@@ -439,7 +439,7 @@ class TestTripleValidation:
                                 "subject_id": "MISSING",
                                 "predicate_id": "ex:rel2",
                                 "object_value": "obj2",
-                                "object_type": "uri",
+                                "object_type": "node",
                             }),
                         }
                     },

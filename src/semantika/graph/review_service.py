@@ -212,7 +212,7 @@ class ReviewService:
         """
         distractors: list[str] = []
 
-        if correct_type == "uri":
+        if correct_type == "node":
             node = self.db.execute_one(
                 "SELECT labels FROM nodes WHERE node_id = ?", (correct_value,)
             )
@@ -304,7 +304,7 @@ class ReviewService:
 
     def _resolve_object_label(self, result: dict) -> str:
         """Get display label for a triple's object."""
-        if result["object_type"] == "uri":
+        if result["object_type"] == "node":
             return self._resolve_label("nodes", result["object_value"])
         return result["object_value"]
 

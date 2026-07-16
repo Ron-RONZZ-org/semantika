@@ -57,7 +57,7 @@ class TestProofAPI:
                 "subject_id": "PROOF_SUBJ",
                 "predicate_id": "ex:proofPred",
                 "object_value": "PROOF_OBJ",
-                "object_type": "uri",
+                "object_type": "node",
             },
         )
         # Create proof

@@ -81,7 +81,7 @@
     const edges = [];
     for (const t of triples) {
       nodeIds.add(t.subject_id);
-      if (t.object_type === "uri") {
+      if (t.object_type === "node") {
         nodeIds.add(t.object_value);
       }
     }
@@ -103,7 +103,7 @@
       const predLabel = predMap[t.predicate_id] || t.predicate_id;
       edges.push({
         from: t.subject_id,
-        to: t.object_type === "uri" ? t.object_value : t.object_value.slice(0, 20),
+        to: t.object_type === "node" ? t.object_value : t.object_value.slice(0, 20),
         label: predLabel,
         arrows: "to",
         color: { color: "#888", highlight: "#4a90d9" },
@@ -112,7 +112,7 @@
       });
 
       // Add literal objects as box nodes
-      if (t.object_type !== "uri") {
+      if (t.object_type !== "node") {
         const litId = `lit-${t.subject_id}-${t.predicate_id}-${t.object_value.slice(0, 10)}`;
         if (!nodes.get(litId)) {
           nodes.add({
@@ -180,7 +180,7 @@
             size: 18,
           });
         }
-        if (t.object_type === "uri" && !nodes.get(t.object_value)) {
+        if (t.object_type === "node" && !nodes.get(t.object_value)) {
           nodes.add({
             id: t.object_value,
             label: nodeMap[t.object_value] || t.object_value.slice(0, 12),
@@ -194,7 +194,7 @@
           edges.add({
             id: edgeId,
             from: t.subject_id,
-            to: t.object_type === "uri" ? t.object_value : `lit-${t.subject_id}-${t.predicate_id}-${t.object_value.slice(0, 10)}`,
+            to: t.object_type === "node" ? t.object_value : `lit-${t.subject_id}-${t.predicate_id}-${t.object_value.slice(0, 10)}`,
             label: predMap[t.predicate_id] || t.predicate_id,
             arrows: "to",
             color: { color: "#888" },

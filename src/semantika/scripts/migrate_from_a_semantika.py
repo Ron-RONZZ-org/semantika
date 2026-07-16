@@ -229,11 +229,11 @@ def _create_schema(db: sqlite3.Connection) -> None:
     db.execute("""CREATE TABLE IF NOT EXISTS triples (
             subject_id TEXT NOT NULL REFERENCES nodes(node_id),
             predicate_id TEXT NOT NULL REFERENCES predicates(predicate_id),
-            object_type TEXT NOT NULL DEFAULT 'uri', object_value TEXT NOT NULL,
+            object_type TEXT NOT NULL DEFAULT 'node', object_value TEXT NOT NULL,
             object_lang TEXT DEFAULT NULL, object_datatype TEXT DEFAULT NULL,
             object_unit TEXT DEFAULT NULL, created_at TEXT NOT NULL,
             object_node_id TEXT GENERATED ALWAYS AS (
-                CASE WHEN object_type='uri' THEN object_value ELSE NULL END
+                CASE WHEN object_type='node' THEN object_value ELSE NULL END
             ) STORED REFERENCES nodes(node_id),
             PRIMARY KEY (subject_id, predicate_id, object_value, object_type)
         ) WITHOUT ROWID""")
@@ -250,13 +250,13 @@ def _create_schema(db: sqlite3.Connection) -> None:
             uuid TEXT PRIMARY KEY, session_uuid TEXT NOT NULL
             REFERENCES review_sessions(uuid), subject_id TEXT NOT NULL,
             predicate_id TEXT NOT NULL, object_value TEXT NOT NULL,
-            object_type TEXT NOT NULL DEFAULT 'uri', is_correct INTEGER NOT NULL DEFAULT 0,
+            object_type TEXT NOT NULL DEFAULT 'node', is_correct INTEGER NOT NULL DEFAULT 0,
             response TEXT, position INTEGER NOT NULL DEFAULT 0,
             answered_at TEXT NOT NULL DEFAULT '')""")
     db.execute("""CREATE TABLE IF NOT EXISTS proofs (
             uuid TEXT PRIMARY KEY, subject_id TEXT NOT NULL REFERENCES nodes(node_id),
             predicate_id TEXT NOT NULL REFERENCES predicates(predicate_id),
-            object_value TEXT NOT NULL, object_type TEXT NOT NULL DEFAULT 'uri',
+            object_value TEXT NOT NULL, object_type TEXT NOT NULL DEFAULT 'node',
             proof_type TEXT NOT NULL DEFAULT 'observation', source TEXT NOT NULL DEFAULT '',
             notes TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL)""")

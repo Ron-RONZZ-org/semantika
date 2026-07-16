@@ -171,7 +171,7 @@ class TestTemplateExpander:
         assert triples[0]["subject_id"] == "MyBook"
         assert triples[0]["predicate_id"] == "hasAuthor"
         assert triples[0]["object_value"] == "Tolkien"
-        assert triples[0]["object_type"] == "uri"
+        assert triples[0]["object_type"] == "node"
         # Second triple: string literal (--str flag)
         assert triples[1]["predicate_id"] == "hasISBN"
         assert triples[1]["object_value"] == "9780547928227"

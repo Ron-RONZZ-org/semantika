@@ -51,7 +51,7 @@
   }
 
   function tripleKey(t) {
-    return `${t.subject_id}|${t.predicate_id}|${t.object_value}|${t.object_type || "uri"}`;
+    return `${t.subject_id}|${t.predicate_id}|${t.object_value}|${t.object_type || "node"}`;
   }
 
   let sel = createSelectionManager(
@@ -133,7 +133,7 @@
     const predData = predRes?.ok ? await predRes.json() : null;
 
     let objData = null;
-    if (triple.object_type === "uri") {
+    if (triple.object_type === "node") {
       const objRes = await fetch(`/api/v1/graph/nodes/${encodeURIComponent(triple.object_value)}`).catch(() => null);
       objData = objRes?.ok ? await objRes.json() : null;
     }
@@ -142,17 +142,17 @@
       triple,
       subject: subjData?.node || subjData || { node_id: triple.subject_id },
       predicate: predData?.predicate || predData || { predicate_id: triple.predicate_id },
-      object: objData?.node || objData || { node_id: triple.object_value, _literal: triple.object_type !== "uri" ? triple.object_value : null },
+      object: objData?.node || objData || { node_id: triple.object_value, _literal: triple.object_type !== "node" ? triple.object_value : null },
       _subject_label: triple._subject_label || triple.subject_id,
       _predicate_label: triple._predicate_label || triple.predicate_id,
-      _object_label: triple._object_label || (triple.object_type !== "uri" ? triple.object_value : triple.object_value),
+      _object_label: triple._object_label || (triple.object_type !== "node" ? triple.object_value : triple.object_value),
     }, { idKey: `triple-${tripleKey(triple)}`, replaceable: false });
   }
 
 
 
   function objectTypeBadge(t) {
-    if (t.object_type === "uri") return "uri";
+    if (t.object_type === "node") return "node";
     if (t.object_datatype === "text/katex") return "katex";
     if (t.object_datatype === "xsd:integer") return "int";
     if (t.object_datatype === "xsd:decimal") return "float";
@@ -243,7 +243,7 @@
       {@const key = tripleKey(triple)}
       {@const subjLabel = triple._subject_label || triple.subject_id}
       {@const predLabel = triple._predicate_label || triple.predicate_id}
-      {@const objLabel = triple.object_type === "uri" ? (triple._object_label || triple.object_value) : triple.object_value}
+      {@const objLabel = triple.object_type === "node" ? (triple._object_label || triple.object_value) : triple.object_value}
       <div id="row-{CSS.escape(key)}" class="row"
         class:selected={sel.isSelected(key)}
         class:focused={i === sel.focusedIndex}
@@ -265,9 +265,9 @@
           </span>
           <span class="arrow">→</span>
           <span class="entity-link o-link" role="button" tabindex="-1"
-            title={triple.object_type === "uri" ? "Open object node" : ""}
-            onclick={(e) => { if (triple.object_type === "uri") { e.stopPropagation(); openNode(triple.object_value); } }}
-            onkeydown={(e) => { if ((e.key === "Enter" || e.key === " ") && triple.object_type === "uri") { e.stopPropagation(); openNode(triple.object_value); } }}>
+            title={triple.object_type === "node" ? "Open object node" : ""}
+            onclick={(e) => { if (triple.object_type === "node") { e.stopPropagation(); openNode(triple.object_value); } }}
+            onkeydown={(e) => { if ((e.key === "Enter" || e.key === " ") && triple.object_type === "node") { e.stopPropagation(); openNode(triple.object_value); } }}>
             {objLabel}
           </span>
         </span>
@@ -286,8 +286,8 @@
           </span>
           <span class="arrow">→</span>
           <span class="entity-link o-link" role="button" tabindex="-1"
-            onclick={(e) => { if (triple.object_type === "uri") { e.stopPropagation(); openNode(triple.object_value); } }}
-            onkeydown={(e) => { if ((e.key === "Enter" || e.key === " ") && triple.object_type === "uri") { e.stopPropagation(); openNode(triple.object_value); } }}>
+            onclick={(e) => { if (triple.object_type === "node") { e.stopPropagation(); openNode(triple.object_value); } }}
+            onkeydown={(e) => { if ((e.key === "Enter" || e.key === " ") && triple.object_type === "node") { e.stopPropagation(); openNode(triple.object_value); } }}>
             {triple.object_value}
           </span>
         </span>
@@ -347,7 +347,7 @@
   .id-arc .o-link { color: #aaa; }
   .arrow { color: var(--clr-dim); flex-shrink: 0; }
   .badge { font-size: 0.7rem; padding: 1px 5px; border-radius: 3px; flex-shrink: 0; text-transform: uppercase; }
-  .badge-uri { background: #1a3a5a; color: #7cf; }
+  .badge-node { background: #1a3a5a; color: #7cf; }
   .badge-str { background: #2a3a2a; color: #7f7; }
   .badge-int { background: #3a2a3a; color: #f7f; }
   .badge-float { background: #3a3a1a; color: #ff7; }

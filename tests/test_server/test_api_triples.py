@@ -58,13 +58,13 @@ class TestTripleAPI:
                 "subject_id": "SUBJ",
                 "predicate_id": "ex:rel",
                 "object_value": "OBJ",
-                "object_type": "uri",
+                "object_type": "node",
             },
         )
         assert resp.status_code == 200
         data = resp.json()
         assert data["triple"]["subject_id"] == "SUBJ"
-        assert data["triple"]["object_type"] == "uri"
+        assert data["triple"]["object_type"] == "node"
 
     def test_add_triple_literal(self, client: TestClient):
         resp = client.post(

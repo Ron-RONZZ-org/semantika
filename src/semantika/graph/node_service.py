@@ -242,7 +242,7 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
             return []
         return self.db.execute(
             "SELECT * FROM triples WHERE subject_id = ? "
-            "OR (object_type = 'uri' AND object_value = ?)",
+            "OR (object_type = 'node' AND object_value = ?)",
             (node_id, node_id),
         )
 
@@ -267,7 +267,7 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
         )["cnt"]
         object_count = self.db.execute_one(
             "SELECT COUNT(*) AS cnt FROM triples "
-            "WHERE object_type = 'uri' AND object_value = ?",
+            "WHERE object_type = 'node' AND object_value = ?",
             (node_id,),
         )["cnt"]
         total = subject_count + object_count
@@ -310,13 +310,13 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
                 # Remove referencing triples first to avoid orphaned rows
                 conn.execute(
                     "DELETE FROM triples WHERE subject_id = ? "
-                    "OR (object_type = 'uri' AND object_value = ?)",
+                    "OR (object_type = 'node' AND object_value = ?)",
                     (node_id, node_id),
                 )
                 # Cascade-delete proofs attached to the deleted triples
                 conn.execute(
                     "DELETE FROM proofs WHERE subject_id = ? "
-                    "OR (object_value = ? AND object_type = 'uri')",
+                    "OR (object_value = ? AND object_type = 'node')",
                     (node_id, node_id),
                 )
                 conn.execute(
@@ -349,13 +349,13 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
         with self.db.transaction() as conn:
             self._remove_from_fts(node_id)
             conn.execute(
-                "DELETE FROM triples WHERE subject_id = ? OR (object_type = 'uri' AND object_value = ?)",
+                "DELETE FROM triples WHERE subject_id = ? OR (object_type = 'node' AND object_value = ?)",
                 (node_id, node_id),
             )
             # Cascade-delete proofs attached to the deleted triples
             conn.execute(
                 "DELETE FROM proofs WHERE subject_id = ? "
-                "OR (object_value = ? AND object_type = 'uri')",
+                "OR (object_value = ? AND object_type = 'node')",
                 (node_id, node_id),
             )
             conn.execute(
@@ -417,7 +417,7 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
             vp_s = ", ".join(["?"] * len(valid_ids))
             removed_triples = self.db.execute(
                 f"SELECT * FROM triples WHERE subject_id IN ({vp_s}) "
-                f"OR (object_type = 'uri' AND object_value IN ({vp_s}))",
+                f"OR (object_type = 'node' AND object_value IN ({vp_s}))",
                 tuple(valid_ids) * 2,
             )
 
@@ -452,7 +452,7 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
                     valid_tuple,
                 )
                 conn.execute(
-                    f"DELETE FROM triples WHERE object_type = 'uri' AND object_value IN ({vp})",
+                    f"DELETE FROM triples WHERE object_type = 'node' AND object_value IN ({vp})",
                     valid_tuple,
                 )
                 # Cascade-delete proofs
@@ -461,7 +461,7 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
                     valid_tuple,
                 )
                 conn.execute(
-                    f"DELETE FROM proofs WHERE object_type = 'uri' AND object_value IN ({vp})",
+                    f"DELETE FROM proofs WHERE object_type = 'node' AND object_value IN ({vp})",
                     valid_tuple,
                 )
                 # Insert trash
@@ -497,7 +497,7 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
                     valid_tuple,
                 )
                 conn.execute(
-                    f"DELETE FROM triples WHERE object_type = 'uri' AND object_value IN ({vp})",
+                    f"DELETE FROM triples WHERE object_type = 'node' AND object_value IN ({vp})",
                     valid_tuple,
                 )
                 conn.execute(
@@ -505,7 +505,7 @@ class NodeService(NodeMergeMixin, NodeFtsMixin, CRUDService):
                     valid_tuple,
                 )
                 conn.execute(
-                    f"DELETE FROM proofs WHERE object_type = 'uri' AND object_value IN ({vp})",
+                    f"DELETE FROM proofs WHERE object_type = 'node' AND object_value IN ({vp})",
                     valid_tuple,
                 )
                 conn.execute(

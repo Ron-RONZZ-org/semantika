@@ -100,7 +100,7 @@ def import_turtle(turtle_content: str) -> dict[str, int]:
 
         if isinstance(o, URIRef):
             object_value = str(o)
-            object_type = "uri"
+            object_type = "node"
             object_lang: str | None = None
             object_datatype: str | None = None
             all_uris.add(object_value)
@@ -111,7 +111,7 @@ def import_turtle(turtle_content: str) -> dict[str, int]:
             object_datatype = str(o.datatype) if o.datatype else None
         elif isinstance(o, BNode):
             object_value = str(o)
-            object_type = "uri"
+            object_type = "node"
             object_lang = None
             object_datatype = None
             all_uris.add(object_value)
@@ -220,7 +220,7 @@ def export_turtle(db: SemantikaDB, base_uri: str = "https://example.org/") -> st
         subj = t["subject_id"]
         subjects.setdefault(subj, []).append(t)
         seen_subjects.add(subj)
-        if t["object_type"] == "uri":
+        if t["object_type"] == "node":
             seen_objects.add(t["object_value"])
 
     # Emit triples grouped by subject
@@ -230,7 +230,7 @@ def export_turtle(db: SemantikaDB, base_uri: str = "https://example.org/") -> st
         lines.append(f"{_format_turtle_uri(subj, {}, base_uri)}")
         for i, t in enumerate(subj_triples):
             pred = _format_turtle_uri(t["predicate_id"], {}, base_uri)
-            if t["object_type"] == "uri":
+            if t["object_type"] == "node":
                 obj = _format_turtle_uri(t["object_value"], {}, base_uri)
             else:
                 obj = _format_literal(

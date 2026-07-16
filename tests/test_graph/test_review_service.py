@@ -12,7 +12,7 @@ class TestReviewService:
         ns.create({"node_id": "X", "labels": {"en": "X"}})
         ps.create({"predicate_id": "ex:p", "labels": {"en": "p"}})
         # No triple referencing X as object — create with URI pointing to self
-        ts.add("X", "ex:p", "X", object_type="uri")
+        ts.add("X", "ex:p", "X", object_type="node")
 
         rs = services["review"]
         session = rs.create_session()
@@ -24,7 +24,7 @@ class TestReviewService:
         ts = services["triple"]
         ns.create({"node_id": "Y", "labels": {"en": "Y"}})
         ps.create({"predicate_id": "ex:q", "labels": {"en": "q"}})
-        ts.add("Y", "ex:q", "Y", object_type="uri")
+        ts.add("Y", "ex:q", "Y", object_type="node")
 
         rs = services["review"]
         session = rs.create_session(date_from="2020-01-01", date_to="2020-12-31")
@@ -49,7 +49,7 @@ class TestReviewService:
         rs = services["review"]
         ns.create({"node_id": "QA", "labels": {"en": "Q"}})
         ps.create({"predicate_id": "ex:pa", "labels": {"en": "pa"}})
-        ts.add("QA", "ex:pa", "QA", object_type="uri")
+        ts.add("QA", "ex:pa", "QA", object_type="node")
 
         session = rs.create_session()
         session_uuid = session["session"]["uuid"]
@@ -68,7 +68,7 @@ class TestReviewService:
         ns.create({"node_id": "CORRECT", "labels": {"en": "Correct answer"}})
         ns.create({"node_id": "D1", "labels": {"en": "Distractor one"}})
         ns.create({"node_id": "D2", "labels": {"en": "Distractor two"}})
-        distractors = rs._generate_distractors("CORRECT", correct_type="uri", count=2)
+        distractors = rs._generate_distractors("CORRECT", correct_type="node", count=2)
         assert len(distractors) <= 2
         assert "CORRECT" not in distractors
 

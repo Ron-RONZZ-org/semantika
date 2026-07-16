@@ -12,7 +12,7 @@
   let object = $derived(d.object || {});
   let subjLabel = $derived(d._subject_label || triple.subject_id || "");
   let predLabel = $derived(d._predicate_label || triple.predicate_id || "");
-  let objLabel = $derived(d._object_label || (triple.object_type !== "uri" ? triple.object_value : triple.object_value) || "");
+  let objLabel = $derived(d._object_label || (triple.object_type !== "node" ? triple.object_value : triple.object_value) || "");
 
   function parseLabels(raw) {
     if (!raw) return null;
@@ -25,12 +25,12 @@
   let subjDefs = $derived(parseLabels(subject.definitions));
   let predLabels = $derived(parseLabels(predicate.labels));
   let predDescs = $derived(parseLabels(predicate.descriptions));
-  let objLabels = $derived(triple.object_type === "uri" ? parseLabels(object.labels) : null);
-  let objDefs = $derived(triple.object_type === "uri" ? parseLabels(object.definitions) : null);
+  let objLabels = $derived(triple.object_type === "node" ? parseLabels(object.labels) : null);
+  let objDefs = $derived(triple.object_type === "node" ? parseLabels(object.definitions) : null);
 
   /** Render object value based on datatype */
   function renderObject() {
-    if (triple.object_type !== "uri") {
+    if (triple.object_type !== "node") {
       const dt = triple.object_datatype;
       if (dt === "text/katex") {
         return `<div class="katex-render">$$${triple.object_value}$$</div>`;
@@ -101,8 +101,8 @@
       </span>
       <span class="arc-arrow">→</span>
       <span class="arc-ent" role="button" tabindex="-1"
-        onclick={() => { if (triple.object_type === "uri") openNode(triple.object_value); }}
-        onkeydown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (triple.object_type === "uri") openNode(triple.object_value); } }}>
+        onclick={() => { if (triple.object_type === "node") openNode(triple.object_value); }}
+        onkeydown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (triple.object_type === "node") openNode(triple.object_value); } }}>
         {triple.object_value}
       </span>
     </div>
@@ -184,7 +184,7 @@
   <!-- Object section -->
   <div class="section">
     <div class="section-title">
-      {#if triple.object_type === "uri"}
+      {#if triple.object_type === "node"}
         <span class="ent-link" role="button" tabindex="-1"
           onclick={() => openNode(triple.object_value)}
           onkeydown={(e) => { if (e.key === "Enter") { e.preventDefault(); openNode(triple.object_value); } }}>
@@ -201,9 +201,9 @@
       {/if}
     </div>
 
-    {#if triple.object_type !== "uri" && triple.object_datatype === "text/katex"}
+    {#if triple.object_type !== "node" && triple.object_datatype === "text/katex"}
       <div class="katex-preview">{triple.object_value}</div>
-    {:else if triple.object_type === "uri"}
+    {:else if triple.object_type === "node"}
       {#if objLabels}
         <div class="sub-section">
           <span class="sub-label">Labels</span>

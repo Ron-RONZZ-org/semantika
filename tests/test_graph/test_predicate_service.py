@@ -31,7 +31,7 @@ class TestPredicateService:
         ns.create({"node_id": "A", "labels": {"en": "A"}})
         ns.create({"node_id": "B", "labels": {"en": "B"}})
         ps.create({"predicate_id": "ex:test_p", "labels": {"en": "test p"}})
-        ts.add("A", "ex:test_p", "B", object_type="uri")
+        ts.add("A", "ex:test_p", "B", object_type="node")
 
         prs.create({
             "subject_id": "A", "predicate_id": "ex:test_p",
@@ -52,7 +52,7 @@ class TestPredicateService:
         ns.create({"node_id": "A", "labels": {"en": "A"}})
         ns.create({"node_id": "B", "labels": {"en": "B"}})
         ps.create({"predicate_id": "ex:hard_p", "labels": {"en": "hard p"}})
-        ts.add("A", "ex:hard_p", "B", object_type="uri")
+        ts.add("A", "ex:hard_p", "B", object_type="node")
 
         prs.create({
             "subject_id": "A", "predicate_id": "ex:hard_p",
@@ -79,7 +79,7 @@ class TestPredicateService:
         ns.create({"node_id": "B", "labels": {"en": "B"}})
         ps.create({"predicate_id": "ex:p_target", "labels": {"en": "target"}})
         ps.create({"predicate_id": "ex:p_unrelated", "labels": {"en": "unrelated"}})
-        ts.add("A", "ex:p_target", "B", object_type="uri")
+        ts.add("A", "ex:p_target", "B", object_type="node")
 
         prs.create({
             "subject_id": "A", "predicate_id": "ex:p_target",
@@ -135,7 +135,7 @@ class TestPredicateDeleteExact:
         ns.create({"node_id": "S", "labels": {"en": "S"}})
         ns.create({"node_id": "O", "labels": {"en": "O"}})
         ps.create({"predicate_id": "ex:del"})
-        ts.add("S", "ex:del", "O", object_type="uri")
+        ts.add("S", "ex:del", "O", object_type="node")
         assert ts.count() == 1
 
         ps.delete("ex:del", soft=False)
@@ -153,13 +153,13 @@ class TestPredicateUpdateNplusOne:
         ns.create({"node_id": "S", "labels": {"en": "S"}})
         ns.create({"node_id": "O", "labels": {"en": "O"}})
         ps.create({"predicate_id": "ex:old_p"})
-        ts.add("S", "ex:old_p", "O", object_type="uri")
+        ts.add("S", "ex:old_p", "O", object_type="node")
         # Insert a triple with the target predicate_id directly, disabling FK
         services["triple"].db.execute("PRAGMA foreign_keys=OFF")
         services["triple"].db.execute(
             "INSERT OR IGNORE INTO triples (subject_id, predicate_id, object_value, object_type, created_at) "
             "VALUES (?, ?, ?, ?, ?)",
-            ("S", "ex:new_p", "O", "uri", now()),
+            ("S", "ex:new_p", "O", "node", now()),
         )
         services["triple"].db.execute("PRAGMA foreign_keys=ON")
 

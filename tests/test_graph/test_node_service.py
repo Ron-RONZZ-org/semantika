@@ -279,7 +279,7 @@ class TestNodeService:
         ns.create({"node_id": "A", "labels": {"en": "A"}})
         ns.create({"node_id": "B", "labels": {"en": "B"}})
         ps.create({"predicate_id": "ex:p", "labels": {"en": "p"}})
-        ts.add("A", "ex:p", "B", object_type="uri")
+        ts.add("A", "ex:p", "B", object_type="node")
 
         proof = prs.create({
             "subject_id": "A", "predicate_id": "ex:p",
@@ -317,7 +317,7 @@ class TestNodeService:
         ns.create({"node_id": "S", "labels": {"en": "S"}})
         ns.create({"node_id": "OBJ", "labels": {"en": "Object"}})
         ps.create({"predicate_id": "ex:rel", "labels": {"en": "rel"}})
-        ts.add("S", "ex:rel", "OBJ", object_type="uri")
+        ts.add("S", "ex:rel", "OBJ", object_type="node")
 
         proof = prs.create({
             "subject_id": "S", "predicate_id": "ex:rel",
@@ -392,7 +392,7 @@ class TestNodeHardDelete:
         ns.create({"node_id": "OBJ", "labels": {"en": "Object"}})
         ps = services["predicate"]
         ps.create({"predicate_id": "ex:p"})
-        ts.add("SUBJ", "ex:p", "OBJ", object_type="uri")
+        ts.add("SUBJ", "ex:p", "OBJ", object_type="node")
         assert ts.count() >= 1
 
         ns.delete("SUBJ", soft=False)

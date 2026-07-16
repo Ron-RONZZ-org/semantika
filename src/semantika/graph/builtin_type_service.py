@@ -99,7 +99,7 @@ class BuiltinTypeService:
                 conn.execute(
                     "INSERT OR IGNORE INTO triples "
                     "(subject_id, predicate_id, object_value, object_type, created_at) "
-                    "VALUES (?, 'rdf:type', ?, 'uri', ?)",
+                    "VALUES (?, 'rdf:type', ?, 'node', ?)",
                     (type_node["node_id"], type_node["node_id"], now_iso),
                 )
 

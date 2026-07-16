@@ -121,7 +121,7 @@ class TestPredicateAPI:
         )
         client.post(
             "/api/v1/graph/triples",
-            json={"subject_id": "PRED_SUBJ", "predicate_id": "ex:oldPred", "object_value": "PRED_OBJ", "object_type": "uri"},
+            json={"subject_id": "PRED_SUBJ", "predicate_id": "ex:oldPred", "object_value": "PRED_OBJ", "object_type": "node"},
         )
 
         resp = client.patch(

@@ -28,7 +28,7 @@ class ProofService:
             "subject_id": data["subject_id"],
             "predicate_id": data["predicate_id"],
             "object_value": data["object_value"],
-            "object_type": data.get("object_type", "uri"),
+            "object_type": data.get("object_type", "node"),
             "proof_type": data.get("proof_type", "observation"),
             "source": data.get("source", ""),
             "notes": data.get("notes", ""),
