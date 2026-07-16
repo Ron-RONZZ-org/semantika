@@ -4,7 +4,7 @@
  * Ported from lighterbird's ``commandEngine.js``.
  */
 
-import { commandTree, promptCommands, findNode, matchChildren } from "./commandTree.js";
+import { commandTree, promptCommands, tripleTemplates, findNode, matchChildren } from "./commandTree.js";
 import { parseCommand, parsePromptCommand, hasTrailingSpace } from "./parser.js";
 
 export function getCompletions(input) {
@@ -63,6 +63,18 @@ function buildPositionalInfo(node, consumedTokens) {
 
 function buildParamHints(node, consumedTokens, flags, partial = "") {
   const hints = [];
+
+  // Special case: when --template flag is set, suggest template names
+  if ("template" in flags && flags.template !== undefined && tripleTemplates.length > 0) {
+    const valPartial = (flags.template || partial || "").toLowerCase();
+    for (const t of tripleTemplates) {
+      if (t.name.toLowerCase().startsWith(valPartial)) {
+        hints.push({ text: t.name, desc: t.description || "Triple template" });
+      }
+    }
+    return hints;
+  }
+
   const isFlagPartial = partial.startsWith("--");
   if (isFlagPartial) {
     const partialFlag = partial.slice(2).toLowerCase();

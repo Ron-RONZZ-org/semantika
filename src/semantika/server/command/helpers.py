@@ -28,10 +28,7 @@ def parse_lang_tag_pairs(text: str | list[str]) -> dict[str, str]:
     value.
     """
     result: dict[str, str] = {}
-    if isinstance(text, str):
-        items = [t.strip() for t in text.replace(",", " ").split() if t.strip()]
-    else:
-        items = text
+    items = [t.strip() for t in text.replace(",", " ").split() if t.strip()] if isinstance(text, str) else text
     for item in items:
         if "::" in item:
             lang, _, val = item.partition("::")

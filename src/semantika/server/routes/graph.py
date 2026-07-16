@@ -168,7 +168,7 @@ def search_nodes(q: str, limit: int = 50):
 
 @router.get("/nodes/stats")
 def node_stats():
-    """Get graph statistics."""
+    """Get node, predicate, and triple counts."""
     return _svc()["triple"].get_stats()
 
 
@@ -258,6 +258,12 @@ def delete_node(
 
     If the node is referenced by triples, returns 409 with dependency
     info unless ``force=true`` is set.
+
+    Note: The warning check and delete are not wrapped in a single
+    transaction because the service methods auto-commit.  In single-user
+    usage the race window is negligible.  A future refactor could pass
+    an external connection to ``get_delete_warning`` / ``delete`` for
+    true atomicity.
     """
     svc = _svc()["node"]
     if not force:

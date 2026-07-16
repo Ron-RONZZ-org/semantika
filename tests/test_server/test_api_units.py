@@ -6,16 +6,8 @@ decomposing units, and unit commands via the dispatch system.
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 import pytest
 from fastapi.testclient import TestClient
-
-# Must override data dir before importing app
-TEST_DATA_DIR = Path("/tmp/semantika-units-test") / str(os.getpid())
-TEST_DATA_DIR.mkdir(parents=True, exist_ok=True)
-os.environ["SEMANTIKA_DATA_DIR"] = str(TEST_DATA_DIR)
 
 from semantika.server.app import create_app
 

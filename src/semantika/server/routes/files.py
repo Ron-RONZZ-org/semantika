@@ -102,25 +102,48 @@ async def attach_file(req: FileAttachRequest):
 
 @router.get("/by-node/{node_id}")
 async def get_attachments(node_id: str):
-    """Get file attachment triples for a node."""
+    """Get file attachment triples for a node.
+
+    Groups the ``:hasFilePath``, ``:hasFileMime``, and ``:hasFileSize``
+    triples by their insertion position (rowid order) into a single
+    attachment dict per file.  Missing predicates (e.g. no mime) are
+    set to ``None`` rather than breaking the grouping.
+    """
     svc = get_services()
     node = svc["node"].resolve_node_id_prefix(node_id)
     if not node:
         raise HTTPException(404, f"Node not found: {node_id}")
 
     nid = node["node_id"]
-    file_paths = svc["triple"].get_by_sp(nid, ":hasFilePath")
-    mime_triples = svc["triple"].get_by_sp(nid, ":hasFileMime")
-    size_triples = svc["triple"].get_by_sp(nid, ":hasFileSize")
-    # Zip by insertion order — attach_file always inserts path, mime,
-    # then size per file, and get_by_sp returns in rowid order.
+    ts = svc["triple"]
+
+    # Single query: fetch all file-metadata triples in rowid order,
+    # then group sequential triples into attachment entries.
+    all_rows = ts.db.execute(
+        "SELECT rowid, predicate_id, object_value "
+        "FROM triples WHERE subject_id = ? AND predicate_id IN (?, ?, ?) "
+        "ORDER BY rowid",
+        (nid, ":hasFilePath", ":hasFileMime", ":hasFileSize"),
+    )
+
     result = []
-    for i, fp in enumerate(file_paths):
-        result.append({
-            "path": fp["object_value"],
-            "mime": mime_triples[i]["object_value"] if i < len(mime_triples) else None,
-            "size": size_triples[i]["object_value"] if i < len(size_triples) else None,
-        })
+    current: dict | None = None
+    for row in all_rows:
+        pred = row["predicate_id"]
+        val = row["object_value"]
+        if pred == ":hasFilePath":
+            # New file entry
+            if current is not None:
+                result.append(current)
+            current = {"path": val, "mime": None, "size": None}
+        elif pred == ":hasFileMime" and current is not None:
+            current["mime"] = val
+        elif pred == ":hasFileSize" and current is not None:
+            current["size"] = val
+
+    if current is not None:
+        result.append(current)
+
     return {"attachments": result}
 
 

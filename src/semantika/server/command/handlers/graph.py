@@ -68,7 +68,6 @@ def cmd_import(remaining: list[str], flags: dict[str, str]) -> dict:
 
     Provide inline content via ``data=`` or a file path via ``--file``.
     """
-    svc = get_services()
     file_path = flags.get("file", "")
     if file_path:
         try:

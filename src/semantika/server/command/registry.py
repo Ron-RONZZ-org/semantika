@@ -243,7 +243,7 @@ def get_command_tree() -> list[dict[str, Any]]:
                 # Navigate into the group node's children dict, not the node itself
                 current = current[part]["children"]
             else:
-                current = current[part]
+                current = current[part]  # noqa: SIM108
 
     def _to_list(node: dict) -> dict[str, Any]:
         result: dict[str, Any] = {
@@ -463,7 +463,7 @@ def call_system_command(
     entry = _system_commands.get(path)
     if entry is None:
         raise CommandNotFound(path.split("."))
-    handler_fn, metadata = entry
+    handler_fn, _metadata = entry
     return handler_fn(remaining or [], flags or {})
 
 

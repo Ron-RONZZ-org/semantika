@@ -9,15 +9,9 @@ and error handling in execute_command.
 from __future__ import annotations
 
 import json
-import os
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-
-TEST_DATA_DIR = Path("/tmp/semantika-cmd-test") / str(os.getpid())
-TEST_DATA_DIR.mkdir(parents=True, exist_ok=True)
-os.environ["SEMANTIKA_DATA_DIR"] = str(TEST_DATA_DIR)
 
 # Side-effect: register handlers before testing form types
 from semantika.server.command import handlers  # noqa: F401

@@ -115,7 +115,7 @@ class NodeMergeMixin:
                     )
 
                 set_parts = [f"{k} = ?" for k in updates]
-                params = list(updates.values()) + [old_id]
+                params = [*list(updates.values()), old_id]
                 conn.execute(
                     f"UPDATE nodes SET {', '.join(set_parts)} WHERE node_id = ?",
                     params,

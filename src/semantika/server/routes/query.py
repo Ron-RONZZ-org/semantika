@@ -82,11 +82,17 @@ def _strip_sql_comments(sql: str) -> str:
 
     Applies block-comment removal iteratively to defeat nested comments
     like ``/*/*/ SELECT 1 */`` which would otherwise survive a single pass.
+    Bound at 20 iterations so maliciously crafted input cannot cause O(n²)
+    runtime (the already-enforced ``MAX_RAW_QUERY_LENGTH`` is the primary
+    guard against resource exhaustion).
     """
     prev = None
-    while prev != sql:
+    max_passes = 20
+    passes = 0
+    while prev != sql and passes < max_passes:
         prev = sql
         sql = re.sub(r"/\*.*?\*/", "", sql, flags=re.DOTALL)
+        passes += 1
     sql = re.sub(r"--.*$", "", sql, flags=re.MULTILINE)
     return sql.strip()
 

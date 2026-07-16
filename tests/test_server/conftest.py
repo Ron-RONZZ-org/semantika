@@ -8,10 +8,13 @@ needed.
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
 import pytest
+
+from semantika.graph.db import close_db
 
 from semantika.core import SemantikaDB
 from semantika.graph.db import SCHEMA, PROOF_SCHEMA, REVIEW_SCHEMA
@@ -126,3 +129,48 @@ def mock_services(monkeypatch: pytest.MonkeyPatch, db: SemantikaDB) -> None:
 
     for mod_path in _handler_modules_using_get_services():
         monkeypatch.setattr(f"{mod_path}.get_services", lambda: svc)
+
+
+@pytest.fixture(scope="class", autouse=True)
+def auto_isolate_data_dir(
+    request: pytest.FixtureRequest,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """Isolate tests from the real data/config directories (autouse, class-scoped).
+
+    Sets all SEMANTIKA_*_DIR env vars to a unique ``tmp_path_factory``
+    directory so that ``lightercore.paths.data_dir()`` / ``config_dir()``
+    etc. resolve to isolated temp directories.  Also resets the global DB
+    singleton so the next ``create_app()`` call picks up the new path.
+
+    Class-scoped: all test methods within one class share the same temp
+    directory (preserving intra-class state), but different classes get
+    independent directories.
+
+    Opt out with ``@pytest.mark.no_isolation`` for the rare test that
+    genuinely needs the real XDG paths.
+    """
+    if request.node.get_closest_marker("no_isolation"):
+        return
+
+    tmp_path = tmp_path_factory.mktemp("semantika-test-")
+
+    saved = {}
+    for key in ("SEMANTIKA_DATA_DIR", "SEMANTIKA_CONFIG_DIR", "SEMANTIKA_CACHE_DIR", "SEMANTIKA_STATE_DIR"):
+        saved[key] = os.environ.get(key)
+        os.environ[key] = str(tmp_path)
+
+    close_db()
+
+    def _restore() -> None:
+        for key, val in saved.items():
+            if val is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = val
+
+    request.addfinalizer(_restore)
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line("markers", "no_isolation: skip auto_isolate_data_dir")

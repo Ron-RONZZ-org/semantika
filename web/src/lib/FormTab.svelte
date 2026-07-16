@@ -1,6 +1,7 @@
 <script>
   import { tabStore } from "./tabStore.svelte.js";
   import DynamicForm from "./DynamicForm.svelte";
+  import TripleTemplateForm from "./TripleTemplateForm.svelte";
 
   let { data = {} } = $props();
   let formType = $derived(data?.form || "");
@@ -39,7 +40,6 @@
         body: JSON.stringify(payload),
       });
       const result = await resp.json();
-      // Unwrap: backend returns {type, title, data}; use result.data for the tab's content
       tabStore.open(result.type || "status", result.title || "Result", result.data || result);
     } catch (err) {
       tabStore.open("error", "Error", { type: "error", data: { message: String(err) } });
@@ -49,7 +49,11 @@
 
 <div class="form-tab">
   <h3>{formType.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</h3>
-  <DynamicForm {commandPath} {initialData} onsubmit={handleFormSubmit} />
+  {#if formType.startsWith("triple-template-")}
+    <TripleTemplateForm {data} />
+  {:else}
+    <DynamicForm {commandPath} {initialData} onsubmit={handleFormSubmit} />
+  {/if}
 </div>
 
 <style>

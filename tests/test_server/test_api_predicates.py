@@ -7,16 +7,9 @@ and predicate-group CRUD via both REST and command dispatch.
 from __future__ import annotations
 
 import json
-import os
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-
-# Must override data dir before importing app
-TEST_DATA_DIR = Path("/tmp/semantika-preds-test") / str(os.getpid())
-TEST_DATA_DIR.mkdir(parents=True, exist_ok=True)
-os.environ["SEMANTIKA_DATA_DIR"] = str(TEST_DATA_DIR)
 
 from semantika.server.app import create_app
 
@@ -283,6 +276,11 @@ class TestPredicateUpdateReplace:
 
     def test_predicate_update_with_descriptions(self, client: TestClient):
         """Update a predicate with descriptions via !command."""
+        # Create predicate before updating it
+        client.post(
+            "/api/v1/graph/predicates",
+            json={"predicate_id": "ex:viewPred", "labels": {"en": "viewable pred"}},
+        )
         resp = client.post(
             "/api/v1/command",
             json={"tokens": ["predicate", "update"], "flags": {

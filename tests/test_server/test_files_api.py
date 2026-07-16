@@ -5,21 +5,14 @@ Covers copy, move, delete, node-not-found, and edge cases.
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 import pytest
 from fastapi.testclient import TestClient
+
+from semantika.server.app import create_app
 
 
 @pytest.fixture(scope="class")
 def client() -> TestClient:
-    from semantika.server.app import create_app
-
-    data_dir = Path("/tmp/semantika-files-test") / str(os.getpid())
-    data_dir.mkdir(parents=True, exist_ok=True)
-    os.environ["SEMANTIKA_DATA_DIR"] = str(data_dir)
-
     app = create_app()
     with TestClient(app) as c:
         yield c

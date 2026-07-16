@@ -15,6 +15,7 @@ import logging
 import random
 import sqlite3
 import uuid as _uuid
+from typing import ClassVar
 
 from semantika.core import SemantikaDB
 from semantika.core.crud import now
@@ -283,7 +284,7 @@ class ReviewService:
 
         return session
 
-    _LABEL_TABLES: dict[str, tuple[str, str]] = {
+    _LABEL_TABLES: ClassVar[dict[str, tuple[str, str]]] = {
         "nodes": ("node_id", "labels"),
         "predicates": ("predicate_id", "labels"),
     }

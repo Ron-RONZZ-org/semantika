@@ -206,7 +206,7 @@ class TestConfirmationGate:
         data = resp.json()
         assert data["type"] == "confirm_tool"
         assert "session_id" in data
-        assert data["tokens"] == ["node", "merge"]
+        assert data["batch"][0]["tokens"] == ["node", "merge"]
         assert "Review and approve" in data["message"]
         assert "batch" in data
         assert len(data["batch"]) == 1
@@ -230,7 +230,7 @@ class TestConfirmationGate:
         data = resp.json()
         assert data["type"] == "confirm_tool"
         assert "session_id" in data
-        assert data["tokens"] == ["node", "add"]
+        assert data["batch"][0]["tokens"] == ["node", "add"]
 
     def test_confirm_and_resume(self, client: TestClient, monkeypatch: pytest.MonkeyPatch):
         """After user approves, the destructive tool executes."""

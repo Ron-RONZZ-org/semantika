@@ -19,6 +19,12 @@ export let commandTree = [];
  */
 export let promptCommands = [];
 
+/**
+ * List of triple template names for ``--template`` flag autocomplete.
+ * @type {{name:string, description:string}[]}
+ */
+export let tripleTemplates = [];
+
 export async function initCommandTree() {
   try {
     const resp = await fetch("/api/v1/command/tree");
@@ -41,8 +47,19 @@ export async function initPromptCommands() {
   } catch { /* degrade gracefully */ }
 }
 
+/**
+ * Fetch triple template names for ``--template`` flag autocomplete.
+ */
+export async function initTripleTemplates() {
+  try {
+    const resp = await fetch("/api/v1/triple-templates/list");
+    if (resp.ok) tripleTemplates = await resp.json();
+  } catch { /* degrade gracefully */ }
+}
+
 initCommandTree();
 initPromptCommands();
+initTripleTemplates();
 
 export function getRootNames() {
   return commandTree.map((n) => n.name);
