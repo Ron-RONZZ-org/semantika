@@ -1,7 +1,11 @@
-"""Unit tests for specialised node-add subcommands via dispatch().
+"""Unit tests for attachment node-add subcommands (!node add attachment ...).
 
 Tests use isolated test databases and mocked get_services()
 (defined in ``conftest.py``).
+
+Note: These were formerly at ``!node add photo|video|file|code`` and were
+migrated under ``!node add attachment ...`` when the command tree was
+reorganised.
 """
 
 from __future__ import annotations
@@ -9,7 +13,7 @@ from __future__ import annotations
 import pytest
 
 from semantika.server.command import handlers  # noqa: F401
-from semantika.server.command.handlers import node_specialised  # noqa: F401 — register specialised handlers
+from semantika.server.command.handlers import node_attachment  # noqa: F401 — register attachment handlers
 from semantika.server.command.helpers import safe_json_loads as _sjs
 from semantika.server.command.registry import dispatch
 
@@ -31,13 +35,27 @@ def seeded(services: dict) -> dict:
 
 
 def test_parse_dimension(services: dict):
-    """Test the parse_dimension helper via node.add.photo --dimension."""
+    """Test the parse_dimension helper."""
     from semantika.server.command.handlers.node_helpers import parse_dimension
     assert parse_dimension("1920x1080") == "1920x1080"
     assert parse_dimension("800x600") == "800x600"
     assert parse_dimension("") is None
     with pytest.raises(Exception, match="Invalid dimension"):
         parse_dimension("abc")
+
+
+def test_parse_duration(services: dict):
+    """Test the parse_duration helper."""
+    from semantika.server.command.handlers.node_helpers import parse_duration
+    assert parse_duration("02:30:00") == "9000"
+    assert parse_duration("1:30:00") == "5400"
+    assert parse_duration("45:00") == "2700"
+    assert parse_duration("3600") == "3600"
+    assert parse_duration("") is None
+    with pytest.raises(Exception, match="Invalid duration"):
+        parse_duration("abc")
+    with pytest.raises(Exception, match="Invalid duration"):
+        parse_duration("1:99:00")
 
 
 def test_resolve_node_refs_resolves(seeded: dict):
@@ -63,21 +81,33 @@ def test_resolve_node_refs_empty(services: dict):
     assert resolve_node_refs(services, "", "object") == []
 
 
-# ── Specialised node.add.photo ──────────────────────────────────────────
+# ── Split literals ───────────────────────────────────────────────────────
+
+
+def test_split_literals():
+    """Test the split_literals helper."""
+    from semantika.server.command.handlers.node_helpers import split_literals
+    assert split_literals("a, b, c") == ["a", "b", "c"]
+    assert split_literals("") == []
+    assert split_literals("single") == ["single"]
+    assert split_literals("a,,b") == ["a", "b"]
+
+
+# ── Attachment node.add.attachment.photo ────────────────────────────────
 
 
 class TestNodeAddPhoto:
     def test_photo_missing_path(self):
         """Missing --path should raise."""
         with pytest.raises(Exception, match="Specify --path"):
-            dispatch(["node", "add", "photo"], {})
+            dispatch(["node", "add", "attachment", "photo"], {})
 
     def test_photo_no_copy_flag(self, seeded: dict, tmp_path):
         """Photo with --no-copy should store reference only."""
         p = tmp_path / "test.jpg"
         p.write_bytes(b"\xff\xd8\xff\xe0")  # minimal JPEG
         result = dispatch(
-            ["node", "add", "photo"],
+            ["node", "add", "attachment", "photo"],
             {"path": str(p), "no-copy": "true"},
         )
         assert result["type"] == "status"
@@ -89,7 +119,7 @@ class TestNodeAddPhoto:
         p = tmp_path / "sunset.jpg"
         p.write_bytes(b"\xff\xd8\xff\xe0")
         result = dispatch(
-            ["node", "add", "photo"],
+            ["node", "add", "attachment", "photo"],
             {"path": str(p), "object": "ALICE,BOB", "no-copy": "true"},
         )
         assert result["type"] == "status"
@@ -100,7 +130,7 @@ class TestNodeAddPhoto:
         p = tmp_path / "dim_test.jpg"
         p.write_bytes(b"\xff\xd8\xff\xe0")
         result = dispatch(
-            ["node", "add", "photo"],
+            ["node", "add", "attachment", "photo"],
             {"path": str(p), "dimension": "1920x1080", "no-copy": "true"},
         )
         assert result["type"] == "status"
@@ -110,7 +140,7 @@ class TestNodeAddPhoto:
         p = tmp_path / "cl_test.jpg"
         p.write_bytes(b"\xff\xd8\xff\xe0")
         result = dispatch(
-            ["node", "add", "photo"],
+            ["node", "add", "attachment", "photo"],
             {"path": str(p), "canonical-link": "https://example.com/photo.jpg", "no-copy": "true"},
         )
         assert result["type"] == "status"
@@ -120,26 +150,26 @@ class TestNodeAddPhoto:
         p = tmp_path / "id_test.jpg"
         p.write_bytes(b"\xff\xd8\xff\xe0")
         result = dispatch(
-            ["node", "add", "photo"],
+            ["node", "add", "attachment", "photo"],
             {"path": str(p), "id": "MY_PHOTO_001", "no-copy": "true"},
         )
         assert result["type"] == "status"
         assert result["data"]["node"]["node_id"] == "MY_PHOTO_001"
 
 
-# ── Specialised node.add.video ──────────────────────────────────────────
+# ── Attachment node.add.attachment.video ────────────────────────────────
 
 
 class TestNodeAddVideo:
     def test_video_missing_path(self):
         with pytest.raises(Exception, match="Specify --path"):
-            dispatch(["node", "add", "video"], {})
+            dispatch(["node", "add", "attachment", "video"], {})
 
     def test_video_no_copy(self, seeded: dict, tmp_path):
         p = tmp_path / "test.mp4"
         p.write_bytes(b"\x00\x00\x00\x18ftypmp42")
         result = dispatch(
-            ["node", "add", "video"],
+            ["node", "add", "attachment", "video"],
             {"path": str(p), "no-copy": "true"},
         )
         assert result["type"] == "status"
@@ -148,26 +178,26 @@ class TestNodeAddVideo:
         p = tmp_path / "vid.mp4"
         p.write_bytes(b"\x00\x00\x00\x18ftypmp42")
         result = dispatch(
-            ["node", "add", "video"],
+            ["node", "add", "attachment", "video"],
             {"path": str(p), "object": "ALICE", "no-copy": "true"},
         )
         assert result["type"] == "status"
         assert len(result["data"].get("semantic_triples", [])) >= 1
 
 
-# ── Specialised node.add.file ───────────────────────────────────────────
+# ── Attachment node.add.attachment.file ─────────────────────────────────
 
 
 class TestNodeAddFile:
     def test_file_missing_path(self):
         with pytest.raises(Exception, match="Specify --path"):
-            dispatch(["node", "add", "file"], {})
+            dispatch(["node", "add", "attachment", "file"], {})
 
     def test_file_no_copy(self, seeded: dict, tmp_path):
         p = tmp_path / "doc.pdf"
         p.write_bytes(b"%PDF-1.4")
         result = dispatch(
-            ["node", "add", "file"],
+            ["node", "add", "attachment", "file"],
             {"path": str(p), "no-copy": "true"},
         )
         assert result["type"] == "status"
@@ -176,33 +206,33 @@ class TestNodeAddFile:
         p = tmp_path / "report.pdf"
         p.write_bytes(b"%PDF-1.4")
         result = dispatch(
-            ["node", "add", "file"],
+            ["node", "add", "attachment", "file"],
             {"path": str(p), "theme": "ALICE,BOB", "no-copy": "true"},
         )
         assert result["type"] == "status"
         assert len(result["data"].get("semantic_triples", [])) >= 2
 
 
-# ── Specialised node.add.code ───────────────────────────────────────────
+# ── Attachment node.add.attachment.code ─────────────────────────────────
 
 
 class TestNodeAddCode:
     def test_code_both_missing(self):
         """Missing both --code and --path should raise a clear error."""
         with pytest.raises(Exception, match="Provide source code via --code"):
-            dispatch(["node", "add", "code"], {})
+            dispatch(["node", "add", "attachment", "code"], {})
 
     def test_code_missing_lang(self, seeded: dict, tmp_path):
         """Missing --lang should raise."""
         p = tmp_path / "script.py"
         p.write_text("print('hello')")
         with pytest.raises(Exception, match="Specify --lang"):
-            dispatch(["node", "add", "code"], {"path": str(p)})
+            dispatch(["node", "add", "attachment", "code"], {"path": str(p)})
 
     def test_code_inline_paste(self, seeded: dict):
         """Inline --code paste should create node with code in DB."""
         result = dispatch(
-            ["node", "add", "code"],
+            ["node", "add", "attachment", "code"],
             {"code": "print('hello world')", "lang": "python"},
         )
         assert result["type"] == "status"
@@ -216,7 +246,7 @@ class TestNodeAddCode:
     def test_code_inline_paste_with_id(self, seeded: dict):
         """Inline --code paste with explicit --id."""
         result = dispatch(
-            ["node", "add", "code"],
+            ["node", "add", "attachment", "code"],
             {"code": "def foo(): pass", "lang": "python", "id": "MY_SCRIPT"},
         )
         assert result["type"] == "status"
@@ -226,7 +256,7 @@ class TestNodeAddCode:
     def test_code_inline_with_canonical_link(self, seeded: dict):
         """Inline --code paste with --canonical-link."""
         result = dispatch(
-            ["node", "add", "code"],
+            ["node", "add", "attachment", "code"],
             {"code": "console.log('hi')", "lang": "javascript",
              "canonical-link": "https://example.com/app.js"},
         )
@@ -238,29 +268,29 @@ class TestNodeAddCode:
     def test_code_inline_with_labels(self, seeded: dict):
         """Inline --code paste with --labels."""
         result = dispatch(
-            ["node", "add", "code"],
+            ["node", "add", "attachment", "code"],
             {"code": "print(1)", "lang": "python", "labels": "Hello script"},
         )
         assert result["type"] == "status"
         assert "Hello script" in result["data"].get("message", "")
 
     def test_code_file_path(self, seeded: dict, tmp_path):
-        """File-based path should still work (backward compat)."""
+        """File-based path should still work."""
         p = tmp_path / "script.py"
         p.write_text("print('hello')")
         result = dispatch(
-            ["node", "add", "code"],
+            ["node", "add", "attachment", "code"],
             {"path": str(p), "lang": "python", "no-copy": "true"},
         )
         assert result["type"] == "status"
         assert len(result["data"].get("semantic_triples", [])) >= 1
 
     def test_code_file_path_with_canonical_link(self, seeded: dict, tmp_path):
-        """File-based path with canonical link (backward compat)."""
+        """File-based path with canonical link."""
         p = tmp_path / "app.js"
         p.write_text("console.log('hi')")
         result = dispatch(
-            ["node", "add", "code"],
+            ["node", "add", "attachment", "code"],
             {"path": str(p), "lang": "javascript", "canonical-link": "https://example.com/app.js", "no-copy": "true"},
         )
         assert result["type"] == "status"
@@ -270,11 +300,13 @@ class TestNodeAddCode:
         p = tmp_path / "other.py"
         p.write_text("print('other')")
         result = dispatch(
-            ["node", "add", "code"],
+            ["node", "add", "attachment", "code"],
             {"code": "print('code wins')", "path": str(p), "lang": "python"},
         )
         assert result["type"] == "status"
         assert result["data"]["node"]["code_content"] == "print('code wins')"
+
+
 # ── Removed flags error messages ────────────────────────────────────────
 
 
@@ -304,10 +336,10 @@ class TestRemovedFlags:
 # ── Command tree verification ──────────────────────────────────────────
 
 
-class TestSpecialisedNodeInTree:
-    """Verify the new subcommands appear in the command tree."""
+class TestAttachmentNodeInTree:
+    """Verify the attachment subcommands appear in the command tree."""
 
-    def test_tree_has_photo(self):
+    def test_tree_has_attachment(self):
         from semantika.server.command.registry import get_command_tree
         tree = get_command_tree()
         node_entry = next((n for n in tree if n["name"] == "node"), None)
@@ -318,14 +350,25 @@ class TestSpecialisedNodeInTree:
         )
         assert add_entry is not None
         child_names = [c["name"] for c in add_entry.get("children", [])]
+        assert "attachment" in child_names
+
+    def test_attachment_has_children(self):
+        from semantika.server.command.registry import get_command_tree
+        tree = get_command_tree()
+        # Navigate: node > add > attachment > children
+        add_entry = next(c for c in next(
+            n for n in tree if n["name"] == "node"
+        )["children"] if c["name"] == "add")
+        attachment_entry = next(c for c in add_entry["children"] if c["name"] == "attachment")
+        child_names = [c["name"] for c in attachment_entry.get("children", [])]
         assert "photo" in child_names
         assert "video" in child_names
         assert "file" in child_names
         assert "code" in child_names
 
     def test_photo_has_required_flags(self):
-        from semantika.server.command.registry import get_command_tree, get_handler_metadata
-        meta = get_handler_metadata("node.add.photo")
+        from semantika.server.command.registry import get_handler_metadata
+        meta = get_handler_metadata("node.add.attachment.photo")
         assert meta is not None
         flags = {f["name"] for f in meta.get("flags", [])}
         assert "path" in flags
@@ -336,13 +379,13 @@ class TestSpecialisedNodeInTree:
 
     def test_code_has_flags(self):
         from semantika.server.command.registry import get_handler_metadata
-        meta = get_handler_metadata("node.add.code")
+        meta = get_handler_metadata("node.add.attachment.code")
         assert meta is not None
         flag_names = {f["name"] for f in meta.get("flags", [])}
-        assert "code" in flag_names  # new inline paste flag
-        assert "path" in flag_names  # file upload (optional)
+        assert "code" in flag_names
+        assert "path" in flag_names
         assert "lang" in flag_names
-        assert "no-copy" not in flag_names  # removed — code is text-only
+        assert "no-copy" not in flag_names
         # Verify group metadata
         code_flag = next(f for f in meta["flags"] if f["name"] == "code")
         path_flag = next(f for f in meta["flags"] if f["name"] == "path")
@@ -369,7 +412,6 @@ class TestNodeViewType:
         bts.ensure_builtins()
         ns = services["node"]
         ns.create({"node_id": "EMPTY_PHOTO", "labels": {"en": "Empty Photo"}})
-        # Add rdf:type triple to PHOTO
         ts = services["triple"]
         ts.add("EMPTY_PHOTO", "rdf:type", "PHOTO", object_type="uri")
         result = dispatch(["node", "view", "EMPTY_PHOTO"], {})
@@ -377,17 +419,15 @@ class TestNodeViewType:
 
     def test_photo_node_with_file_returns_node_view(self, services: dict, tmp_path):
         """A photo-type node with a file returns type ``node-view`` with file_url."""
-        # Create photo node via specialised command
         p = tmp_path / "test_view.jpg"
         p.write_bytes(b"\xff\xd8\xff\xe0")
         result = dispatch(
-            ["node", "add", "photo"],
+            ["node", "add", "attachment", "photo"],
             {"path": str(p), "no-copy": "true"},
         )
         assert result["type"] == "status"
         node_id = result["data"]["node"]["node_id"]
 
-        # Now view it
         view_result = dispatch(["node", "view"], {"id": node_id})
         assert view_result["type"] == "node-view"
         assert "file_url" in view_result["data"]
@@ -399,7 +439,7 @@ class TestNodeViewType:
         p = tmp_path / "test_view.py"
         p.write_text("print('hello')")
         result = dispatch(
-            ["node", "add", "code"],
+            ["node", "add", "attachment", "code"],
             {"path": str(p), "lang": "python"},
         )
         assert result["type"] == "status"

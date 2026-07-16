@@ -18,7 +18,6 @@ _ARC_PREDICATES: dict[str, str] = {
     "type": "rdf:type",
     "superclass": "rdfs:subClassOf",
     "disjoint": "owl:disjointWith",
-    "inverse": "owl:inverseOf",
 }
 
 
@@ -204,6 +203,44 @@ def resolve_node_refs(svc: dict, raw: str, flag_name: str) -> list[str]:
     return ids
 
 
+def parse_duration(raw: str) -> str | None:
+    """Parse a duration string to total seconds, or None if empty.
+
+    Accepts ``HH:MM:SS``, ``MM:SS``, or a plain integer (already in
+    seconds).  Returns the total seconds as a string.
+
+    Raises:
+        CommandValidationError: If the format is invalid.
+    """
+    if not raw:
+        return None
+    raw = raw.strip()
+    # HH:MM:SS
+    m = re.match(r"^(\d+):(\d{1,2}):(\d{1,2})$", raw)
+    if m:
+        hours, minutes, seconds = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if minutes >= 60 or seconds >= 60:
+            raise CommandValidationError(
+                f"Invalid duration '{raw}': minutes and seconds must be < 60"
+            )
+        return str(hours * 3600 + minutes * 60 + seconds)
+    # MM:SS
+    m = re.match(r"^(\d+):(\d{1,2})$", raw)
+    if m:
+        minutes, seconds = int(m.group(1)), int(m.group(2))
+        if seconds >= 60:
+            raise CommandValidationError(
+                f"Invalid duration '{raw}': seconds must be < 60"
+            )
+        return str(minutes * 60 + seconds)
+    # Plain integer (already seconds)
+    if raw.isdigit():
+        return raw
+    raise CommandValidationError(
+        f"Invalid duration '{raw}'. Use HH:MM:SS, MM:SS, or plain seconds"
+    )
+
+
 def parse_dimension(raw: str) -> str | None:
     """Validate and normalise a dimension string (e.g. ``1920x1080``).
 
@@ -254,6 +291,119 @@ def create_semantic_triples(
         except ValueError:
             pass  # Duplicate — skip silently
     return created
+
+
+def create_typed_node(
+    svc: dict,
+    labels_raw: str,
+    explicit_id: str,
+    type_node: str,
+    extra_fields: list[tuple[str, str, str, str]] | None = None,
+) -> dict:
+    """Create a node with ``rdf:type`` and optional extra triples.
+
+    This is the shared workflow for typed subcommands that have **no file
+    attachments** (book, film, song, paper, patent, etc.).  For file-attachment
+    types, use :func:`attach_file_and_create_node` instead.
+
+    Args:
+        svc: Service dict.
+        labels_raw: Label string (JSON or plain text).
+        explicit_id: Optional explicit node ID.
+        type_node: The ``rdf:type`` target node (e.g. ``"BOOK"``).
+        extra_fields: Optional list of ``(predicate, value, obj_type, datatype)``.
+
+    Returns:
+        Dict with ``message``, ``node``, ``semantic_triples``.
+    """
+    import json
+
+    svc["builtin_type"].ensure_builtins()
+
+    if labels_raw:
+        try:
+            labels_dict = json.loads(labels_raw) if labels_raw.startswith("{") else None
+        except (json.JSONDecodeError, TypeError):
+            labels_dict = None
+        payload = {"labels": labels_dict} if labels_dict else {"labels": {"en": labels_raw}}
+    else:
+        payload = {"labels": {}}
+    if explicit_id:
+        payload["node_id"] = explicit_id
+
+    try:
+        node = svc["node"].create(payload)
+    except ValueError as e:
+        raise CommandValidationError(str(e))
+
+    node_id_val = node["node_id"]
+    msg_parts = [f"Created node {node_id_val}"]
+    if labels_raw:
+        msg_parts.append(f"with label \"{labels_raw}\"")
+
+    semantic_triples: list[dict] = []
+
+    try:
+        # rdf:type
+        try:
+            t = svc["triple"].add(
+                subject_id=node_id_val,
+                predicate_id="rdf:type",
+                object_value=type_node,
+                object_type="uri",
+            )
+            semantic_triples.append(t)
+        except ValueError:
+            pass
+
+        # Extra semantic triples
+        if extra_fields:
+            pred_ids = [ef[0] for ef in extra_fields]
+            svc["builtin_type"].ensure_predicates(pred_ids)
+            for pred_id, obj_val, obj_type, obj_dt in extra_fields:
+                if not obj_val:
+                    continue
+                try:
+                    triple = svc["triple"].add(
+                        subject_id=node_id_val,
+                        predicate_id=pred_id,
+                        object_value=obj_val,
+                        object_type=obj_type,
+                        object_datatype=obj_dt or None,
+                    )
+                    semantic_triples.append(triple)
+                except ValueError:
+                    pass
+
+        if semantic_triples:
+            msg_parts.append(f"with {len(semantic_triples)} triple(s)")
+    except Exception:
+        logger.warning("Rolling back node %s after post-creation failure", node_id_val)
+        try:
+            svc["node"].delete(node_id_val, soft=False)
+        except Exception as rb_err:
+            logger.error("Rollback delete of node %s also failed: %s", node_id_val, rb_err)
+        raise
+
+    return {
+        "message": ". ".join(msg_parts),
+        "node": node,
+        "semantic_triples": semantic_triples,
+    }
+
+
+def split_literals(raw: str) -> list[str]:
+    """Split a comma-separated literal string into non-empty stripped tokens.
+
+    Args:
+        raw: Comma-separated string (e.g. ``"a, b, c"``).
+
+    Returns:
+        List of stripped, non-empty tokens.
+    """
+    if not raw:
+        return []
+    return [v.strip() for v in raw.split(",") if v.strip()]
 
 
 def attach_file_and_create_node(

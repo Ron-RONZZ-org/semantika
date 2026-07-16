@@ -1,7 +1,9 @@
 """Command handlers for node management: list, search, view, add, update, delete, rename, merge.
 
-See ``node_specialised.py`` for the typed subcommands
-(``!node add photo|video|file|code``).
+Typed subcommands live in sibling modules:
+- ``node_attachment.py``: ``!node add attachment photo|video|file|code``
+- ``node_media.py``: ``!node add media book|film|song|game|podcast``
+- ``node_scholarly.py``: ``!node add scholarly paper|patent|conference``
 """
 
 from __future__ import annotations
@@ -108,9 +110,9 @@ def cmd_node_view(remaining: list[str], flags: dict[str, str]) -> dict:
 
 
 def _detect_builtin_type(triples: list[dict]) -> str | None:
-    """Check triples for an ``rdf:type`` pointing to a built-in type node.
+    """Check triples for an ``rdf:type`` pointing to a file-attachment type node.
 
-    Returns one of ``"photo"``, ``"video"``, ``"file"``, ``"code"``,
+    Returns one of ``"photo"``, ``"video"``, ``"document"``, ``"code"``,
     or ``None``.
     """
     type_map = {
@@ -140,20 +142,18 @@ def cmd_node_add_root(remaining: list[str], flags: dict[str, str]) -> dict:
     """Node creation group — use subcommands.
 
     Available:
-      !node add concept — Create a generic entity node
-      !node add photo   — Create a photo node with file attachment
-      !node add video   — Create a video node with file attachment
-      !node add file    — Create a document node with file attachment
-      !node add code    — Create a source code node with file attachment
+      !node add concept                   — Create a generic entity node
+      !node add attachment photo|video|file|code  — File-attachment nodes
+      !node add media book|film|song|game|podcast — Media/creative works
+      !node add scholarly paper|patent|conference — Scholarly works
     """
     return {"type": "status", "title": "Node Add Commands", "data": {
         "_summary": (
             "Available !node add commands:\n"
-            "  !node add concept — Create a generic entity node\n"
-            "  !node add photo   — Create a photo node with file attachment\n"
-            "  !node add video   — Create a video node with file attachment\n"
-            "  !node add file    — Create a document node with file attachment\n"
-            "  !node add code    — Create a source code node with file attachment"
+            "  !node add concept                   — Generic entity with arc shortcuts\n"
+            "  !node add attachment photo|video|file|code  — File-attachment nodes\n"
+            "  !node add media book|film|song|game|podcast — Media/creative works\n"
+            "  !node add scholarly paper|patent|conference — Scholarly works"
         )
     }}
 
@@ -164,41 +164,43 @@ def cmd_node_add_root(remaining: list[str], flags: dict[str, str]) -> dict:
          params=[{"name": "labels", "type": "string",
                "required": True,
                "help": "Labels as LANG::TEXT pairs or JSON",
-               "placeholder": "en::Albert Einstein, eo::Albert Ejnŝtejno, fr::Albert Einstein"}],
+               "placeholder": "en::physicist, eo::fizikisto, fr::physicien"}],
           flags=[
               {"name": "id", "type": "string",
                "help": "Explicit node ID (overrides auto-derivation from label)",
-               "placeholder": "ALBERT_EINSTEIN"},
+               "placeholder": "PHYSICIST"},
               {"name": "canonical", "type": "string",
                "help": "Custom canonical IRI (overrides the configured template)",
-               "placeholder": "https://example.org/node/albert-einstein"},
+               "placeholder": "https://example.org/node/physicist"},
               {"name": "copy", "type": "flag", "help": "Copy node ID to clipboard"},
               # Arc shortcuts
              {"name": "type", "type": "string",
               "help": "rdf:type target node ID",
-              "placeholder": "PERSON"},
+              "placeholder": "PROFESSION"},
              {"name": "superclass", "type": "string",
               "help": "rdfs:subClassOf target node ID",
               "placeholder": "SCIENTIST"},
              {"name": "disjoint", "type": "string",
               "help": "owl:disjointWith target node ID",
-              "placeholder": "ORGANIZATION"},
-             {"name": "inverse", "type": "string",
-              "help": "owl:inverseOf target node ID",
-              "placeholder": "EMPLOYS"},
+              "placeholder": "PSEUDOSCIENTIST"},
          ])
 def cmd_node_add_concept(remaining: list[str], flags: dict[str, str]) -> dict:
     """Add a new node with optional arc shortcuts.
 
     Arc shortcuts:
-    ``--type <id>``, ``--superclass <id>``, ``--disjoint <id>``, ``--inverse <id>``
-    create ``rdf:type``, ``rdfs:subClassOf``, ``owl:disjointWith``, ``owl:inverseOf`` arcs.
+    ``--type <id>``, ``--superclass <id>``, ``--disjoint <id>``
+    create ``rdf:type``, ``rdfs:subClassOf``, ``owl:disjointWith`` arcs.
 
-    For file attachments and typed nodes, use the specialised subcommands:
-    ``!node add photo``, ``!node add video``, ``!node add file``, ``!node add code``.
+    ``owl:inverseOf`` has been removed from this command — it is a predicate
+    property, not a node property.  Use ``!predicate add --inverse`` instead.
+
+    For file attachments and typed nodes, use the group commands:
+    ``!node add attachment photo|video|file|code``
+    ``!node add media book|film|song|game|podcast``
+    ``!node add scholarly paper|patent|conference``
 
     Deprecated flags ``--img``, ``--attachment``, ``--file``, ``--in-place``,
-    ``--move`` have been removed. Use the specialised subcommands instead.
+    ``--move`` have been removed. Use the attachment subcommands instead.
     """
     svc = get_services()
     labels_raw = flags.get("labels") or (remaining[0] if remaining else "")
@@ -247,7 +249,6 @@ def cmd_node_add_concept(remaining: list[str], flags: dict[str, str]) -> dict:
         ensure_predicate(svc, "rdf:type")
         ensure_predicate(svc, "rdfs:subClassOf")
         ensure_predicate(svc, "owl:disjointWith")
-        ensure_predicate(svc, "owl:inverseOf")
 
     # ── Create arc triples ───────────────────────────────────────────
     try:
@@ -276,11 +277,11 @@ def cmd_node_add_concept(remaining: list[str], flags: dict[str, str]) -> dict:
 def _check_removed_flags(flags: dict[str, str]) -> None:
     """Raise a clear error if any removed file-attachment flag is used."""
     removed = {
-        "img": "!node add photo",
-        "attachment": "!node add video",
-        "file": "!node add file",
-        "in-place": "!node add photo/video/file --no-copy",
-        "move": "!node add photo/video/file with --no-copy",
+        "img": "!node add attachment photo",
+        "attachment": "!node add attachment video",
+        "file": "!node add attachment file",
+        "in-place": "!node add attachment photo/video/file --no-copy",
+        "move": "!node add attachment photo/video/file with --no-copy",
     }
     for flag_name, replacement in removed.items():
         if flag_name in flags and flags.get(flag_name, ""):
