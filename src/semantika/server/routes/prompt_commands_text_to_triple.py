@@ -441,7 +441,7 @@ def _validate_triple_refs(messages: list[dict],
             subj = args.get("subject_id", "")
             pred = args.get("predicate_id", "")
             obj = args.get("object_value", "")
-            obj_type = args.get("object_type", "uri")
+            obj_type = args.get("object_type", "node")
 
             if subj and subj not in all_node_ids:
                 errors.append(
@@ -451,7 +451,7 @@ def _validate_triple_refs(messages: list[dict],
                 errors.append(
                     f"!triple.add: predicate '{pred}' not found"
                 )
-            if obj_type == "uri" and obj and obj not in all_node_ids:
+            if obj_type == "node" and obj and obj not in all_node_ids:
                 errors.append(
                     f"!triple.add: object node '{obj}' not found"
                 )

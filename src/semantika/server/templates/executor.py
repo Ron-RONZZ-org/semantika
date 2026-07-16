@@ -50,7 +50,7 @@ def expand_template(template: TripleTemplate, values: dict[str, str]) -> list[di
         )
 
         # For "node" type params that appear as URI objects, resolve them
-        if object_type == "uri":
+        if object_type == "node":
             for param in template.params:
                 placeholder = "{" + param.name + "}"
                 if param.type == "node" and placeholder == pattern.object_template:

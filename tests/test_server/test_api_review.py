@@ -79,7 +79,7 @@ class TestReviewSessionAPI:
         # Need a triple for questions to exist
         resp = client.post(
             "/api/v1/graph/triples",
-            json={"subject_id": "SUBJ1", "predicate_id": "ex:testPred1", "object_value": "OBJ1", "object_type": "uri"},
+            json={"subject_id": "SUBJ1", "predicate_id": "ex:testPred1", "object_value": "OBJ1", "object_type": "node"},
         )
         # may be duplicate - that's OK
         resp = client.post("/api/v1/review/sessions", json={"mode": "view", "limit": 10})
@@ -115,7 +115,7 @@ class TestReviewModes:
             "/api/v1/graph/triples",
             json={
                 "subject_id": "Q_SUBJ", "predicate_id": "ex:quizPred",
-                "object_value": "Q_OBJ", "object_type": "uri",
+                "object_value": "Q_OBJ", "object_type": "node",
             },
         )
 

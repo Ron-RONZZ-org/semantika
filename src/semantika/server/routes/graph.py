@@ -35,7 +35,7 @@ def _annotate_triples_with_labels(triples: list[dict]) -> list[dict]:
     for t in triples:
         all_node_ids.add(t["subject_id"])
         all_pred_ids.add(t["predicate_id"])
-        if t.get("object_type") == "uri":
+        if t.get("object_type") == "node":
             all_node_ids.add(t["object_value"])
 
     node_map: dict[str, dict] = {}
@@ -55,7 +55,7 @@ def _annotate_triples_with_labels(triples: list[dict]) -> list[dict]:
         pred = pred_map.get(t["predicate_id"])
         t["_predicate_label"] = _get_label(pred) if pred else t["predicate_id"]
 
-        if t.get("object_type") == "uri":
+        if t.get("object_type") == "node":
             obj = node_map.get(t["object_value"])
             t["_object_label"] = _get_label(obj) if obj else t["object_value"]
         else:
@@ -103,7 +103,7 @@ class TripleCreate(BaseModel):
     subject_id: str
     predicate_id: str
     object_value: str
-    object_type: str = "uri"
+    object_type: str = "node"
     object_lang: str | None = None
     object_datatype: str | None = None
     object_unit: str | None = None
@@ -406,7 +406,7 @@ def update_triple_metadata(
     subject_id: str,
     predicate_id: str,
     object_value: str,
-    object_type: str = "uri",
+    object_type: str = "node",
     data: TripleUpdate | None = None,
 ):
     """Update metadata on an existing triple (object_lang, object_datatype)."""

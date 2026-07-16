@@ -107,7 +107,7 @@ def cmd_node_add_paper(remaining: list[str], flags: dict[str, str]) -> dict:
     if doi:
         extra_fields.append(("sm:hasDOI", doi, "literal", ""))
     for author_id in author_nodes:
-        extra_fields.append(("sm:hasAuthor", author_id, "uri", ""))
+        extra_fields.append(("sm:hasAuthor", author_id, "node", ""))
     if journal:
         extra_fields.append(("sm:publishedIn", journal, "literal", ""))
     if year:
@@ -172,11 +172,11 @@ def cmd_node_add_patent(remaining: list[str], flags: dict[str, str]) -> dict:
     if patent_number:
         extra_fields.append(("sm:hasPatentNumber", patent_number, "literal", ""))
     for inv_id in inventor_nodes:
-        extra_fields.append(("sm:hasInventor", inv_id, "uri", ""))
+        extra_fields.append(("sm:hasInventor", inv_id, "node", ""))
     if year:
         extra_fields.append(("sm:publicationYear", year, "literal", ""))
     for a_id in assignee_node:
-        extra_fields.append(("sm:assignedTo", a_id, "uri", ""))
+        extra_fields.append(("sm:assignedTo", a_id, "node", ""))
 
     result = create_typed_node(svc, labels_raw, explicit_id, "PATENT", extra_fields)
     return {"type": "status", "data": result}

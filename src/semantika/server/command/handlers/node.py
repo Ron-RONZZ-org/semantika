@@ -122,7 +122,7 @@ def _detect_builtin_type(triples: list[dict]) -> str | None:
         "SOURCE_CODE": "code",
     }
     for t in triples:
-        if t.get("predicate_id") == "rdf:type" and t.get("object_type") == "uri":
+        if t.get("predicate_id") == "rdf:type" and t.get("object_type") == "node":
             mapped = type_map.get(t["object_value"])
             if mapped:
                 return mapped
@@ -372,7 +372,7 @@ def cmd_node_delete(remaining: list[str], flags: dict[str, str]) -> dict:
         f"SELECT node_id, "
         f"(SELECT COUNT(*) FROM triples WHERE subject_id = nodes.node_id) AS subject_cnt, "
         f"(SELECT COUNT(*) FROM triples "
-        f" WHERE object_type = 'uri' AND object_value = nodes.node_id) AS object_cnt "
+        f" WHERE object_type = 'node' AND object_value = nodes.node_id) AS object_cnt "
         f"FROM nodes WHERE node_id IN ({placeholders})",
         tuple(ids),
     )

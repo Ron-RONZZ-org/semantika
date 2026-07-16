@@ -25,7 +25,7 @@ def seeded(services: dict) -> dict:
     ns.create({"node_id": "ALICE", "labels": {"en": "Alice"}})
     ns.create({"node_id": "BOB", "labels": {"en": "Bob"}})
     ps.create({"predicate_id": "ex:knows", "labels": {"en": "knows"}})
-    ts.add("ALICE", "ex:knows", "BOB", object_type="uri")
+    ts.add("ALICE", "ex:knows", "BOB", object_type="node")
     return services
 
 
@@ -388,7 +388,7 @@ class TestTripleHandlerAmbiguousResolution:
         ns.create({"node_id": "ALPHA_ONE", "labels": {"en": "Alpha One"}})
         ns.create({"node_id": "ALPHA_TWO", "labels": {"en": "Alpha Two"}})
         ps.create({"predicate_id": "ex:rel", "labels": {"en": "rel"}})
-        ts.add("ALPHA_ONE", "ex:rel", "ALPHA_TWO", object_type="uri")
+        ts.add("ALPHA_ONE", "ex:rel", "ALPHA_TWO", object_type="node")
 
         # Modify with ambiguous object should raise, not silently return "not found"
         with pytest.raises(Exception, match="ambiguous"):

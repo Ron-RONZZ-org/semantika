@@ -102,7 +102,7 @@ def _create_nodes(svc: dict, *node_ids: str) -> None:
 
 def _add_triple(svc: dict, s: str, p: str, o: str) -> dict:
     """Add a URI triple and return it."""
-    return svc["triple"].add(s, p, o, object_type="uri")
+    return svc["triple"].add(s, p, o, object_type="node")
 
 
 # ── Tests ────────────────────────────────────────────────────────────────
@@ -126,7 +126,7 @@ class TestProofServiceCreate:
         assert proof["predicate_id"] == "ex:knows"
         assert proof["object_value"] == "B"
         # Defaults
-        assert proof["object_type"] == "uri"
+        assert proof["object_type"] == "node"
         assert proof["proof_type"] == "observation"
         assert proof["source"] == ""
         assert proof["notes"] == ""

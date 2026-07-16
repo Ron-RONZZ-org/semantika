@@ -67,7 +67,7 @@ def create_arc_triples(
                 subject_id=subject_id,
                 predicate_id=pred,
                 object_value=target_id,
-                object_type="uri",
+                object_type="node",
             )
             created.append(triple)
         except ValueError:
@@ -285,7 +285,7 @@ def create_semantic_triples(
                 subject_id=subject_id,
                 predicate_id=predicate_id,
                 object_value=obj_id,
-                object_type="uri",
+                object_type="node",
             )
             created.append(triple)
         except ValueError:
@@ -350,7 +350,7 @@ def create_typed_node(
                 subject_id=node_id_val,
                 predicate_id="rdf:type",
                 object_value=type_node,
-                object_type="uri",
+                object_type="node",
             )
             semantic_triples.append(t)
         except ValueError:

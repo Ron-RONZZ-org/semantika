@@ -14,7 +14,7 @@ class ProofCreate(BaseModel):
     subject_id: str
     predicate_id: str
     object_value: str
-    object_type: str = "uri"
+    object_type: str = "node"
     proof_type: str = "observation"
     source: str = ""
     notes: str = ""

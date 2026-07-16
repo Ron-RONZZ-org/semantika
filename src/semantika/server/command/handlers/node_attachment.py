@@ -99,7 +99,7 @@ def cmd_node_add_photo(remaining: list[str], flags: dict[str, str]) -> dict:
     svc["builtin_type"].ensure_predicates(["sm:depicts", "sm:dimension", "sm:canonicalLink"])
 
     for obj_id in object_nodes:
-        extra_fields.append(("sm:depicts", obj_id, "uri", ""))
+        extra_fields.append(("sm:depicts", obj_id, "node", ""))
     if dimension:
         extra_fields.append(("sm:dimension", dimension, "literal", ""))
 
@@ -173,7 +173,7 @@ def cmd_node_add_video(remaining: list[str], flags: dict[str, str]) -> dict:
     svc["builtin_type"].ensure_predicates(["sm:depicts", "sm:dimension", "sm:canonicalLink"])
 
     for obj_id in object_nodes:
-        extra_fields.append(("sm:depicts", obj_id, "uri", ""))
+        extra_fields.append(("sm:depicts", obj_id, "node", ""))
     if dimension:
         extra_fields.append(("sm:dimension", dimension, "literal", ""))
 
@@ -242,7 +242,7 @@ def cmd_node_add_file(remaining: list[str], flags: dict[str, str]) -> dict:
     svc["builtin_type"].ensure_predicates(["sm:theme", "sm:canonicalLink"])
 
     for theme_id in theme_nodes:
-        extra_fields.append(("sm:theme", theme_id, "uri", ""))
+        extra_fields.append(("sm:theme", theme_id, "node", ""))
 
     result = attach_file_and_create_node(
         svc, labels_raw, path, "doc", "DOCUMENT",
@@ -427,7 +427,7 @@ def _create_inline_code_node(
         for target, pred in arc_targets:
             # sm:canonicalLink holds a URL string, not a node reference —
             # use 'literal' type to avoid FK constraint on nodes table.
-            obj_type = "literal" if pred == "sm:canonicalLink" else "uri"
+            obj_type = "literal" if pred == "sm:canonicalLink" else "node"
             try:
                 t = svc["triple"].add(
                     subject_id=node_id_val,

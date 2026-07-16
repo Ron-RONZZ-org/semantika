@@ -13,7 +13,7 @@ class TestTripleService:
         ns.create({"node_id": "O", "labels": {"en": "Object"}})
         ps.create({"predicate_id": "ex:rel", "labels": {"en": "relation"}})
 
-        triple = ts.add("S", "ex:rel", "O", object_type="uri")
+        triple = ts.add("S", "ex:rel", "O", object_type="node")
         assert triple["subject_id"] == "S"
 
         results = ts.get_by_subject("S")
@@ -39,7 +39,7 @@ class TestTripleService:
         ns.create({"node_id": "O", "labels": {"en": "O"}})
         ps.create({"predicate_id": "ex:p", "labels": {"en": "p"}})
 
-        ts.add("S", "ex:p", "O", object_type="uri")
+        ts.add("S", "ex:p", "O", object_type="node")
         assert ts.count() == 1
         ts.remove("S", "ex:p", "O")
         assert ts.count() == 0  # triple was deleted
@@ -52,7 +52,7 @@ class TestTripleService:
         ns.create({"node_id": "DOG", "labels": {"en": "Dog"}})
         ns.create({"node_id": "ANIMAL", "labels": {"en": "Animal"}})
         ps.create({"predicate_id": "rdf:type", "labels": {"en": "type"}})
-        ts.add("DOG", "rdf:type", "ANIMAL", object_type="uri")
+        ts.add("DOG", "rdf:type", "ANIMAL", object_type="node")
 
         ttl = ts.export_turtle()
         assert "@prefix" in ttl
@@ -67,8 +67,8 @@ class TestTripleService:
         for nid in ["A", "B", "C"]:
             ns.create({"node_id": nid, "labels": {"en": nid}})
         ps.create({"predicate_id": "ex:rel", "labels": {"en": "rel"}})
-        ts.add("A", "ex:rel", "B", object_type="uri")
-        ts.add("B", "ex:rel", "C", object_type="uri")
+        ts.add("A", "ex:rel", "B", object_type="node")
+        ts.add("B", "ex:rel", "C", object_type="node")
 
         results = ts.get_by_nodes(["A", "B"])
         assert len(results) == 2

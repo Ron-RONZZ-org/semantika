@@ -139,7 +139,7 @@ class TestSearchAPI:
                 "subject_id": "TS_SUBJ",
                 "predicate_id": "ex:tsPred",
                 "object_value": "TS_OBJ",
-                "object_type": "uri",
+                "object_type": "node",
             },
         )
 

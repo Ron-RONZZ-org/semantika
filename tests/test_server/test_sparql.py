@@ -98,7 +98,7 @@ class TestIRIMapping:
 
     def test_to_rdf_term_uri(self):
         """URI object creates NamedNode."""
-        term = _to_rdf_term({"object_value": "BOOK_001", "object_type": "uri"})
+        term = _to_rdf_term({"object_value": "BOOK_001", "object_type": "node"})
         assert isinstance(term, ox.NamedNode)
         assert term.value == _NODE_TPL.replace("$id", "BOOK_001")
 
@@ -147,7 +147,7 @@ class TestSyncBacklog:
         store = ox.Store()
         backlog = SyncBacklog(max_retries=3, base_delay=0.1)
         triple = {"subject_id": "S1", "predicate_id": "p1",
-                  "object_value": "O1", "object_type": "uri"}
+                  "object_value": "O1", "object_type": "node"}
 
         backlog.enqueue("add", triple)
         assert len(backlog) == 1
@@ -167,7 +167,7 @@ class TestSyncBacklog:
 
         # Enqueue an op with empty IDs — _to_uri("") raises ValueError
         bad_triple = {"subject_id": "", "predicate_id": "",
-                      "object_value": "", "object_type": "uri"}
+                      "object_value": "", "object_type": "node"}
         backlog.enqueue("add", bad_triple)
         assert len(backlog) == 1
 
@@ -220,7 +220,7 @@ def sparql_db(tmp_path: Path):
         "CREATE TABLE IF NOT EXISTS triples ("
         "  subject_id TEXT NOT NULL,"
         "  predicate_id TEXT NOT NULL,"
-        "  object_type TEXT NOT NULL DEFAULT 'uri',"
+        "  object_type TEXT NOT NULL DEFAULT 'node',"
         "  object_value TEXT NOT NULL,"
         "  object_lang TEXT DEFAULT NULL,"
         "  object_datatype TEXT DEFAULT NULL,"
@@ -236,7 +236,7 @@ def sparql_db(tmp_path: Path):
         "  subject_id TEXT NOT NULL,"
         "  predicate_id TEXT NOT NULL,"
         "  object_value TEXT NOT NULL,"
-        "  object_type TEXT NOT NULL DEFAULT 'uri',"
+        "  object_type TEXT NOT NULL DEFAULT 'node',"
         "  proof_type TEXT NOT NULL DEFAULT 'observation',"
         "  source TEXT NOT NULL DEFAULT '',"
         "  notes TEXT NOT NULL DEFAULT '',"
@@ -265,7 +265,7 @@ class TestSparqlEngine:
             "subject_id": "BOOK_001",
             "predicate_id": "rdf:type",
             "object_value": "Novel",
-            "object_type": "uri",
+            "object_type": "node",
         })
         result = engine.execute("SELECT * WHERE { ?s ?p ?o }")
         assert "results" in result
@@ -281,7 +281,7 @@ class TestSparqlEngine:
             "subject_id": "BOOK_001",
             "predicate_id": "rdf:type",
             "object_value": "Novel",
-            "object_type": "uri",
+            "object_type": "node",
         }
         engine.on_triple_added(triple)
         engine.on_triple_removed(triple)
@@ -293,7 +293,7 @@ class TestSparqlEngine:
         """ASK query returns boolean."""
         engine.on_triple_added({
             "subject_id": "S1", "predicate_id": "p1",
-            "object_value": "O1", "object_type": "uri",
+            "object_value": "O1", "object_type": "node",
         })
         result = engine.execute("ASK { ?s ?p ?o }")
         assert result["boolean"] is True
@@ -314,7 +314,7 @@ class TestSparqlEngine:
             "subject_id": "BOOK_001",
             "predicate_id": "rdf:type",
             "object_value": "Novel",
-            "object_type": "uri",
+            "object_type": "node",
         })
         result = engine.execute("SELECT ?s WHERE { ?s ?p ?o }")
         bindings = result["results"]["bindings"]
@@ -326,7 +326,7 @@ class TestSparqlEngine:
         """CONSTRUCT query returns Turtle data."""
         engine.on_triple_added({
             "subject_id": "S1", "predicate_id": "p1",
-            "object_value": "O1", "object_type": "uri",
+            "object_value": "O1", "object_type": "node",
         })
         result = engine.execute("CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }")
         assert "data" in result
@@ -362,7 +362,7 @@ class TestSparqlEngine:
         assert engine.backlog_size == 0
         engine.on_triple_added({
             "subject_id": "", "predicate_id": "",
-            "object_value": "", "object_type": "uri",
+            "object_value": "", "object_type": "node",
         })
         assert engine.backlog_size >= 1
 
@@ -446,7 +446,7 @@ class TestDualPathEnrichment:
             "subject_id": "GATSBY",
             "predicate_id": "rdf:type",
             "object_value": "Novel",
-            "object_type": "uri",
+            "object_type": "node",
         })
         result = engine.execute(
             "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> "
@@ -473,7 +473,7 @@ class TestDualPathEnrichment:
             "subject_id": "PURL",
             "predicate_id": "rdf:type",
             "object_value": "Thing",
-            "object_type": "uri",
+            "object_type": "node",
         })
         result = engine.execute(
             "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> "
@@ -500,7 +500,7 @@ class TestDualPathEnrichment:
             "subject_id": "GATSBY",
             "predicate_id": "ex:custom",
             "object_value": "Novel",
-            "object_type": "uri",
+            "object_type": "node",
         })
         # We need the subject too
         sparql_db.execute(
@@ -565,27 +565,27 @@ class TestIncrementalSync:
 
     def test_triple_add_syncs_to_sparql(self):
         """TripleService.add() syncs triple to RocksDB cache."""
-        self.triple_svc.add("N1", "p1", "O1", object_type="uri")
+        self.triple_svc.add("N1", "p1", "O1", object_type="node")
         result = self.engine.execute("SELECT * WHERE { ?s ?p ?o }")
         assert len(result["results"]["bindings"]) == 1
 
     def test_triple_remove_syncs_to_sparql(self):
         """TripleService.remove() syncs removal to RocksDB cache."""
-        self.triple_svc.add("N1", "p1", "O1", object_type="uri")
+        self.triple_svc.add("N1", "p1", "O1", object_type="node")
         self.triple_svc.remove(subject_id="N1")
         result = self.engine.execute("SELECT * WHERE { ?s ?p ?o }")
         assert len(result["results"]["bindings"]) == 0
 
     def test_node_delete_syncs_cascade(self):
         """NodeService.delete() syncs cascade-deleted triples."""
-        self.triple_svc.add("N1", "p1", "O1", object_type="uri")
+        self.triple_svc.add("N1", "p1", "O1", object_type="node")
         self.node_svc.delete("N1", soft=False)
         result = self.engine.execute("SELECT * WHERE { ?s ?p ?o }")
         assert len(result["results"]["bindings"]) == 0
 
     def test_predicate_delete_syncs_cascade(self):
         """PredicateService.delete() syncs cascade-deleted triples."""
-        self.triple_svc.add("N1", "p1", "O1", object_type="uri")
+        self.triple_svc.add("N1", "p1", "O1", object_type="node")
         self.pred_svc.delete("p1", soft=False)
         result = self.engine.execute("SELECT * WHERE { ?s ?p ?o }")
         assert len(result["results"]["bindings"]) == 0
@@ -745,7 +745,7 @@ class TestSparqlCommand:
         })
         resp = self.client.post("/api/v1/graph/triples", json={
             "subject_id": "N1", "predicate_id": "ex:cmdPred",
-            "object_value": "CMD_OBJ", "object_type": "uri",
+            "object_value": "CMD_OBJ", "object_type": "node",
         })
         assert resp.status_code == 200, f"Triple creation failed: {resp.text}"
         yield

@@ -146,7 +146,7 @@ class TestNodeAPI:
         )
         client.post(
             "/api/v1/graph/triples",
-            json={"subject_id": "OLDNAME", "predicate_id": "ex:rel", "object_value": "TARGET", "object_type": "uri"},
+            json={"subject_id": "OLDNAME", "predicate_id": "ex:rel", "object_value": "TARGET", "object_type": "node"},
         )
 
         resp = client.patch(
@@ -178,7 +178,7 @@ class TestNodeAPI:
         )
         client.post(
             "/api/v1/graph/triples",
-            json={"subject_id": "SOURCE_N", "predicate_id": "ex:mergeRel", "object_value": "TARGET_N", "object_type": "uri"},
+            json={"subject_id": "SOURCE_N", "predicate_id": "ex:mergeRel", "object_value": "TARGET_N", "object_type": "node"},
         )
 
         resp = client.post(
@@ -247,7 +247,7 @@ class TestNodeDeleteCascade:
                 "subject_id": "FKSOURCE",
                 "predicate_id": "ex:rel",
                 "object_value": "FKTARGET",
-                "object_type": "uri",
+                "object_type": "node",
             },
         )
         assert resp.status_code == 200

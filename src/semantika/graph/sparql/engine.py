@@ -121,12 +121,12 @@ def _to_rdf_term(
     """Convert the object column of a triple row to an Oxigraph RDF term.
 
     Handles ``object_type``:
-    - ``'uri'`` → :class:`ox.NamedNode`
+    - ``'node'`` → :class:`ox.NamedNode`
     - ``'literal'`` → :class:`ox.Literal` with optional language/datatype.
     """
     val = triple.get("object_value", "")
-    otype = triple.get("object_type", "uri")
-    if otype == "uri":
+    otype = triple.get("object_type", "node")
+    if otype == "node":
         return _to_uri(val)
     lang = triple.get("object_lang")
     dtype = triple.get("object_datatype")

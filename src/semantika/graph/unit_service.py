@@ -101,7 +101,7 @@ class UnitService:
                 conn.execute(
                     "INSERT OR IGNORE INTO triples "
                     "(subject_id, predicate_id, object_value, object_type, created_at) "
-                    "VALUES (?, 'rdf:type', ':UnitType', 'uri', ?)",
+                    "VALUES (?, 'rdf:type', ':UnitType', 'node', ?)",
                     (type_node["node_id"], now_iso),
                 )
 
@@ -127,7 +127,7 @@ class UnitService:
         conn.execute(
             "INSERT OR IGNORE INTO triples "
             "(subject_id, predicate_id, object_value, object_type, created_at) "
-            "VALUES (?, 'rdf:type', ':SingularUnit', 'uri', ?)",
+            "VALUES (?, 'rdf:type', ':SingularUnit', 'node', ?)",
             (unit["node_id"], now_iso),
         )
 
@@ -287,7 +287,7 @@ class UnitService:
             type_row = self.db.execute_one(
                 "SELECT object_value FROM triples "
                 "WHERE subject_id = ? AND predicate_id = 'rdf:type' "
-                "AND object_type = 'uri' ORDER BY object_value LIMIT 1",
+                "AND object_type = 'node' ORDER BY object_value LIMIT 1",
                 (row["node_id"],),
             )
             sym_row = self.db.execute_one(
@@ -311,7 +311,7 @@ class UnitService:
         type_row = self.db.execute_one(
             "SELECT object_value FROM triples "
             "WHERE subject_id = ? AND predicate_id = 'rdf:type' "
-            "AND object_type = 'uri' ORDER BY object_value LIMIT 1",
+            "AND object_type = 'node' ORDER BY object_value LIMIT 1",
             (node["node_id"],),
         )
         sym_row = self.db.execute_one(

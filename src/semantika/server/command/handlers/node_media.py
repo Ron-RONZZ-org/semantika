@@ -101,9 +101,9 @@ def cmd_node_add_book(remaining: list[str], flags: dict[str, str]) -> dict:
     for isbn in isbns:
         extra_fields.append(("sm:hasISBN", isbn, "literal", ""))
     for author_id in author_nodes:
-        extra_fields.append(("sm:hasAuthor", author_id, "uri", ""))
+        extra_fields.append(("sm:hasAuthor", author_id, "node", ""))
     for theme_id in theme_nodes:
-        extra_fields.append(("sm:theme", theme_id, "uri", ""))
+        extra_fields.append(("sm:theme", theme_id, "node", ""))
     if year:
         extra_fields.append(("sm:publicationYear", year, "literal", ""))
 
@@ -171,11 +171,11 @@ def cmd_node_add_film(remaining: list[str], flags: dict[str, str]) -> dict:
     for isan in isans:
         extra_fields.append(("sm:hasISAN", isan, "literal", ""))
     for director_id in director_nodes:
-        extra_fields.append(("sm:hasDirector", director_id, "uri", ""))
+        extra_fields.append(("sm:hasDirector", director_id, "node", ""))
     for producer_id in producer_nodes:
-        extra_fields.append(("sm:hasProducer", producer_id, "uri", ""))
+        extra_fields.append(("sm:hasProducer", producer_id, "node", ""))
     for actor_id in actor_nodes:
-        extra_fields.append(("sm:hasActor", actor_id, "uri", ""))
+        extra_fields.append(("sm:hasActor", actor_id, "node", ""))
     for dur in durations_raw:
         seconds = parse_duration(dur)
         if seconds:
@@ -232,9 +232,9 @@ def cmd_node_add_song(remaining: list[str], flags: dict[str, str]) -> dict:
     for iswc in iswcs:
         extra_fields.append(("sm:hasISWC", iswc, "literal", ""))
     for author_id in author_nodes:
-        extra_fields.append(("sm:hasAuthor", author_id, "uri", ""))
+        extra_fields.append(("sm:hasAuthor", author_id, "node", ""))
     for singer_id in singer_nodes:
-        extra_fields.append(("sm:hasSinger", singer_id, "uri", ""))
+        extra_fields.append(("sm:hasSinger", singer_id, "node", ""))
 
     result = create_typed_node(svc, labels_raw, explicit_id, "SONG", extra_fields)
     return {"type": "status", "data": result}
@@ -297,9 +297,9 @@ def cmd_node_add_game(remaining: list[str], flags: dict[str, str]) -> dict:
     for genre in genres:
         extra_fields.append(("sm:genre", genre, "literal", ""))
     for dev_id in developer_nodes:
-        extra_fields.append(("sm:developedBy", dev_id, "uri", ""))
+        extra_fields.append(("sm:developedBy", dev_id, "node", ""))
     for pub_id in publisher_nodes:
-        extra_fields.append(("sm:publishedBy", pub_id, "uri", ""))
+        extra_fields.append(("sm:publishedBy", pub_id, "node", ""))
     if year:
         extra_fields.append(("sm:publicationYear", year, "literal", ""))
 
@@ -355,7 +355,7 @@ def cmd_node_add_podcast(remaining: list[str], flags: dict[str, str]) -> dict:
     extra_fields: list[tuple[str, str, str, str]] = []
 
     for host_id in host_nodes:
-        extra_fields.append(("sm:hasHost", host_id, "uri", ""))
+        extra_fields.append(("sm:hasHost", host_id, "node", ""))
     if episode_count:
         extra_fields.append(("sm:episodeCount", episode_count, "literal", "xsd:integer"))
     if feed_url:

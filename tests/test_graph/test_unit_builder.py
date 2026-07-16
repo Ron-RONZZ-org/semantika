@@ -341,7 +341,7 @@ class TestUnitBuilderIntegration:
         # The root should be a UnitProduct
         type_row = db.execute_one(
             "SELECT object_value FROM triples "
-            "WHERE subject_id = ? AND predicate_id = 'rdf:type' AND object_type = 'uri'",
+            "WHERE subject_id = ? AND predicate_id = 'rdf:type' AND object_type = 'node'",
             (nid,),
         )
         assert type_row is not None

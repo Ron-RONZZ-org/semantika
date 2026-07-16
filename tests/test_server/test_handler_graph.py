@@ -28,7 +28,7 @@ def seeded(services: dict) -> dict:
     ns.create({"node_id": "CHARLIE", "labels": {"en": "Charlie"}})
     ps.create({"predicate_id": "ex:knows", "labels": {"en": "knows"}})
     ps.create({"predicate_id": "ex:age", "labels": {"en": "age"}})
-    ts.add("ALICE", "ex:knows", "BOB", object_type="uri")
+    ts.add("ALICE", "ex:knows", "BOB", object_type="node")
     ts.add("ALICE", "ex:age", "30", object_type="literal")
     return services
 
@@ -473,7 +473,7 @@ class TestResolveTripleType:
         from semantika.server.command.handlers.triple import _resolve_triple_type
         val, typ, dt, lang = _resolve_triple_type("some:value", {})
         assert val == "some:value"
-        assert typ == "uri"
+        assert typ == "node"
         assert dt is None
         assert lang is None
 

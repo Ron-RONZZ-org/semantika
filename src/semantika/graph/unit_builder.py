@@ -88,13 +88,13 @@ class UnitBuilder:
         self.db.execute(
             "INSERT OR IGNORE INTO triples "
             "(subject_id, predicate_id, object_value, object_type, created_at) "
-            "VALUES (?, 'rdf:type', ':UnitPower', 'uri', ?)",
+            "VALUES (?, 'rdf:type', ':UnitPower', 'node', ?)",
             (node_id, now_iso),
         )
         self.db.execute(
             "INSERT OR IGNORE INTO triples "
             "(subject_id, predicate_id, object_value, object_type, created_at) "
-            "VALUES (?, ':hasBase', ?, 'uri', ?)",
+            "VALUES (?, ':hasBase', ?, 'node', ?)",
             (node_id, base_id, now_iso),
         )
         self.db.execute(
@@ -141,19 +141,19 @@ class UnitBuilder:
         self.db.execute(
             "INSERT OR IGNORE INTO triples "
             "(subject_id, predicate_id, object_value, object_type, created_at) "
-            "VALUES (?, 'rdf:type', ':UnitProduct', 'uri', ?)",
+            "VALUES (?, 'rdf:type', ':UnitProduct', 'node', ?)",
             (node_id, now_iso),
         )
         self.db.execute(
             "INSERT OR IGNORE INTO triples "
             "(subject_id, predicate_id, object_value, object_type, created_at) "
-            "VALUES (?, ':hasTerm1', ?, 'uri', ?)",
+            "VALUES (?, ':hasTerm1', ?, 'node', ?)",
             (node_id, term1_id, now_iso),
         )
         self.db.execute(
             "INSERT OR IGNORE INTO triples "
             "(subject_id, predicate_id, object_value, object_type, created_at) "
-            "VALUES (?, ':hasTerm2', ?, 'uri', ?)",
+            "VALUES (?, ':hasTerm2', ?, 'node', ?)",
             (node_id, term2_id, now_iso),
         )
         return node_id
@@ -174,7 +174,7 @@ class UnitBuilder:
         self.db.execute(
             "INSERT OR IGNORE INTO triples "
             "(subject_id, predicate_id, object_value, object_type, created_at) "
-            "VALUES (?, 'rdf:type', ':SingularUnit', 'uri', ?)",
+            "VALUES (?, 'rdf:type', ':SingularUnit', 'node', ?)",
             (node_id, now_iso),
         )
         self.db.execute(

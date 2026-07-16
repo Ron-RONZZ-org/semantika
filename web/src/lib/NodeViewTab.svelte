@@ -115,7 +115,7 @@
   }
 
   function tripleObjectLabel(t) {
-    if (t.object_type === "uri") return `→ ${t.object_value}`;
+    if (t.object_type === "node") return `→ ${t.object_value}`;
     const val = t.object_value || "";
     if (t.object_datatype) return `${val} (${t.object_datatype})`;
     if (t.object_lang) return `${val}@${t.object_lang}`;

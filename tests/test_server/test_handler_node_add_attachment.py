@@ -413,7 +413,7 @@ class TestNodeViewType:
         ns = services["node"]
         ns.create({"node_id": "EMPTY_PHOTO", "labels": {"en": "Empty Photo"}})
         ts = services["triple"]
-        ts.add("EMPTY_PHOTO", "rdf:type", "PHOTO", object_type="uri")
+        ts.add("EMPTY_PHOTO", "rdf:type", "PHOTO", object_type="node")
         result = dispatch(["node", "view", "EMPTY_PHOTO"], {})
         assert result["type"] == "status"
 

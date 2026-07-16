@@ -41,7 +41,7 @@ class UnitDecomposer:
         # Check for UnitPower
         base = self.db.execute_one(
             "SELECT object_value FROM triples "
-            "WHERE subject_id = ? AND predicate_id = ':hasBase' AND object_type = 'uri'",
+            "WHERE subject_id = ? AND predicate_id = ':hasBase' AND object_type = 'node'",
             (node_id,),
         )
         exp = self.db.execute_one(
@@ -56,12 +56,12 @@ class UnitDecomposer:
         # Check for UnitProduct
         t1 = self.db.execute_one(
             "SELECT object_value FROM triples "
-            "WHERE subject_id = ? AND predicate_id = ':hasTerm1' AND object_type = 'uri'",
+            "WHERE subject_id = ? AND predicate_id = ':hasTerm1' AND object_type = 'node'",
             (node_id,),
         )
         t2 = self.db.execute_one(
             "SELECT object_value FROM triples "
-            "WHERE subject_id = ? AND predicate_id = ':hasTerm2' AND object_type = 'uri'",
+            "WHERE subject_id = ? AND predicate_id = ':hasTerm2' AND object_type = 'node'",
             (node_id,),
         )
         if t1 and t2:
@@ -84,7 +84,7 @@ class UnitDecomposer:
                 pos_exp = t_exp["object_value"][1:]
                 base = self.db.execute_one(
                     "SELECT object_value FROM triples "
-                    "WHERE subject_id = ? AND predicate_id = ':hasBase' AND object_type = 'uri'",
+                    "WHERE subject_id = ? AND predicate_id = ':hasBase' AND object_type = 'node'",
                     (tid,),
                 )
                 if base:
