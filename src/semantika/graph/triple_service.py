@@ -76,6 +76,56 @@ class TripleService:
             self._sparql_engine.on_triple_added(result)
         return result
 
+    def batch_add(self, triples: list[dict]) -> list[dict]:
+        """Add multiple triples in batch, returning per-row results.
+
+        Each triple dict supports the same keys as :meth:`add`, plus
+        an optional ``_row`` key for frontend correlation.
+
+        Returns:
+            List of result dicts, one per row::
+
+                {"row": 0, "status": "created", "triple": {...}}
+                {"row": 1, "status": "error", "field": "subject_id",
+                 "message": "Node not found: UNKNOWN"}
+                {"row": 2, "status": "duplicate", "triple": {...}}
+                {"row": 3, "status": "skipped"}
+        """
+        results: list[dict] = []
+        for i, t in enumerate(triples):
+            row_idx = t.get("_row", i)
+            subject_id = (t.get("subject_id") or "").strip()
+            predicate_id = (t.get("predicate_id") or "").strip()
+            object_value = (t.get("object_value") or "").strip()
+            object_type = t.get("object_type", "node")
+            object_lang = t.get("object_lang")
+            object_datatype = t.get("object_datatype")
+            object_unit = t.get("object_unit")
+
+            # Skip completely empty rows
+            if not subject_id and not predicate_id and not object_value:
+                results.append({"row": row_idx, "status": "skipped"})
+                continue
+
+            try:
+                triple = self.add(
+                    subject_id=subject_id,
+                    predicate_id=predicate_id,
+                    object_value=object_value,
+                    object_type=object_type,
+                    object_lang=object_lang,
+                    object_datatype=object_datatype,
+                    object_unit=object_unit,
+                )
+                results.append({"row": row_idx, "status": "created", "triple": triple})
+            except ValueError as e:
+                existing = self.get_one(subject_id, predicate_id, object_value, object_type)
+                if existing:
+                    results.append({"row": row_idx, "status": "duplicate", "triple": existing})
+                else:
+                    results.append({"row": row_idx, "status": "error", "message": str(e)})
+        return results
+
     def update_metadata(
         self,
         subject_id: str,

@@ -228,10 +228,14 @@
           } else {
             popup.showPersistent(listResult.type, listResult.title, listResult.data || {}, routing.listIdKey);
             popup.updateCache(listResult.data || {});
-            tabStore.open("form", routing.addTitle || "Add", {
-              form: routing.addFormType,
-              initialData: routing.initialData || {},
-            }, { idKey: `form-${routing.addFormType}` });
+            if (routing.addFormType === "triple-add") {
+              tabStore.open("triple-add", routing.addTitle || "Add Triples", {}, { idKey: "triple-add" });
+            } else {
+              tabStore.open("form", routing.addTitle || "Add", {
+                form: routing.addFormType,
+                initialData: routing.initialData || {},
+              }, { idKey: `form-${routing.addFormType}` });
+            }
           }
         } catch (err) {
           popup.show("error", "Routing Error", { message: err.message || "Failed to open add form" });

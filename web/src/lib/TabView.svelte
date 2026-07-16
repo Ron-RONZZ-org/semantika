@@ -19,11 +19,12 @@
   import NodeViewTab from "./NodeViewTab.svelte";
   import SettingsTab from "./SettingsTab.svelte";
   import TripleDetailTab from "./TripleDetailTab.svelte";
+  import TripleAddTab from "./TripleAddTab.svelte";
 import SparqlQueryEditor from "./sparql/SparqlQueryEditor.svelte";
 
   // Tab types that manage their own Escape (selection mode, search, dialogs)
   const LIST_TAB_TYPES = new Set([
-    "node-list", "predicate-list", "triple-list", "triple-detail",
+    "node-list", "predicate-list", "triple-list", "triple-detail", "triple-add",
   ]);
 
   let showGlobalHelp = $state(false);
@@ -204,6 +205,8 @@ import SparqlQueryEditor from "./sparql/SparqlQueryEditor.svelte";
         <SettingsTab data={tabStore.active.data} />
       {:else if tabStore.active.type === "triple-detail"}
         <TripleDetailTab data={tabStore.active.data} />
+      {:else if tabStore.active.type === "triple-add"}
+        <TripleAddTab data={tabStore.active.data} />
       {:else if tabStore.active.type === "sparql-editor"}
         <SparqlQueryEditor />
       {:else}
@@ -299,6 +302,7 @@ import SparqlQueryEditor from "./sparql/SparqlQueryEditor.svelte";
       quiz: "?",
       template_yaml: "\u2699",
       "sparql-editor": "\u269b",
+      "triple-add": "\u2795",
     };
     return icons[type] || "\u2022";
   }

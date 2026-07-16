@@ -24,10 +24,7 @@
   let searchTimeout;
 
   function handleNew() {
-    tabStore.open("form", "Add Triple", {
-      form: "triple-add", commandPath: ["triple", "add"],
-      initialData: { _returnType: "triple-list", _returnTitle: "Triples" },
-    }, { idKey: "triple-add" });
+    tabStore.open("triple-add", "Add Triples", {}, { idKey: "triple-add" });
   }
 
   async function fetchTriples(query) {
@@ -157,6 +154,7 @@
     if (t.object_datatype === "xsd:integer") return "int";
     if (t.object_datatype === "xsd:decimal") return "float";
     if (t.object_datatype === "xsd:boolean") return "bool";
+    if (t.object_datatype === "xsd:anyURI") return "url";
     if (t.object_lang) return t.object_lang;
     return "str";
   }
@@ -353,6 +351,7 @@
   .badge-float { background: #3a3a1a; color: #ff7; }
   .badge-bool { background: #2a2a3a; color: #aaf; }
   .badge-katex { background: #3a1a1a; color: #f77; }
+  .badge-url { background: #1a3a3a; color: #7ff; }
   .badge-fr, .badge-en, .badge-de, .badge-es, .badge-eo { background: #2a3a3a; color: #7ff; }
   .actions { flex-shrink: 0; }
   .empty { color: var(--clr-muted); text-align: center; padding: 2rem; }

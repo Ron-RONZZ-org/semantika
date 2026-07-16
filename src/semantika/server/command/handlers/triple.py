@@ -29,7 +29,7 @@ def _resolve_triple_type(
 ) -> tuple[str, str, str | None, str | None]:
     """Resolve object type/datatype/lang from user flags.
 
-    Handles the if/elif chain for katex → str_dosiero → str → int → float → bool → uri fallback.
+    Handles the if/elif chain for katex → str_dosiero → str → int → float → bool → url → node fallback.
 
     Returns:
         (object_value, object_type, object_datatype, object_lang)
@@ -38,6 +38,7 @@ def _resolve_triple_type(
     int_flag = _is_flag_set("int", flags)
     float_flag = _is_flag_set("float", flags)
     bool_flag = _is_flag_set("bool", flags)
+    url_flag = _is_flag_set("url", flags)
     lang = flags.get("lang")
     katex = flags.get("katex")
     str_dosiero = flags.get("str_dosiero") or flags.get("str-dosiero")
@@ -73,6 +74,9 @@ def _resolve_triple_type(
     elif bool_flag:
         object_type = "literal"
         object_datatype = "xsd:boolean"
+    elif url_flag:
+        object_type = "literal"
+        object_datatype = "xsd:anyURI"
 
     if was_str and lang:
         object_lang = lang
@@ -282,24 +286,56 @@ def cmd_triple_view(remaining: list[str], flags: dict[str, str]) -> dict:
                 {"name": "int", "type": "flag", "help": "Treat object as integer literal"},
                 {"name": "float", "type": "flag", "help": "Treat object as float literal"},
                 {"name": "bool", "type": "flag", "help": "Treat object as boolean literal"},
+                {"name": "url", "type": "flag", "help": "Treat object as URL literal (xsd:anyURI)"},
                 {"name": "lang", "type": "string",
                  "help": "Language tag for string literals",
                  "placeholder": "en or eo"},
                 {"name": "unit", "type": "string",
                  "help": "Unit for numeric literals",
                  "placeholder": "kg or m/s^2"},
-                 {"name": "katex", "type": "string",
-                  "help": "KaTeX math expression",
-                  "placeholder": "E = mc^2"},
-                 {"name": "str-dosiero", "type": "string",
-                  "help": "Read content from file",
-                  "placeholder": "/path/to/content.txt"}])
+                  {"name": "katex", "type": "string",
+                   "help": "KaTeX math expression",
+                   "placeholder": "E = mc^2"},
+                  {"name": "str-dosiero", "type": "string",
+                   "help": "Read content from file",
+                   "placeholder": "/path/to/content.txt"},
+                  {"name": "batch", "type": "string",
+                   "help": "JSON array of triples for batch creation",
+                   "placeholder": '[{"subject_id":"ALICE","predicate_id":"knows","object_value":"BOB"}]'}])
 def cmd_triple_add(remaining: list[str], flags: dict[str, str]) -> dict:
     """Add a single relationship statement between two nodes.
 
-    For batch triple creation from reusable patterns, see ``!template use``.
+    For batch triple creation, use ``--batch`` with a JSON array of triples
+    or the GUI multi-row form (``!triple add`` with no args).
     """
     svc = get_services()
+
+    # Batch mode
+    batch_json = flags.get("batch")
+    if batch_json:
+        import json as _json
+        try:
+            triples_data = _json.loads(batch_json)
+        except _json.JSONDecodeError as e:
+            raise CommandValidationError(f"Invalid --batch JSON: {e}")
+        if not isinstance(triples_data, list):
+            raise CommandValidationError("--batch must be a JSON array")
+        results = svc["triple"].batch_add(triples_data)
+        created = sum(1 for r in results if r["status"] == "created")
+        errors = sum(1 for r in results if r["status"] == "error")
+        duplicates = sum(1 for r in results if r["status"] == "duplicate")
+        return {
+            "type": "status",
+            "data": {
+                "message": f"Batch result: {created} created, {duplicates} duplicates, {errors} errors",
+                "results": results,
+                "created_count": created,
+                "error_count": errors,
+                "duplicate_count": duplicates,
+            },
+        }
+
+    # Single triple mode
     subject_id = flags.get("subject_id") or (remaining[0] if remaining else "") or ""
     predicate_id = flags.get("predicate_id") or (remaining[1] if len(remaining) > 1 else "") or ""
     object_value = flags.get("object_value") or (remaining[2] if len(remaining) > 2 else "") or ""

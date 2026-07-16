@@ -115,6 +115,11 @@ class TripleUpdate(BaseModel):
     object_unit: str | None = None
 
 
+class TripleBatchCreate(BaseModel):
+    """Batch triple creation request."""
+    triples: list[TripleCreate]
+
+
 class PredicateCreate(BaseModel):
     predicate_id: str
     source: str = "manual"
@@ -436,6 +441,32 @@ def create_triple(data: TripleCreate):
         return {"triple": triple}
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+
+@router.post("/triples/batch")
+def create_triples_batch(data: TripleBatchCreate):
+    """Add multiple triples in one request.
+
+    Each triple is processed independently. Returns per-row status:
+    ``created``, ``duplicate``, ``error``, or ``skipped`` (for
+    completely empty rows).
+
+    The frontend should pre-validate all rows before calling this
+    endpoint, but the backend also validates each row independently
+    as a safety net.
+    """
+    svc = _svc()["triple"]
+    rows = [t.model_dump() for t in data.triples]
+    results = svc.batch_add(rows)
+    created = sum(1 for r in results if r["status"] == "created")
+    errors = sum(1 for r in results if r["status"] == "error")
+    duplicates = sum(1 for r in results if r["status"] == "duplicate")
+    return {
+        "results": results,
+        "created_count": created,
+        "error_count": errors,
+        "duplicate_count": duplicates,
+    }
 
 
 @router.delete("/triples")

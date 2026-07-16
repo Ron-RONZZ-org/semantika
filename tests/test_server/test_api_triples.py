@@ -163,6 +163,7 @@ class TestTripleAddLiteralTypes:
         client.post("/api/v1/graph/predicates", json={"predicate_id": "ex:litInt", "labels": {"en": "int prop"}})
         client.post("/api/v1/graph/predicates", json={"predicate_id": "ex:litFloat", "labels": {"en": "float prop"}})
         client.post("/api/v1/graph/predicates", json={"predicate_id": "ex:litBool", "labels": {"en": "bool prop"}})
+        client.post("/api/v1/graph/predicates", json={"predicate_id": "ex:litUrl", "labels": {"en": "url prop"}})
         client.post("/api/v1/graph/predicates", json={"predicate_id": "ex:litKatex", "labels": {"en": "katex prop"}})
         return "LIT_SUBJ"
 
@@ -230,6 +231,22 @@ class TestTripleAddLiteralTypes:
         matches = [t for t in t_resp.json()["triples"] if t["predicate_id"] == "ex:litBool"]
         assert len(matches) >= 1
         assert matches[0]["object_datatype"] == "xsd:boolean"
+
+    def test_triple_add_url_literal(self, client: TestClient):
+        """Add a URL literal triple (xsd:anyURI)."""
+        resp = client.post(
+            "/api/v1/command",
+            json={"tokens": ["triple", "add"], "flags": {
+                "subject_id": "LIT_SUBJ", "predicate_id": "ex:litUrl",
+                "object_value": "https://example.com/page", "url": "true",
+            }},
+        )
+        assert resp.status_code == 200
+        t_resp = client.get("/api/v1/graph/triples/by-subject/LIT_SUBJ")
+        matches = [t for t in t_resp.json()["triples"] if t["predicate_id"] == "ex:litUrl"]
+        assert len(matches) >= 1
+        assert matches[0]["object_datatype"] == "xsd:anyURI"
+        assert matches[0]["object_type"] == "literal"
 
     def test_triple_add_katex_literal(self, client: TestClient):
         """Add a KaTeX formula triple."""
@@ -378,3 +395,99 @@ class TestTripleEdgeCases:
         assert resp.status_code == 200
         data = resp.json()
         assert "Specify" in str(data) or "error" in str(data).lower()
+
+
+# ── Batch triple creation ────────────────────────────────────────────
+
+
+class TestTripleBatchAPI:
+    """Test the POST /api/v1/graph/triples/batch endpoint.
+
+    Uses unique IDs per test to avoid state conflicts since all tests
+    share the module-level test database.
+    """
+
+    _counter = 0
+
+    def _setup(self, client: TestClient, tag: str = ""):
+        """Create common nodes and predicates with unique IDs."""
+        self._counter += 1
+        uid = f"{tag}{self._counter}"
+        subj = f"BAT_SUBJ_{uid}"
+        obj1 = f"BAT_OBJ1_{uid}"
+        obj2 = f"BAT_OBJ2_{uid}"
+        pred1 = f"ex:rel1_{uid}"
+        pred2 = f"ex:rel2_{uid}"
+        for nid in [subj, obj1, obj2]:
+            client.post("/api/v1/graph/nodes", json={"node_id": nid, "labels": {"en": nid}})
+        client.post("/api/v1/graph/predicates", json={"predicate_id": pred1, "labels": {"en": pred1}})
+        client.post("/api/v1/graph/predicates", json={"predicate_id": pred2, "labels": {"en": pred2}})
+        return subj, obj1, obj2, pred1, pred2
+
+    def test_batch_all_created(self, client: TestClient):
+        """All valid triples in batch are created."""
+        subj, obj1, obj2, pred1, pred2 = self._setup(client, "all")
+        resp = client.post(
+            "/api/v1/graph/triples/batch",
+            json={"triples": [
+                {"subject_id": subj, "predicate_id": pred1, "object_value": obj1},
+                {"subject_id": subj, "predicate_id": pred2, "object_value": obj2},
+            ]},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["created_count"] == 2
+        assert data["error_count"] == 0
+
+    def test_batch_with_duplicates(self, client: TestClient):
+        """Batch with duplicates reports duplicate status."""
+        subj, obj1, obj2, pred1, pred2 = self._setup(client, "dup")
+        # Create one triple first
+        client.post(
+            "/api/v1/graph/triples",
+            json={"subject_id": subj, "predicate_id": pred1, "object_value": obj1},
+        )
+        # Batch with both new and duplicate
+        resp = client.post(
+            "/api/v1/graph/triples/batch",
+            json={"triples": [
+                {"subject_id": subj, "predicate_id": pred1, "object_value": obj1},
+                {"subject_id": subj, "predicate_id": pred2, "object_value": obj2},
+            ]},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["created_count"] == 1
+        assert data["duplicate_count"] == 1
+        assert data["error_count"] == 0
+
+    def test_batch_with_error(self, client: TestClient):
+        """Batch with invalid triples reports errors."""
+        subj, obj1, obj2, pred1, pred2 = self._setup(client, "err")
+        resp = client.post(
+            "/api/v1/graph/triples/batch",
+            json={"triples": [
+                {"subject_id": subj, "predicate_id": pred1, "object_value": obj1},
+                {"subject_id": subj, "predicate_id": "ex:missing_xyz", "object_value": obj1},
+            ]},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["created_count"] == 1
+        assert data["error_count"] == 1
+        assert data["results"][1]["status"] == "error"
+        assert data["results"][1].get("message", "") != ""
+
+    def test_batch_empty_rows_skipped(self, client: TestClient):
+        """Empty rows in batch are skipped."""
+        subj, obj1, obj2, pred1, pred2 = self._setup(client, "empty")
+        resp = client.post(
+            "/api/v1/graph/triples/batch",
+            json={"triples": [
+                {"subject_id": subj, "predicate_id": pred1, "object_value": obj1},
+                {"subject_id": "", "predicate_id": "", "object_value": ""},
+            ]},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["created_count"] == 1
