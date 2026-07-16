@@ -941,8 +941,8 @@ async function run() {
     const objInput = panel.locator('input[data-field="object_value"]').first();
     await objInput.fill("Batch Test Triple");
     // Submit (need to set type to literal first)
-    const strTypeBtn = panel.locator(".type-btn").nth(1); // "Str" button
-    await strTypeBtn.click();
+    const typeSelect = panel.locator(".type-select").first();
+    await typeSelect.selectOption("literal"); // Select "Str"
     await sleep(100);
     // Click Submit
     const submitBtn = panel.locator("button", { hasText: "Submit" });

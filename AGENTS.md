@@ -274,7 +274,7 @@ semantika/
             ├── HomeTab.svelte / HomeHeader.svelte
             ├── TabView.svelte / MessageList.svelte
             ├── NodeListTab.svelte / PredicateListTab.svelte / TripleListTab.svelte
-            ├── TripleAddTab.svelte
+            ├── TripleAddTab.svelte / tripleAddTypeUtils.js
             ├── listTabFormat.js / listTabSelection.svelte.js / listTabShared.svelte.js
             ├── commandRouter.js / commandEngine.js / commandExecutor.js
             ├── commandTree.js / commandHistory.svelte.js / parser.js
