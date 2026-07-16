@@ -200,7 +200,9 @@ semantika/
 │           │   └── handlers/    # One file per domain (auto-registered via import)
 │           │       ├── __init__.py
 │               │   ├── graph.py / node.py / node_helpers.py
-│               │   ├── node_specialised.py  # !node add photo|video|file|code
+│               │   ├── node_attachment.py  # !node add attachment photo|video|file|code
+│               │   ├── node_media.py       # !node add media book|film|song|game|podcast
+│               │   ├── node_scholarly.py   # !node add scholarly paper|patent|conference
 │               │   ├── predicate.py / predicate_group.py / predicate_trash.py
 │               │   ├── triple.py / review.py
 │               │   ├── backup.py / reset.py
@@ -616,7 +618,15 @@ All ``!xxx add`` commands (node, predicate, triple, unit, proof, predicate.group
 
 ## Node Handler Module Split
 
-``node.py`` exceeded 500 lines. The specialised subcommands (``!node add photo|video|file|code``) were extracted to ``node_specialised.py``. The core CRUD, concept add, merge, and rename remain in ``node.py``.
+``node.py`` exceeded 500 lines. The specialised subcommands were extracted into sibling modules:
+
+| Module | Commands | Pattern |
+|--------|----------|---------|
+| ``node_attachment.py`` | ``!node add attachment photo\|video\|file\|code`` | File-attachment nodes with auto triples |
+| ``node_media.py`` | ``!node add media book\|film\|song\|game\|podcast`` | Creative works, pure metadata |
+| ``node_scholarly.py`` | ``!node add scholarly paper\|patent\|conference`` | Academic/IP works, pure metadata |
+
+The general ``!node add concept``, CRUD, merge, and rename remain in ``node.py``. The ``--inverse`` flag was removed from concept (it is a predicate property, not a node property).
 
 ## Coding Guidelines
 

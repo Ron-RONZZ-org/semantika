@@ -1,8 +1,14 @@
-"""Specialised node creation subcommands (photo, video, file, code).
+"""Attachment-based node creation subcommands (photo, video, file, code).
+
+Moved from the former ``node_specialised.py`` when the ``!node add`` command
+tree was reorganised into groups.  Now accessible as::
+
+    !node add attachment photo|video|file|code
 
 These create semantically typed nodes with file attachments and auto-generated
-triples.  The ``!node add code`` command also supports inline code paste via
-``--code``, which stores content directly in the database (no file attachment).
+triples.  The ``!node add attachment code`` command also supports inline code
+paste via ``--code``, which stores content directly in the database (no file
+attachment).
 """
 
 from __future__ import annotations
@@ -16,12 +22,35 @@ from semantika.server.command.handlers.node_helpers import (
     parse_dimension,
     resolve_node_refs,
 )
-from semantika.server.command.registry import command
+from semantika.server.command.registry import command, group_command
 
 logger = logging.getLogger(__name__)
 
 
-@command("node.add.photo", description="Create a photo node with file attachment",
+@group_command("node.add.attachment",
+               description="Create file-attachment nodes (photo, video, file, code)")
+def cmd_node_add_attachment_root(remaining: list[str], flags: dict[str, str]) -> dict:
+    """Attachment node creation group — use subcommands.
+
+    Available:
+      !node add attachment photo — Create a photo node with file attachment
+      !node add attachment video — Create a video node with file attachment
+      !node add attachment file  — Create a document node with file attachment
+      !node add attachment code  — Create a source code node with file attachment
+    """
+    return {"type": "status", "title": "Attachment Node Commands", "data": {
+        "_summary": (
+            "Available !node add attachment commands:\n"
+            "  !node add attachment photo — Create a photo node with file attachment\n"
+            "  !node add attachment video — Create a video node with file attachment\n"
+            "  !node add attachment file  — Create a document node with file attachment\n"
+            "  !node add attachment code  — Create a source code node with file attachment"
+        )
+    }}
+
+
+@command("node.add.attachment.photo",
+         description="Create a photo node with file attachment",
          interactive=True,
          flags=[
              {"name": "path", "type": "string", "required": True,
@@ -94,7 +123,8 @@ def cmd_node_add_photo(remaining: list[str], flags: dict[str, str]) -> dict:
     return {"type": "status", "data": response_data}
 
 
-@command("node.add.video", description="Create a video node with file attachment",
+@command("node.add.attachment.video",
+         description="Create a video node with file attachment",
          interactive=True,
          flags=[
              {"name": "path", "type": "string", "required": True,
@@ -167,7 +197,8 @@ def cmd_node_add_video(remaining: list[str], flags: dict[str, str]) -> dict:
     return {"type": "status", "data": response_data}
 
 
-@command("node.add.file", description="Create a document node with file attachment",
+@command("node.add.attachment.file",
+         description="Create a document node with file attachment",
          interactive=True,
          flags=[
              {"name": "path", "type": "string", "required": True,
@@ -244,7 +275,8 @@ COMMON_LANGUAGES: list[str] = [
 ]
 
 
-@command("node.add.code", description="Create a source code node",
+@command("node.add.attachment.code",
+         description="Create a source code node",
          interactive=True,
          flags=[
              # Group "source" — mutually exclusive: paste code OR provide a file

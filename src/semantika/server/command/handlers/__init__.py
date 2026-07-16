@@ -10,7 +10,9 @@ from . import (
     help,  # noqa: F401 — !help command reference
     llm,  # noqa: F401
     node,  # noqa: F401 — node CRUD + node trash
-    node_specialised,  # noqa: F401 — specialised node add subcommands
+    node_attachment,  # noqa: F401 — !node add attachment photo|video|file|code
+    node_media,  # noqa: F401 — !node add media book|film|song|game|podcast
+    node_scholarly,  # noqa: F401 — !node add scholarly paper|patent|conference
     predicate,  # noqa: F401 — predicate CRUD
     predicate_group,  # noqa: F401 — predicate group CRUD
     predicate_trash,  # noqa: F401 — predicate trash commands (predicate.trash.*)
