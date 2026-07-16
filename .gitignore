@@ -39,3 +39,4 @@ coverage_html/
 *.7z
 .serena/
 MagicMock/
+.opencode/worktree-state.sqlite
