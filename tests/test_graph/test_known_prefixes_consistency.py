@@ -7,6 +7,10 @@ forgets the others.
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
+
 from semantika.graph.constants import KNOWN_PREFIXES
 
 
@@ -86,3 +90,65 @@ def test_sm_predicate_source_is_semantika() -> None:
         assert source == "semantika", (
             f"{pid} has source={source!r}, expected 'semantika'"
         )
+
+
+def test_sm_namespace_url() -> None:
+    """``SM_NAMESPACE`` has the correct canonical URL."""
+    from semantika.graph.constants import SM_NAMESPACE
+
+    assert SM_NAMESPACE == "https://sm.ronzz.org/predicates/", (
+        f"SM_NAMESPACE is {SM_NAMESPACE!r}, expected 'https://sm.ronzz.org/predicates/'"
+    )
+
+
+def test_default_node_template_url() -> None:
+    """Default node IRI template uses sm.ronzz.org domain."""
+    from semantika.core.config import DEFAULT_NODE_IRI
+
+    assert DEFAULT_NODE_IRI == "https://sm.ronzz.org/nodes/$id", (
+        f"DEFAULT_NODE_IRI is {DEFAULT_NODE_IRI!r}, "
+        f"expected 'https://sm.ronzz.org/nodes/$id'"
+    )
+
+
+def test_default_predicate_template_url() -> None:
+    """Default predicate IRI template uses sm.ronzz.org domain."""
+    from semantika.core.config import DEFAULT_PREDICATE_IRI
+
+    assert DEFAULT_PREDICATE_IRI == "https://sm.ronzz.org/predicates/$id", (
+        f"DEFAULT_PREDICATE_IRI is {DEFAULT_PREDICATE_IRI!r}, "
+        f"expected 'https://sm.ronzz.org/predicates/$id'"
+    )
+
+
+def test_compute_iri_default_node_template(tmp_path: Path, monkeypatch) -> None:
+    """compute_iri with bare node ID uses DEFAULT_NODE_IRI when no config file."""
+    from semantika.graph.db import compute_iri
+
+    # Ensure no config file is found by pointing to an empty dir
+    from semantika.core import config as cfg_mod
+    monkeypatch.setattr(cfg_mod, "config_dir", lambda: tmp_path)
+    monkeypatch.setattr(cfg_mod, "ensure_dirs", lambda: None)
+    cfg_mod.reload_config()
+
+    iri = compute_iri("PHOTO")
+    assert iri == "https://sm.ronzz.org/nodes/PHOTO", (
+        f"compute_iri('PHOTO') returned {iri!r}, "
+        f"expected 'https://sm.ronzz.org/nodes/PHOTO'"
+    )
+
+
+def test_compute_iri_default_predicate_template(tmp_path: Path, monkeypatch) -> None:
+    """compute_iri with unknown-prefix predicate uses DEFAULT_PREDICATE_IRI."""
+    from semantika.graph.db import compute_iri
+
+    from semantika.core import config as cfg_mod
+    monkeypatch.setattr(cfg_mod, "config_dir", lambda: tmp_path)
+    monkeypatch.setattr(cfg_mod, "ensure_dirs", lambda: None)
+    cfg_mod.reload_config()
+
+    iri = compute_iri(":hasFilePath")
+    assert iri == "https://sm.ronzz.org/predicates/:hasFilePath", (
+        f"compute_iri(':hasFilePath') returned {iri!r}, "
+        f"expected 'https://sm.ronzz.org/predicates/:hasFilePath'"
+    )
