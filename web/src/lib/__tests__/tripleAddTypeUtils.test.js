@@ -123,6 +123,30 @@ describe("parseFlagFromValue", () => {
     expect(parseFlagFromValue("--INT 42")).toEqual({ flag: "int", rest: "42" });
     expect(parseFlagFromValue("--Str hello")).toEqual({ flag: "str", rest: "hello" });
   });
+
+  it("does NOT match '-- ' (dash-dash-space with no word)", () => {
+    expect(parseFlagFromValue("-- ")).toEqual({ flag: null, rest: "-- " });
+  });
+
+  it("does NOT match '--int42' (no space between flag and text)", () => {
+    // Without a space after the flag word, we consider the user still typing
+    expect(parseFlagFromValue("--int42")).toEqual({ flag: null, rest: "--int42" });
+    expect(parseFlagFromValue("--strHello")).toEqual({ flag: null, rest: "--strHello" });
+  });
+
+  it("does NOT match leading whitespace", () => {
+    expect(parseFlagFromValue("  --int 42")).toEqual({ flag: null, rest: "  --int 42" });
+  });
+
+  it("does NOT match flags with hyphens in the word", () => {
+    // \w+ captures only up to the hyphen, then needs \s+ but gets '-'
+    expect(parseFlagFromValue("--flag-with-hyphen val")).toEqual({ flag: null, rest: "--flag-with-hyphen val" });
+  });
+
+  it("preserves trailing content including spaces after rest", () => {
+    expect(parseFlagFromValue("--int 42 ")).toEqual({ flag: "int", rest: "42 " });
+    expect(parseFlagFromValue("--str hello world ")).toEqual({ flag: "str", rest: "hello world " });
+  });
 });
 
 // ── resolveObjectType ──────────────────────────────────────────────────
@@ -158,6 +182,81 @@ describe("resolveObjectType", () => {
 
   it("returns unknown literal type as-is", () => {
     expect(resolveObjectType({ object_type: "literal", object_datatype: "xsd:custom" })).toBe("literal");
+  });
+
+  it("returns non-literal object_type directly (e.g. 'url' typed as object_type)", () => {
+    // In practice object_type is always "node" or "literal", but the function
+    // handles any value defensively
+    expect(resolveObjectType({ object_type: "url", object_datatype: null })).toBe("url");
+    expect(resolveObjectType({ object_type: "custom", object_datatype: null })).toBe("custom");
+  });
+
+  it("returns 'url' for xsd:anyURI even when object_type has unexpected casing", () => {
+    // object_type is always lowercase in practice, but the check is strict
+    expect(resolveObjectType({ object_type: "literal", object_datatype: "xsd:anyURI" })).toBe("url");
+  });
+});
+
+// ── Integration: parseFlagFromValue + interpretFlag ─────────────────────
+
+describe("integration: parseFlagFromValue + interpretFlag", () => {
+  it("parses and interprets a complete --flag value chain", () => {
+    // Simulates what handleObjectInput does
+    const testCases = [
+      { input: "--string hello", expectedFlag: "string", expectedType: "literal", expectedDt: null, expectedRest: "hello" },
+      { input: "--int 42",       expectedFlag: "int", expectedType: "literal", expectedDt: "xsd:integer", expectedRest: "42" },
+      { input: "--float 3.14",   expectedFlag: "float", expectedType: "literal", expectedDt: "xsd:decimal", expectedRest: "3.14" },
+      { input: "--bool true",    expectedFlag: "bool", expectedType: "literal", expectedDt: "xsd:boolean", expectedRest: "true" },
+      { input: "--url https://a.com", expectedFlag: "url", expectedType: "literal", expectedDt: "xsd:anyURI", expectedRest: "https://a.com" },
+      { input: "--katex E=mc^2", expectedFlag: "katex", expectedType: "literal", expectedDt: "text/katex", expectedRest: "E=mc^2" },
+    ];
+
+    for (const tc of testCases) {
+      const { flag, rest } = parseFlagFromValue(tc.input);
+      expect(flag).toBe(tc.expectedFlag);
+      const typeInfo = interpretFlag(flag);
+      expect(typeInfo).not.toBeNull();
+      expect(typeInfo.object_type).toBe(tc.expectedType);
+      expect(typeInfo.object_datatype).toBe(tc.expectedDt);
+      expect(rest).toBe(tc.expectedRest);
+    }
+  });
+
+  it("handles abbreviation in integration (--str = --string)", () => {
+    const { flag, rest } = parseFlagFromValue("--str abbr");
+    expect(flag).toBe("str");
+    const typeInfo = interpretFlag(flag);
+    expect(typeInfo.object_type).toBe("literal");
+    expect(typeInfo.object_datatype).toBeNull();
+    expect(rest).toBe("abbr");
+  });
+
+  it("unknown flag in integration returns null from interpretFlag", () => {
+    const { flag, rest } = parseFlagFromValue("--foobar value");
+    expect(flag).toBe("foobar");
+    const typeInfo = interpretFlag(flag);
+    expect(typeInfo).toBeNull();
+    expect(rest).toBe("value");
+  });
+
+  it("efficiency hack: no space means no parsing", () => {
+    const { flag, rest } = parseFlagFromValue("--int");
+    expect(flag).toBeNull();
+    expect(rest).toBe("--int");
+    // interpretFlag is never called because flag is null
+  });
+
+  it("efficiency hack: --int (no space) prevents interpretFlag from being called", () => {
+    const { flag } = parseFlagFromValue("--int");
+    expect(flag).toBeNull(); // No flag → interpretFlag won't be reached
+  });
+
+  it("regular node ID value passes through untouched", () => {
+    const { flag, rest } = parseFlagFromValue("ALICE");
+    expect(flag).toBeNull();
+    expect(rest).toBe("ALICE");
+    const typeInfo = flag ? interpretFlag(flag) : null;
+    expect(typeInfo).toBeNull();
   });
 });
 
