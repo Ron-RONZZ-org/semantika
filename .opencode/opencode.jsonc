@@ -1,0 +1,10 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "command": {
+    "node-add-new-subcommand": {
+      "template": ".opencode/commands/node-add-new-subcommand.md",
+      "description": "Create a new specialised !node add subcommand (e.g. !node add media recipe)",
+      "agent": "architect"
+    }
+  }
+}
