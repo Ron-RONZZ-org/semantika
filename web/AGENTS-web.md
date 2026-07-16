@@ -56,6 +56,7 @@ Svelte 5 SPA frontend — command-bar UI with rich result rendering for the Sema
 | `NodeListTab.svelte` | Searchable node list with selection, batch delete |
 | `PredicateListTab.svelte` | Searchable predicate list with selection, batch delete, infinite scroll (ScrollList), sort (predicate_id/created_at), keyboard shortcuts (`s` sort, `/` search, `v` select) |
 | `TripleListTab.svelte` | Filterable triple list (by subject/predicate) |
+| `TripleAddTab.svelte` | Multi-row batch triple entry with toolbar (New/Insert/Undo/Redo/Select), autocomplete, object type selector, per-field validation, abbreviation, post-submit status |
 | `SparqlQueryEditor.svelte` | SPARQL query editor with CodeMirror 6 — syntax highlighting, Run/Stop, split-editor/result layout |
 | `SparqlResultTable.svelte` | SPARQL result renderer — table for SELECT, Yes/No for ASK, Turtle for CONSTRUCT, CSV export |
 | `sparqlStore.svelte.js` | Reactive store for SPARQL query state: query text, results, loading, error, prefix autocomplete |
@@ -154,6 +155,7 @@ import { banner } from "./bannerStore.svelte.js";
 | `tabStore.svelte.js` | `tabStore` | Reactive store |
 | `listTabFormat.js` | `formatListItemDate`, `truncate`, `preview`, `getLabel`, `shortId` | Utility functions |
 | `listTabSelection.svelte.js` | `createCopyState`, `createSelectionManager` | Reactive utility |
+| `historyStore.svelte.js` | `createHistory` | Reactive utility |
 | `listTabShared.svelte.js` | barrel of above | Barrel |
 | `BannerContainer.svelte` | imports `bannerStore` from `@lightercore/ui` | Svelte component |
 

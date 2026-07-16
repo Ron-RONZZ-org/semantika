@@ -274,11 +274,12 @@ semantika/
             ├── HomeTab.svelte / HomeHeader.svelte
             ├── TabView.svelte / MessageList.svelte
             ├── NodeListTab.svelte / PredicateListTab.svelte / TripleListTab.svelte
+            ├── TripleAddTab.svelte
             ├── listTabFormat.js / listTabSelection.svelte.js / listTabShared.svelte.js
             ├── commandRouter.js / commandEngine.js / commandExecutor.js
             ├── commandTree.js / commandHistory.svelte.js / parser.js
             ├── popupStore.svelte.js / tabStore.svelte.js / bannerStore.svelte.js
-            ├── dirtyFormStore.svelte.js / keyboardShortcuts.svelte.js
+            ├── dirtyFormStore.svelte.js / keyboardShortcuts.svelte.js / historyStore.svelte.js
             └── userConfig.svelte.js / markdown.js
 ```
 
