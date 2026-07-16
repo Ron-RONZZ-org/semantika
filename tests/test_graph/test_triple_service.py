@@ -121,3 +121,85 @@ class TestTurtleEdgeCases:
         stats = import_turtle(ttl)
         # Should not crash; blank nodes are handled as URIs
         assert isinstance(stats, dict)
+
+
+class TestTripleBatchAdd:
+    """Tests for TripleService.batch_add()."""
+
+    def _setup(self, services: dict) -> dict:
+        """Create basic nodes and predicates for batch tests."""
+        ns = services["node"]
+        ps = services["predicate"]
+        ns.create({"node_id": "ALICE", "labels": {"en": "Alice"}})
+        ns.create({"node_id": "BOB", "labels": {"en": "Bob"}})
+        ns.create({"node_id": "CHARLIE", "labels": {"en": "Charlie"}})
+        ps.create({"predicate_id": "ex:knows", "labels": {"en": "knows"}})
+        ps.create({"predicate_id": "ex:likes", "labels": {"en": "likes"}})
+        ps.create({"predicate_id": "ex:age", "labels": {"en": "age"}})
+        return services
+
+    def test_batch_all_created(self, services: dict):
+        """All valid triples are created."""
+        svc = self._setup(services)
+        ts = svc["triple"]
+        results = ts.batch_add([
+            {"subject_id": "ALICE", "predicate_id": "ex:knows", "object_value": "BOB"},
+            {"subject_id": "ALICE", "predicate_id": "ex:likes", "object_value": "CHARLIE"},
+            {"subject_id": "BOB", "predicate_id": "ex:knows", "object_value": "CHARLIE"},
+        ])
+        assert len(results) == 3
+        assert all(r["status"] == "created" for r in results)
+        assert ts.count() == 3
+
+    def test_batch_duplicates(self, services: dict):
+        """Re-adding existing triples reports them as duplicates."""
+        svc = self._setup(services)
+        ts = svc["triple"]
+        ts.add("ALICE", "ex:knows", "BOB", object_type="node")
+        results = ts.batch_add([
+            {"subject_id": "ALICE", "predicate_id": "ex:knows", "object_value": "BOB"},
+            {"subject_id": "ALICE", "predicate_id": "ex:likes", "object_value": "CHARLIE"},
+        ])
+        assert len(results) == 2
+        assert results[0]["status"] == "duplicate"
+        assert results[1]["status"] == "created"
+        assert ts.count() == 2
+
+    def test_batch_skips_empty_rows(self, services: dict):
+        """Completely empty rows are skipped."""
+        svc = self._setup(services)
+        ts = svc["triple"]
+        results = ts.batch_add([
+            {"subject_id": "ALICE", "predicate_id": "ex:knows", "object_value": "BOB"},
+            {"subject_id": "", "predicate_id": "", "object_value": ""},
+            {"subject_id": "BOB", "predicate_id": "ex:likes", "object_value": "CHARLIE"},
+        ])
+        assert len(results) == 3
+        assert results[0]["status"] == "created"
+        assert results[1]["status"] == "skipped"
+        assert results[2]["status"] == "created"
+        assert ts.count() == 2
+
+    def test_batch_mixed_success_and_error(self, services: dict):
+        """Some rows succeed, some fail with error."""
+        svc = self._setup(services)
+        ts = svc["triple"]
+        results = ts.batch_add([
+            {"subject_id": "ALICE", "predicate_id": "ex:knows", "object_value": "BOB"},
+            {"subject_id": "ALICE", "predicate_id": "ex:nonexistent", "object_value": "BOB"},
+        ])
+        assert len(results) == 2
+        assert results[0]["status"] == "created"
+        assert results[1]["status"] == "error"
+        assert ts.count() == 1
+
+    def test_batch_row_key_correlation(self, services: dict):
+        """Custom _row keys correlate frontend rows."""
+        svc = self._setup(services)
+        ts = svc["triple"]
+        results = ts.batch_add([
+            {"_row": 5, "subject_id": "ALICE", "predicate_id": "ex:knows", "object_value": "BOB"},
+            {"_row": 8, "subject_id": "BOB", "predicate_id": "ex:likes", "object_value": "CHARLIE"},
+        ])
+        assert results[0]["row"] == 5
+        assert results[1]["row"] == 8

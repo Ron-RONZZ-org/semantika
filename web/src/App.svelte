@@ -58,10 +58,14 @@
               ...(routing.initialData || {}),
               _returnIdKey: routing.listIdKey ? `persistent-${routing.listIdKey}` : undefined,
             };
-            tabStore.open("form", routing.addTitle || "Add", {
-              form: routing.addFormType,
-              initialData: enrichedInitial,
-            }, { idKey: `form-${routing.addFormType}` });
+            if (routing.addFormType === "triple-add") {
+              tabStore.open("triple-add", routing.addTitle || "Add Triples", {}, { idKey: "triple-add" });
+            } else {
+              tabStore.open("form", routing.addTitle || "Add", {
+                form: routing.addFormType,
+                initialData: enrichedInitial,
+              }, { idKey: `form-${routing.addFormType}` });
+            }
           }
           isLoading = false;
           return;

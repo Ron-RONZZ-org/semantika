@@ -907,17 +907,58 @@ async function run() {
     );
   });
 
-  await test("CLI→GUI: !triple add opens form", async () => {
+  await test("CLI→GUI: !triple add opens multi-row tab", async () => {
     await typeAndRun("!triple add");
     await sleep(400);
     const panel = getActivePanel();
-    const formHeading = panel.locator(".form-tab h3");
-    await formHeading.waitFor({ state: "visible", timeout: 3000 });
-    const text = await formHeading.textContent();
-    assert.ok(
-      text && text.toLowerCase().includes("triple add"),
-      `Form heading should reference "Triple Add", got "${text}"`,
-    );
+    // TripleAddTab has a toolbar with "New" button
+    const newBtn = panel.locator("button", { hasText: "New" });
+    await newBtn.waitFor({ state: "visible", timeout: 3000 });
+    assert.ok(await newBtn.isVisible(), "TripleAddTab should show + New button");
+    // Should show column headers
+    const header = panel.locator(".row-header");
+    assert.ok(await header.isVisible(), "Should show column headers");
+    const headerText = await header.textContent();
+    assert.ok(headerText.includes("SUBJECT"), "Header should include SUBJECT");
+    assert.ok(headerText.includes("PREDICATE"), "Header should include PREDICATE");
+    assert.ok(headerText.includes("OBJECT"), "Header should include OBJECT");
+  });
+
+  await test("TripleAddTab: add row and submit via batch API", async () => {
+    // TSubj and rdfs:label already exist from earlier tests
+    await typeAndRun("!triple add");
+    await sleep(500);
+    const panel = getActivePanel();
+    // Should have one empty row
+    const inputs = panel.locator(".row input");
+    const inputCount = await inputs.count();
+    assert.ok(inputCount >= 3, `Should have at least 3 input fields, got ${inputCount}`);
+    // Fill subject, predicate, object (first row)
+    const subjectInput = panel.locator('input[data-field="subject_id"]').first();
+    await subjectInput.fill("TSubj");
+    const predInput = panel.locator('input[data-field="predicate_id"]').first();
+    await predInput.fill("rdfs:label");
+    const objInput = panel.locator('input[data-field="object_value"]').first();
+    await objInput.fill("Batch Test Triple");
+    // Submit (need to set type to literal first)
+    const strTypeBtn = panel.locator(".type-btn").nth(1); // "Str" button
+    await strTypeBtn.click();
+    await sleep(100);
+    // Click Submit
+    const submitBtn = panel.locator("button", { hasText: "Submit" });
+    await submitBtn.click();
+    await sleep(300);
+    // Confirm dialog
+    const confirmSubmit = panel.locator(".confirm-dialog button", { hasText: "Submit" });
+    if (await confirmSubmit.isVisible({ timeout: 500 }).catch(() => false)) {
+      await confirmSubmit.click();
+      await sleep(800);
+    }
+    // Should see result view
+    const resultBadge = panel.locator(".result-badge");
+    await resultBadge.waitFor({ state: "visible", timeout: 3000 });
+    const resultText = await resultBadge.textContent();
+    assert.ok(resultText.includes("created"), `Expected created badge, got "${resultText}"`);
   });
 
   await test("CLI→GUI: !unit add opens form", async () => {
