@@ -99,6 +99,29 @@ class TestNodeAddBook:
         )
         assert result["data"]["node"]["node_id"] == "GATSBY"
 
+    def test_book_all_fields(self, seeded: dict):
+        """Book with all fields simultaneously."""
+        result = dispatch(
+            ["node", "add", "media", "book"],
+            {"labels": "en::Gatsby", "author": "ALICE,BOB",
+             "isbn": "9780743273565, 9780684801520",
+             "year": "1925"},
+        )
+        assert result["type"] == "status"
+        triples = result["data"].get("semantic_triples", [])
+        assert sum(1 for t in triples if t["predicate_id"] == "sm:hasAuthor") == 2
+        assert sum(1 for t in triples if t["predicate_id"] == "sm:hasISBN") == 2
+        assert any(t["predicate_id"] == "sm:publicationYear" for t in triples)
+        assert any(t["predicate_id"] == "rdf:type" and t["object_value"] == "BOOK" for t in triples)
+
+    def test_book_invalid_author(self, services: dict):
+        """Book with unresolvable --author should raise."""
+        with pytest.raises(Exception, match="not found"):
+            dispatch(
+                ["node", "add", "media", "book"],
+                {"labels": "en::Gatsby", "author": "NONEXISTENT"},
+            )
+
 
 # ── !node add media film ─────────────────────────────────────────────────
 
@@ -130,6 +153,31 @@ class TestNodeAddFilm:
         triples = result["data"].get("semantic_triples", [])
         assert any(t["predicate_id"] == "sm:hasDuration" and t["object_value"] == "8880" for t in triples)
 
+    def test_film_with_duration_mmss(self, seeded: dict):
+        """Film with --duration in MM:SS format."""
+        result = dispatch(
+            ["node", "add", "media", "film"],
+            {"labels": "en::Short", "duration": "90:00"},
+        )
+        triples = result["data"].get("semantic_triples", [])
+        assert any(t["predicate_id"] == "sm:hasDuration" and t["object_value"] == "5400" for t in triples)
+
+    def test_film_all_fields(self, seeded: dict):
+        """Film with all fields simultaneously."""
+        result = dispatch(
+            ["node", "add", "media", "film"],
+            {"labels": "en::Inception",
+             "director": "NOLAN", "actor": "ALICE,BOB",
+             "isan": "0000-0000-1C8A", "duration": "02:28:00",
+             "year": "2010"},
+        )
+        assert result["type"] == "status"
+        triples = result["data"].get("semantic_triples", [])
+        assert any(t["predicate_id"] == "sm:hasDirector" for t in triples)
+        assert sum(1 for t in triples if t["predicate_id"] == "sm:hasActor") == 2
+        assert any(t["predicate_id"] == "sm:hasISAN" for t in triples)
+        assert any(t["predicate_id"] == "sm:hasDuration" for t in triples)
+
 
 # ── !node add media song ─────────────────────────────────────────────────
 
@@ -152,6 +200,19 @@ class TestNodeAddSong:
         triples = result["data"].get("semantic_triples", [])
         assert any(t["predicate_id"] == "sm:hasAuthor" for t in triples)
         assert any(t["predicate_id"] == "sm:hasSinger" for t in triples)
+
+    def test_song_all_fields(self, seeded: dict):
+        """Song with all fields simultaneously."""
+        result = dispatch(
+            ["node", "add", "media", "song"],
+            {"labels": "en::Song", "author": "ALICE", "singer": "BOB",
+             "iswc": "T-010.101.929-7"},
+        )
+        assert result["type"] == "status"
+        triples = result["data"].get("semantic_triples", [])
+        assert any(t["predicate_id"] == "sm:hasISWC" for t in triples)
+        assert sum(1 for t in triples if t["predicate_id"] == "sm:hasAuthor") == 1
+        assert sum(1 for t in triples if t["predicate_id"] == "sm:hasSinger") == 1
 
 
 # ── !node add media game ─────────────────────────────────────────────────
@@ -185,6 +246,21 @@ class TestNodeAddGame:
         assert any(t["predicate_id"] == "sm:platform" for t in triples)
         assert any(t["predicate_id"] == "sm:genre" for t in triples)
 
+    def test_game_all_fields(self, seeded: dict):
+        """Game with all fields simultaneously."""
+        result = dispatch(
+            ["node", "add", "media", "game"],
+            {"labels": "en::Witcher 3", "platform": "PC, PS5", "genre": "RPG",
+             "developer": "CD_PROJEKT", "publisher": "CD_PROJEKT",
+             "year": "2015"},
+        )
+        assert result["type"] == "status"
+        triples = result["data"].get("semantic_triples", [])
+        assert any(t["predicate_id"] == "sm:developedBy" for t in triples)
+        assert any(t["predicate_id"] == "sm:publishedBy" for t in triples)
+        assert any(t["predicate_id"] == "sm:publicationYear" for t in triples)
+        assert sum(1 for t in triples if t["predicate_id"] == "sm:platform") == 2
+
 
 # ── !node add media podcast ──────────────────────────────────────────────
 
@@ -206,6 +282,20 @@ class TestNodeAddPodcast:
         )
         triples = result["data"].get("semantic_triples", [])
         assert any(t["predicate_id"] == "sm:hasHost" for t in triples)
+
+    def test_podcast_all_fields(self, seeded: dict):
+        """Podcast with all fields simultaneously."""
+        result = dispatch(
+            ["node", "add", "media", "podcast"],
+            {"labels": "en::My Podcast", "host": "ALICE,BOB",
+             "episode-count": "100", "feed-url": "https://example.com/feed",
+             "language": "en"},
+        )
+        assert result["type"] == "status"
+        triples = result["data"].get("semantic_triples", [])
+        assert sum(1 for t in triples if t["predicate_id"] == "sm:hasHost") == 2
+        assert any(t["predicate_id"] == "sm:episodeCount" for t in triples)
+        assert any(t["predicate_id"] == "sm:feedURL" for t in triples)
 
 
 # ── !node add scholarly paper ────────────────────────────────────────────
@@ -240,6 +330,22 @@ class TestNodeAddPaper:
         assert any(t["predicate_id"] == "sm:publishedIn" for t in triples)
         assert any(t["predicate_id"] == "sm:hasKeyword" for t in triples)
 
+    def test_paper_all_fields(self, seeded: dict):
+        """Paper with all fields simultaneously."""
+        result = dispatch(
+            ["node", "add", "scholarly", "paper"],
+            {"labels": "en::Paper", "doi": "10.1234/test",
+             "author": "EINSTEIN", "journal": "Nature",
+             "year": "1905", "keywords": "physics, einstein",
+             "url": "https://doi.org/10.1234/test"},
+        )
+        assert result["type"] == "status"
+        triples = result["data"].get("semantic_triples", [])
+        assert any(t["predicate_id"] == "sm:hasDOI" for t in triples)
+        assert any(t["predicate_id"] == "sm:publishedIn" for t in triples)
+        assert sum(1 for t in triples if t["predicate_id"] == "sm:hasKeyword") == 2
+        assert any(t["predicate_id"] == "sm:hasURL" for t in triples)
+
 
 # ── !node add scholarly patent ───────────────────────────────────────────
 
@@ -262,6 +368,20 @@ class TestNodeAddPatent:
         triples = result["data"].get("semantic_triples", [])
         assert any(t["predicate_id"] == "sm:hasPatentNumber" for t in triples)
         assert any(t["predicate_id"] == "sm:hasInventor" for t in triples)
+
+    def test_patent_all_fields(self, seeded: dict):
+        """Patent with all fields simultaneously."""
+        result = dispatch(
+            ["node", "add", "scholarly", "patent"],
+            {"labels": "en::Patent", "patent-number": "US9876543B2",
+             "inventor": "EINSTEIN", "year": "2023", "assignee": "CD_PROJEKT"},
+        )
+        assert result["type"] == "status"
+        triples = result["data"].get("semantic_triples", [])
+        assert any(t["predicate_id"] == "sm:hasPatentNumber" for t in triples)
+        assert any(t["predicate_id"] == "sm:hasInventor" for t in triples)
+        assert any(t["predicate_id"] == "sm:publicationYear" for t in triples)
+        assert any(t["predicate_id"] == "sm:assignedTo" for t in triples)
 
 
 # ── !node add scholarly conference ───────────────────────────────────────
@@ -289,6 +409,21 @@ class TestNodeAddConference:
         assert any(t["predicate_id"] == "sm:conferenceSeries" for t in triples)
         assert any(t["predicate_id"] == "sm:publicationYear" for t in triples)
         assert any(t["predicate_id"] == "sm:location" for t in triples)
+
+    def test_conference_all_fields(self, seeded: dict):
+        """Conference with all fields simultaneously."""
+        result = dispatch(
+            ["node", "add", "scholarly", "conference"],
+            {"labels": "en::ICSE 2026",
+             "series": "ICSE", "year": "2026",
+             "location": "Pittsburgh, PA",
+             "url": "https://conf.researchr.org/home/icse-2026"},
+        )
+        assert result["type"] == "status"
+        triples = result["data"].get("semantic_triples", [])
+        assert any(t["predicate_id"] == "sm:conferenceSeries" for t in triples)
+        assert any(t["predicate_id"] == "sm:location" for t in triples)
+        assert any(t["predicate_id"] == "sm:hasURL" for t in triples)
 
 
 # ── Command tree verification ──────────────────────────────────────────

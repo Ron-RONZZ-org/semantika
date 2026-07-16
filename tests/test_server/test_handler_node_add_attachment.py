@@ -448,3 +448,49 @@ class TestNodeViewType:
         view_result = dispatch(["node", "view"], {"id": node_id})
         assert view_result["type"] == "node-view"
         assert view_result["data"]["node_type"] == "code"
+
+
+# ── Concept arc shortcuts via dispatch ──────────────────────────────────
+
+
+class TestConceptArcShortcuts:
+    """Verify !node add concept with arc shortcuts creates correct triples."""
+
+    def test_concept_with_type(self, services: dict):
+        """--type should create rdf:type triple."""
+        ns = services["node"]
+        ns.create({"node_id": "PROFESSION", "labels": {"en": "Profession"}})
+        result = dispatch(
+            ["node", "add", "concept"],
+            {"labels": "en::Physicist", "type": "PROFESSION"},
+        )
+        assert result["type"] == "status"
+        arcs = result["data"].get("arcs", [])
+        assert any(a["predicate_id"] == "rdf:type" and a["object_value"] == "PROFESSION" for a in arcs)
+
+    def test_concept_with_all_arcs(self, services: dict):
+        """--type, --superclass, --disjoint together."""
+        ns = services["node"]
+        ns.create({"node_id": "PROFESSION", "labels": {"en": "Profession"}})
+        ns.create({"node_id": "SCIENTIST", "labels": {"en": "Scientist"}})
+        ns.create({"node_id": "PSEUDO", "labels": {"en": "Pseudoscientist"}})
+        result = dispatch(
+            ["node", "add", "concept"],
+            {"labels": "en::Physicist", "type": "PROFESSION",
+             "superclass": "SCIENTIST", "disjoint": "PSEUDO"},
+        )
+        assert result["type"] == "status"
+        arcs = result["data"].get("arcs", [])
+        predicates = {a["predicate_id"] for a in arcs}
+        assert "rdf:type" in predicates
+        assert "rdfs:subClassOf" in predicates
+        assert "owl:disjointWith" in predicates
+
+    def test_concept_with_id(self, services: dict):
+        """--id should set the node ID."""
+        result = dispatch(
+            ["node", "add", "concept"],
+            {"labels": "en::Physicist", "id": "PHYSICIST"},
+        )
+        assert result["type"] == "status"
+        assert result["data"]["node"]["node_id"] == "PHYSICIST"
