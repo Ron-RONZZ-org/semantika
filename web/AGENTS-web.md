@@ -56,7 +56,8 @@ Svelte 5 SPA frontend — command-bar UI with rich result rendering for the Sema
 | `NodeListTab.svelte` | Searchable node list with selection, batch delete |
 | `PredicateListTab.svelte` | Searchable predicate list with selection, batch delete, infinite scroll (ScrollList), sort (predicate_id/created_at), keyboard shortcuts (`s` sort, `/` search, `v` select) |
 | `TripleListTab.svelte` | Filterable triple list (by subject/predicate) |
-| `TripleAddTab.svelte` | Multi-row batch triple entry with toolbar (New/Insert/Undo/Redo/Select), autocomplete, object type selector, per-field validation, abbreviation, post-submit status |
+| `TripleAddTab.svelte` | Multi-row batch triple entry with toolbar (New/Insert/Undo/Redo/Select), autocomplete, dual-path object type selector (GUI dropdown + CLI ``--flag`` in field), per-field validation, abbreviation, post-submit status |
+| `tripleAddTypeUtils.js` | Pure functions for the dual-path type system — ``parseFlagFromValue()`` / ``interpretFlag()`` / ``resolveObjectType()``. Extracted for testability. |
 | `SparqlQueryEditor.svelte` | SPARQL query editor with CodeMirror 6 — syntax highlighting, Run/Stop, split-editor/result layout |
 | `SparqlResultTable.svelte` | SPARQL result renderer — table for SELECT, Yes/No for ASK, Turtle for CONSTRUCT, CSV export |
 | `sparqlStore.svelte.js` | Reactive store for SPARQL query state: query text, results, loading, error, prefix autocomplete |
@@ -263,6 +264,31 @@ async function handleDelete(ids) {
 - Animations under 150ms; no keyframe animations on structural elements
 - **Never duplicate CSS patterns** — import shared components from `@lightercore/ui` or `web/src/lib/` instead of re-creating them
 - If you need a new component, model it after the closest existing component above
+
+## Dual-Path Type System (TripleAddTab)
+
+The OBJECT type selector in ``TripleAddTab.svelte`` supports **two workflows** that stay in sync:
+
+### GUI dropdown path
+- A `<select>` dropdown in the **Type** column shows: Node, Str, Int, Float, Bool, URL, KaTeX
+- Changing the dropdown immediately updates `row.object_type` / `row.object_datatype`
+- The object input field shows the correct `<input type="number">` for Int/Float, a `<select>` for Bool
+
+### CLI ``--flag`` keyboard path (power-user fast path)
+- Typing ``--string ``, ``--int ``, ``--float ``, ``--bool ``, ``--url ``, or ``--katex `` (with trailing SPACE) in the OBJECT field auto-detects the flag and:
+  1. Updates ``row.object_type`` / ``row.object_datatype`` to match
+  2. Strips the ``--flag `` prefix from the displayed value (value stays pure)
+  3. Updates the Type dropdown to show the matching type
+- Abbreviation ``--str`` is accepted as equivalent to ``--string``
+- Unknown flags (e.g., ``--foobar``) show an inline warning: *"Unknown type: --foobar"*
+- **Efficiency hack**: ``--int`` (no trailing space) is NOT interpreted — the user is still typing the flag word
+
+### Shared data model
+Both paths converge on the same row metadata (``object_type``, ``object_datatype``, ``object_lang``). At submission time, a safety net in ``handleSubmit()`` strips any residual ``--flag`` prefix from ``object_value`` before sending to the backend.
+
+### Key files
+- ``tripleAddTypeUtils.js`` — exported pure functions: ``interpretFlag()``, ``parseFlagFromValue()``, ``resolveObjectType()``, plus constants (``TYPE_FLAG_MAP``, ``OBJECT_TYPE_ITEMS``)
+- ``TripleAddTab.svelte`` — imports from ``tripleAddTypeUtils.js``; contains the UI binding logic (``handleObjectInput()``, ``setObjectType()``, ``updateObjectDatalist()``)
 
 ## Keyboard Shortcut Key Placement
 - When a keyboard shortcut triggers a button action (e.g. `v` toggles selection mode), the shortcut key **must appear in the button label itself** — e.g. `v Select`, `/ Search`, `n New`. Do **not** add separate standalone key-hint text when a corresponding button already shows the key.

@@ -7,6 +7,14 @@
 
   import { createHistory } from "./historyStore.svelte.js";
   import { tabStore } from "./tabStore.svelte.js";
+  import {
+    TYPE_FLAG_MAP,
+    interpretFlag,
+    parseFlagFromValue,
+    resolveObjectType,
+    OBJECT_TYPE_LABELS,
+    OBJECT_TYPE_ITEMS as OBJECT_TYPES,
+  } from "./tripleAddTypeUtils.js";
 
   /** Row data model */
   function makeRow(overrides = {}) {
@@ -53,25 +61,56 @@
   );
 
   // ── Row management ─────────────────────────────────────────────────
-  const OBJECT_TYPES = [
-    { id: "node",    label: "Node",  icon: "\u{1F310}" },
-    { id: "literal", label: "Str",   icon: "\u201C" },
-    { id: "int",     label: "Int",   icon: "#" },
-    { id: "float",   label: "Float", icon: "#.#" },
-    { id: "bool",    label: "Bool",  icon: "\u2713/\u2717" },
-    { id: "url",     label: "URL",   icon: "\u{1F517}" },
-    { id: "katex",   label: "KaTeX", icon: "\u03C0" },
-  ];
+  // OBJECT_TYPES, TYPE_FLAG_MAP, interpretFlag, parseFlagFromValue,
+  // and resolveObjectType are imported from tripleAddTypeUtils.js
 
-  function resolveObjectType(row) {
-    const ot = row.object_type;
-    if (ot !== "literal") return ot; // "node" or "url"
-    const dt = row.object_datatype;
-    if (dt === "xsd:integer") return "int";
-    if (dt === "xsd:decimal") return "float";
-    if (dt === "xsd:boolean") return "bool";
-    if (dt === "text/katex") return "katex";
-    return "literal"; // plain string
+  /** Update the OBJECT field's <datalist> content based on input prefix. */
+  function updateObjectDatalist(value, rowKey, currentType) {
+    const datalist = document.getElementById(`dl-${rowKey}-obj`);
+    if (!datalist) return;
+    if (value.startsWith("--")) {
+      // Show CLI flag suggestions
+      datalist.innerHTML = ["--str", "--int", "--float", "--bool", "--url", "--katex"]
+        .map(f => `<option value="${f}">`).join("");
+    } else if (currentType === "node" && value.length >= 2) {
+      // Debounced node autocomplete
+      clearTimeout(autocompleteTimeouts[rowKey + "-obj"]);
+      autocompleteTimeouts[rowKey + "-obj"] = setTimeout(async () => {
+        const suggestions = await fetchSuggestions(value, "nodes");
+        if (datalist) {
+          datalist.innerHTML = suggestions.map(s =>
+            `<option value="${s.id}">${s.label}</option>`
+          ).join("");
+        }
+      }, 300);
+    } else {
+      datalist.innerHTML = "";
+    }
+  }
+
+  /** Unified handler for object_value <input> — parses --flag and syncs type. */
+  function handleObjectInput(e, row) {
+    const raw = e.target.value;
+    const { flag, rest } = parseFlagFromValue(raw);
+    if (flag) {
+      const typeInfo = interpretFlag(flag);
+      if (typeInfo) {
+        row.object_type = typeInfo.object_type;
+        row.object_datatype = typeInfo.object_datatype;
+        row.object_lang = null;
+        row.object_value = rest;
+      } else {
+        // Unknown flag: show inline warning, keep raw text as-is
+        row.object_value = raw;
+        row._error = { field: "object_type", message: `Unknown type: --${flag}` };
+      }
+    } else {
+      row.object_value = raw;
+      // No flag detected; if raw starts with "--" but no space yet,
+      // the user is still typing the flag word — don't change type (efficiency hack)
+    }
+    clearRowError(row);
+    updateObjectDatalist(raw, row._key, resolveObjectType(row));
   }
 
   function setObjectType(row, typeId) {
@@ -87,7 +126,13 @@
       case "url":   row.object_type = "literal"; row.object_datatype = "xsd:anyURI"; break;
       case "katex": row.object_type = "literal"; row.object_datatype = "text/katex"; break;
     }
+    // If the value still has a stale --flag prefix from the previous type, strip it
+    const { flag, rest } = parseFlagFromValue(row.object_value);
+    if (flag) {
+      row.object_value = rest;
+    }
     clearRowError(row);
+    updateObjectDatalist(row.object_value, row._key, resolveObjectType(row));
   }
 
   function addRow() {
@@ -206,17 +251,33 @@
       rows = abbreviated; // show errors
       return;
     }
-    // 3. Build payload
+    // 3. Build payload (strip --flag prefix from object_value as safety net)
     const payload = abbreviated
       .filter(r => r.subject_id && r.predicate_id && r.object_value)
-      .map(r => ({
-        subject_id: r.subject_id,
-        predicate_id: r.predicate_id,
-        object_value: r.object_value,
-        object_type: r.object_type,
-        object_datatype: r.object_datatype,
-        object_lang: r.object_lang,
-      }));
+      .map(r => {
+        let object_value = r.object_value;
+        let object_type = r.object_type;
+        let object_datatype = r.object_datatype;
+        let object_lang = r.object_lang;
+        const { flag, rest } = parseFlagFromValue(object_value);
+        if (flag) {
+          const typeInfo = interpretFlag(flag);
+          if (typeInfo) {
+            object_type = typeInfo.object_type;
+            object_datatype = typeInfo.object_datatype;
+            object_lang = null;
+          }
+          object_value = rest;
+        }
+        return {
+          subject_id: r.subject_id,
+          predicate_id: r.predicate_id,
+          object_value,
+          object_type,
+          object_datatype,
+          object_lang,
+        };
+      });
     if (payload.length === 0) return;
     // 4. Submit
     submitting = true;
@@ -390,9 +451,7 @@
 
   // ── Object type label helper (for the badge-like display) ──────────
   function objectTypeLabel(row) {
-    const t = resolveObjectType(row);
-    const map = { node: "Node", literal: "Str", int: "Int", float: "Float", bool: "Bool", url: "URL", katex: "KaTeX" };
-    return map[t] || t;
+    return OBJECT_TYPE_LABELS[resolveObjectType(row)] || resolveObjectType(row);
   }
 </script>
 
@@ -502,58 +561,43 @@
 
           <!-- OBJECT -->
           <span class="col-obj">
-            {#if resolveObjectType(row) === "node"}
-              <input data-row-key={row._key} data-field="object_value"
-                type="text" placeholder="Node ID (e.g. BOB)"
-                value={row.object_value}
-                oninput={(e) => { row.object_value = e.target.value; clearRowError(row); debouncedAutocomplete(e, "nodes"); }}
-                disabled={row._status !== "editing"}
-                list={row._key + "-obj-nodes"} />
-              <datalist id={row._key + "-obj-nodes"}></datalist>
-            {:else if resolveObjectType(row) === "int"}
-              <input data-row-key={row._key} data-field="object_value"
-                type="number" step="1" placeholder="Integer"
-                value={row.object_value}
-                oninput={(e) => { row.object_value = e.target.value; clearRowError(row); }}
-                disabled={row._status !== "editing"} />
-            {:else if resolveObjectType(row) === "float"}
-              <input data-row-key={row._key} data-field="object_value"
-                type="number" step="any" placeholder="Decimal"
-                value={row.object_value}
-                oninput={(e) => { row.object_value = e.target.value; clearRowError(row); }}
-                disabled={row._status !== "editing"} />
-            {:else if resolveObjectType(row) === "bool"}
+            {#if resolveObjectType(row) === "bool"}
               <select data-field="object_value" value={row.object_value}
-                onchange={(e) => { row.object_value = e.target.value; clearRowError(row); }}
+                onchange={(e) => { handleObjectInput(e, row); }}
                 disabled={row._status !== "editing"}>
                 <option value="">--</option>
                 <option value="true">true</option>
                 <option value="false">false</option>
               </select>
             {:else}
-              <!-- string, URL, KaTeX — all free text -->
               <input data-row-key={row._key} data-field="object_value"
-                type="text" placeholder={resolveObjectType(row) === "url" ? "https://..." : resolveObjectType(row) === "katex" ? "E = mc^2" : "Literal value"}
+                type={resolveObjectType(row) === "int" ? "number" : resolveObjectType(row) === "float" ? "number" : "text"}
+                step={resolveObjectType(row) === "int" ? "1" : resolveObjectType(row) === "float" ? "any" : undefined}
+                placeholder={resolveObjectType(row) === "node" ? "Node ID (e.g. BOB)" : resolveObjectType(row) === "url" ? "https://..." : resolveObjectType(row) === "katex" ? "E = mc^2" : resolveObjectType(row) === "int" ? "Integer" : resolveObjectType(row) === "float" ? "Decimal" : "Literal value or --flag value"}
                 value={row.object_value}
-                oninput={(e) => { row.object_value = e.target.value; clearRowError(row); }}
-                disabled={row._status !== "editing"} />
+                oninput={(e) => { handleObjectInput(e, row); }}
+                disabled={row._status !== "editing"}
+                list={"dl-" + row._key + "-obj"} />
+              <datalist id={"dl-" + row._key + "-obj"}></datalist>
             {/if}
             {#if row._error?.field === "object_value"}
               <span class="field-error">{row._error.message}</span>
             {/if}
           </span>
 
-          <!-- Type selector -->
+          <!-- Type selector (dropdown) -->
           <span class="col-type">
             {#if row._status === "editing"}
-              <div class="type-toggle">
+              <select class="type-select" value={resolveObjectType(row)}
+                onchange={(e) => setObjectType(row, e.target.value)}
+                disabled={row._status !== "editing"}>
                 {#each OBJECT_TYPES as ot}
-                  <button type="button" class="type-btn"
-                    class:active={resolveObjectType(row) === ot.id}
-                    onclick={() => setObjectType(row, ot.id)}
-                    title={ot.label}>{ot.icon}</button>
+                  <option value={ot.id}>{ot.icon} {ot.label}</option>
                 {/each}
-              </div>
+              </select>
+              {#if row._error?.field === "object_type"}
+                <span class="field-error type-warning">{row._error.message}</span>
+              {/if}
             {:else}
               <span class="type-badge type-{resolveObjectType(row)}">{objectTypeLabel(row)}</span>
             {/if}
@@ -637,7 +681,7 @@
   .col-subj { flex: 1; min-width: 120px; }
   .col-pred { flex: 1; min-width: 120px; }
   .col-obj { flex: 1; min-width: 120px; }
-  .col-type { width: 200px; flex-shrink: 0; }
+  .col-type { width: 120px; flex-shrink: 0; }
   .col-del { width: 28px; flex-shrink: 0; text-align: center; }
 
   /* Rows */
@@ -659,12 +703,12 @@
 
   .field-error { display: block; font-size: 0.7rem; color: #f77; margin-top: 2px; }
 
-  /* Type toggle */
-  .type-toggle { display: flex; gap: 1px; flex-wrap: wrap; }
-  .type-btn { padding: 0.2rem 0.35rem; background: #2a2a3e; border: 1px solid #444; border-radius: 3px;
-    color: #9a9aba; cursor: pointer; font-size: 0.7rem; line-height: 1; transition: all 0.1s; }
-  .type-btn:hover { border-color: #7c7c9a; color: #e0e0e0; }
-  .type-btn.active { background: #3a5a7a; border-color: #5a8aba; color: #e0e0e0; }
+  /* Type selector dropdown */
+  .type-select { width: 100%; min-width: 100px; padding: 0.3rem 0.4rem; background: #2a2a3e; border: 1px solid #444;
+    border-radius: 3px; color: #e0e0e0; font-family: monospace; font-size: 0.75rem; outline: none; cursor: pointer; }
+  .type-select:focus { border-color: #7c7c9a; }
+  .type-select option { background: #1a1a2e; color: #e0e0e0; }
+  .type-warning { margin-top: 1px; font-size: 0.65rem; }
 
   .type-badge { font-size: 0.7rem; padding: 1px 5px; border-radius: 3px; display: inline-block; }
   .type-node { background: #1a3a5a; color: #7cf; }
