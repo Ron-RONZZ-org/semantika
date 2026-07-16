@@ -40,8 +40,13 @@ def _cors_config() -> tuple[list[str], bool]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Application lifespan: init DB, backup scheduler, ensure template dir."""
+    """Application lifespan: init DB, seed builtins, backup scheduler, ensure template dir."""
     init_db()
+    try:
+        from semantika.graph.db import get_services
+        get_services()["builtin_type"].ensure_builtins()
+    except Exception:
+        logger.warning("Builtin seeding failed (non-fatal)")
     try:
         from semantika.server.tasks import init_backup_scheduler
         init_backup_scheduler()

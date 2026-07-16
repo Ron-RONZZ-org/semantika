@@ -232,7 +232,7 @@ semantika/
 │               │     triples with post-loop validation in T3.
 │               │   $STYLE_EXAMPLE auto-injected from most recently modified user-created template.
 │               └── user_config.py      # /api/v1/user/config — locale, preferences
-├── tests/                       # pytest tests (849 tests)
+├── tests/                       # pytest tests (860+ tests)
 │   ├── conftest.py
 │   ├── test_core/               # Backup, entry points, reset tests
 │   ├── test_graph/              # Service integration tests (nodes, predicates, triples, units, proofs)
@@ -578,6 +578,46 @@ Known-prefix predicates (``rdf:type``, ``rdfs:label``, etc.) always use their fi
   1. IRIs matching the template prefix → string-op → query by internal ID.
   2. Other IRIs (custom ``--canonical``, known-prefix predicates) → query by ``iri`` column.
 - RocksDB sync hooks resolve IRIs via a cache-aware method (``_resolve_iri``) that checks the ``iri`` column first, falling back to template computation.
+
+## Semantika Predicate Namespace (``sm:``)
+
+Semantika ships with a **standard predicate catalog** in the ``sm:`` (Semantika) namespace. The namespace is registered in all IRI-resolution code paths (``graph/constants.py`` — single source of truth), giving ``sm:`` predicates a stable IRI at ``https://semantika.app/sm/``.
+
+### Design rules
+
+- ``sm:`` predicates **complement, never replace, W3C standards.** The existing ``rdf:``, ``rdfs:``, and ``owl:`` predicates are left completely untouched.
+- ``sm:`` fills gaps that W3C doesn't cover. See ``graph/builtin_seed_data.py`` for the canonical catalog.
+- Core ``sm:`` predicates (Tier 1) are **soft-protected** from accidental deletion — ``!predicate delete`` warns unless ``--force`` is used.
+- All predicates are seeded via ``BuiltinTypeService.ensure_builtins()`` at app startup (idempotent).
+
+### Catalog summary
+
+| Tier | Contents | Protected | Seeded |
+|------|----------|-----------|--------|
+| W3C | ``rdf:type``, ``rdfs:subClassOf``, ``rdfs:label``, ``owl:sameAs``, ``owl:disjointWith``, ``owl:inverseOf``, ``rdfs:seeAlso`` | No | Always |
+| Tier 1 (core) | ``sm:depicts``, ``sm:programmingLanguage``, ``sm:theme``, ``sm:dimension``, ``sm:canonicalLink``, ``sm:hasSource``, ``sm:attributedTo``, ``sm:partOf`` | Yes (``--force`` to delete) | Always |
+| Tier 2 (extended) | ``sm:isAbout``, ``sm:relatesTo``, ``sm:contradicts``, ``sm:requires``, ``sm:hasExample``, ``sm:definedIn``, ``sm:succeededBy``, ``sm:precededBy``, ``sm:similarTo``, ``sm:hasPart`` | No | Always |
+| File (internal) | ``:hasFilePath``, ``:hasFileMime``, ``:hasFileSize``, ``:hasFileSource`` | No | Always |
+
+### Reasoning: no W3C duplication
+
+Equivalence mapping (e.g. ``sm:instanceOf`` → ``rdf:type``) is deceptive — RDF/RDFS/OWL inference happens inside the SPARQL engine at query time, and a nonstandard alternative bypasses built-in subclass transitivity, type propagation, and domain/range inference. Maintaining two parallel type systems in the same database recreates the fragmentation problem we set out to solve.
+
+### Known prefix map
+
+All code that resolves IRIs (``compute_iri``, ``_to_uri``, ``_format_turtle_uri``) imports from a single source of truth in ``graph/constants.py``:
+
+```python
+KNOWN_PREFIXES = {
+    "rdf":  "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+    "xsd":  "http://www.w3.org/2001/XMLSchema#",
+    "owl":  "http://www.w3.org/2002/07/owl#",
+    "sm":   "https://semantika.app/sm/",
+}
+```
+
+See GitHub issue [#134](https://github.com/Ron-RONZZ-org/semantika/issues/134) for full discussion.
 
 ## User Configuration
 

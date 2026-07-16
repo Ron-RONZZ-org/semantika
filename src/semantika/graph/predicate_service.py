@@ -13,7 +13,7 @@ from typing import Any
 from semantika.core import SemantikaDB
 from semantika.core.crud import CRUDService, now
 from semantika.core.fts import FTS5Manager
-from semantika.graph.constants import FTS5_KEYWORDS
+from semantika.graph.constants import CORE_SM_PREDICATES, FTS5_KEYWORDS
 from semantika.graph.db import compute_iri
 from semantika.graph.helpers import escape_like
 from semantika.graph.node_helpers import sanitize_node_id, strip_diacritics
@@ -44,6 +44,18 @@ class PredicateService(CRUDService):
             )
         return self._fts_mgr_cache
 
+    # ── Core predicate protection ───────────────────────────────────────
+
+    @staticmethod
+    def is_core_predicate(predicate_id: str) -> bool:
+        """Return True if *predicate_id* is a protected core Semantika predicate.
+
+        Core predicates (``sm:`` Tier 1) are soft-protected from accidental
+        deletion.  They can be deleted with ``force=True``, and will be
+        re-seeded on the next restart anyway.
+        """
+        return predicate_id in CORE_SM_PREDICATES
+
     # ── Delete / Trash ──────────────────────────────────────────────────
 
     def _capture_triples_for_predicate(self, predicate_id: str) -> list[dict]:
@@ -62,8 +74,24 @@ class PredicateService(CRUDService):
         for t in triples:
             engine.on_triple_removed(t)
 
-    def delete(self, pk: str, soft: bool = True) -> bool:
-        """Delete a predicate: soft (trash) or permanent."""
+    def delete(self, pk: str, soft: bool = True, force: bool = False) -> bool:
+        """Delete a predicate: soft (trash) or permanent.
+
+        Args:
+            pk: Predicate ID to delete.
+            soft: If True, move to trash table instead of hard-deleting.
+            force: If True, skip the core-predicate protection check.
+
+        Raises:
+            PermissionError: If *pk* is a core Semantika predicate and
+                ``force`` is False.
+        """
+        if self.is_core_predicate(pk) and not force:
+            raise PermissionError(
+                f"'{pk}' is a core Semantika predicate and is protected. "
+                f"Use --force to delete it anyway (it will be re-seeded "
+                f"on next restart)."
+            )
         # SPARQL sync: capture affected triples before deletion
         removed_triples = self._capture_triples_for_predicate(pk)
 

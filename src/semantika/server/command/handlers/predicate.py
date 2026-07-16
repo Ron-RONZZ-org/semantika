@@ -207,10 +207,12 @@ def cmd_predicate_rename(remaining: list[str], flags: dict[str, str]) -> dict:
 
 @command("predicate.delete", description="Delete predicates", interactive=True,
          params=[{"name": "predicate_id", "type": "string"}],
-         flags=[{"name": "prefix", "type": "string", "help": "Delete all predicates with this ID prefix"}])
+         flags=[{"name": "prefix", "type": "string", "help": "Delete all predicates with this ID prefix"},
+                {"name": "force", "type": "flag", "help": "Bypass core-predicate protection"}])
 def cmd_predicate_delete(remaining: list[str], flags: dict[str, str]) -> dict:
     """Delete a predicate."""
     svc = get_services()
+    force = "force" in flags or flags.get("force", "").lower() in ("true", "1", "yes")
     ids: list[str] = []
     pos_id = flags.get("predicate_id") or ""
     if pos_id:
@@ -232,7 +234,7 @@ def cmd_predicate_delete(remaining: list[str], flags: dict[str, str]) -> dict:
     errors = []
     for pid in ids:
         try:
-            svc["predicate"].delete(pid, soft=True)
+            svc["predicate"].delete(pid, soft=True, force=force)
             deleted += 1
         except Exception as e:
             errors.append(f"{pid}: {e}")
