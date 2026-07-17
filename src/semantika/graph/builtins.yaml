@@ -366,6 +366,56 @@ predicates:
     labels: {en: file source, eo: fontindiko}
     descriptions: {en: Original source path or URL of attached file, eo: Origina fonta vojo aŭ URL de alkroĉita dosiero}
 
+  # ── Unit predicates ────────────────────────────────────────────────────
+
+  - id: :symbol
+    tier: file
+    source: manual
+    labels: {en: symbol, eo: simbolo}
+    descriptions: {en: Unit symbol (e.g. m, kg, s), eo: Unuosimbolo (ekz. m, kg, s)}
+
+  - id: :ucumCode
+    tier: file
+    source: manual
+    labels: {en: UCUM code, eo: UCUM-kodo}
+    descriptions: {en: Unified Code for Units of Measure code, eo: Unuigita Kodo por Mezurunuoj}
+
+  - id: :multiplier
+    tier: file
+    source: manual
+    labels: {en: multiplier, eo: multiplikanto}
+    descriptions: {en: Unit multiplier value, eo: Unuomultiplika valoro}
+
+  - id: :offset
+    tier: file
+    source: manual
+    labels: {en: offset, eo: deŝovo}
+    descriptions: {en: Unit offset (e.g. for Celsius conversion), eo: Unuodeŝovo (ekz. por celsia konvertiĝo)}
+
+  - id: :hasBase
+    tier: file
+    source: manual
+    labels: {en: has base, eo: havas bazon}
+    descriptions: {en: Base unit of a compound power unit, eo: Baza unuo de kunmetita potenca unuo}
+
+  - id: :hasExponent
+    tier: file
+    source: manual
+    labels: {en: has exponent, eo: havas eksponenton}
+    descriptions: {en: Exponent of a power unit, eo: Eksponento de potenca unuo}
+
+  - id: :hasTerm1
+    tier: file
+    source: manual
+    labels: {en: has term 1, eo: havas terminon 1}
+    descriptions: {en: First term of a product unit, eo: Unua termino de produkta unuo}
+
+  - id: :hasTerm2
+    tier: file
+    source: manual
+    labels: {en: has term 2, eo: havas terminon 2}
+    descriptions: {en: Second term of a product unit, eo: Dua termino de produkta unuo}
+
 # ── Built-in type nodes ────────────────────────────────────────────────
 
 type_nodes:
