@@ -40,6 +40,10 @@ semantika-dev = "semantika.scripts.dev_cli:dev_main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/semantika"]
 
+[tool.hatch.build.targets.wheel.include]
+"src/semantika/graph/builtins.yaml" = "semantika/graph/builtins.yaml"
+"src/semantika/graph/units.yaml" = "semantika/graph/units.yaml"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

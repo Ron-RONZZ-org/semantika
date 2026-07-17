@@ -32,18 +32,47 @@ KNOWN_PREFIXES: dict[str, str] = {
     "sm":   SM_NAMESPACE,
 }
 
-# ── Core sm: predicates (soft-protected from accidental deletion) ───────
+# ── Core predicate IDs (soft-protected from accidental deletion) ────────
+#
+# These are now derived from the YAML seed file (``builtins.yaml``) via
+# :func:`semantika.graph.builtin_loader.get_core_predicate_ids`, which
+# collects all predicates with ``tier: 1`` or ``tier: w3c``.
+#
+# ``CORE_SM_PREDICATES`` is a lazy proxy object that behaves like a
+# ``frozenset[str]`` for the ``in`` operator, but delegates to the
+# cached loader so that ``!builtins reload`` (which calls
+# :func:`builtin_loader.invalidate_caches`) takes effect without a
+# server restart.
 
-CORE_SM_PREDICATES: frozenset[str] = frozenset({
-    "sm:depicts",
-    "sm:programmingLanguage",
-    "sm:theme",
-    "sm:dimension",
-    "sm:canonicalLink",
-    "sm:hasSource",
-    "sm:attributedTo",
-    "sm:partOf",
-})
+from typing import Iterator as _Iterator
+
+
+class _CorePredicateSet:
+    """Lazy-delegating frozenset-like container for core predicate IDs.
+
+    Supports ``in``, ``len``, ``iter``, and ``repr`` — enough for the
+    ``PredicateService.is_core_predicate()`` use case.
+    """
+
+    def __contains__(self, item: object) -> bool:
+        from semantika.graph.builtin_loader import get_core_predicate_ids
+        return item in get_core_predicate_ids()
+
+    def __iter__(self) -> _Iterator[str]:
+        from semantika.graph.builtin_loader import get_core_predicate_ids
+        return iter(get_core_predicate_ids())
+
+    def __len__(self) -> int:
+        from semantika.graph.builtin_loader import get_core_predicate_ids
+        return len(get_core_predicate_ids())
+
+    def __repr__(self) -> str:
+        from semantika.graph.builtin_loader import get_core_predicate_ids
+        return repr(get_core_predicate_ids())
+
+
+CORE_SM_PREDICATES: frozenset[str] = _CorePredicateSet()  # type: ignore[assignment]
+
 
 _UUID_PREFIX_RE = re.compile(r"^[0-9a-f]{8}([0-9a-f]{1,8}|-[0-9a-f]{1,7})?$", re.IGNORECASE)
 

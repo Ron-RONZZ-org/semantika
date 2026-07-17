@@ -1,0 +1,423 @@
+# Built-in ontology for Semantika — predicates and type nodes.
+#
+# This is the editable source of truth.  Non-coder editors can add, remove,
+# or modify entries here.  For predicates that built-in commands depend on,
+# a Python fallback exists in _required_predicates.py — if a required
+# predicate is deleted from this file, the app will emit a warning and
+# use the Python fallback instead.
+#
+# Tier values:
+#   w3c   — Standard RDF/RDFS/OWL predicates (never duplicated in sm:)
+#   1     — Core sm: predicates (soft-protected from accidental deletion)
+#   2     — Extended sm: predicates (deletable)
+#   file  — File-attachment metadata predicates (internal, no stable IRI)
+
+version: 1
+
+# ── Predicate catalog ──────────────────────────────────────────────────
+
+predicates:
+
+  # ── W3C standard predicates ─────────────────────────────────────────
+
+  - id: rdf:type
+    tier: w3c
+    source: rdf
+    labels: {en: type, eo: tipo}
+    descriptions: {en: Is a type of, eo: Estas tipo de}
+
+  - id: rdfs:subClassOf
+    tier: w3c
+    source: rdfs
+    labels: {en: subclass of, eo: subklaso de}
+    descriptions: {en: Is a subclass of, eo: Estas subklaso de}
+
+  - id: rdfs:label
+    tier: w3c
+    source: rdfs
+    labels: {en: label, eo: etikedo}
+    descriptions: {en: Label for an entity, eo: Etikedo por ento}
+
+  - id: owl:sameAs
+    tier: w3c
+    source: owl
+    labels: {en: same as, eo: sama kiel}
+    descriptions: {en: Same entity as, eo: Sama ento kiel}
+
+  - id: owl:disjointWith
+    tier: w3c
+    source: owl
+    labels: {en: disjoint from, eo: malapoga al}
+    descriptions: {en: Disjoint from, eo: Malapoga al}
+
+  - id: owl:inverseOf
+    tier: w3c
+    source: owl
+    labels: {en: inverse of, eo: inverso de}
+    descriptions: {en: Inverse property of, eo: Inversa eco de}
+
+  - id: rdfs:seeAlso
+    tier: w3c
+    source: rdfs
+    labels: {en: see also, eo: vidu ankau}
+    descriptions: {en: Related resource, eo: Rilata rimedo}
+
+  # ── Tier 1 — Core sm: predicates (soft-protected) ──────────────────
+
+  - id: sm:depicts
+    tier: 1
+    source: semantika
+    labels: {en: depicts, eo: priskribas, fr: dépeint}
+    descriptions: {en: Subject depicts or shows the object (e.g. a photo showing a person)}
+
+  - id: sm:programmingLanguage
+    tier: 1
+    source: semantika
+    labels: {en: programming language, eo: programlingvo, fr: langage de programmation}
+    descriptions: {en: The programming language in which the subject (code) is written}
+
+  - id: sm:theme
+    tier: 1
+    source: semantika
+    labels: {en: theme, eo: temo, fr: thème}
+    descriptions: {en: Subject has the object as a theme or topic}
+
+  - id: sm:dimension
+    tier: 1
+    source: semantika
+    labels: {en: dimension, eo: dimensio, fr: dimension}
+    descriptions: {en: Dimensions of the subject media (e.g. 1920x1080)}
+
+  - id: sm:canonicalLink
+    tier: 1
+    source: semantika
+    labels: {en: canonical link, eo: kanonika ligilo, fr: lien canonique}
+    descriptions: {en: A canonical URL pointing to the original external resource}
+
+  - id: sm:hasSource
+    tier: 1
+    source: semantika
+    labels: {en: source, eo: fonto, fr: source}
+    descriptions: {en: Source URL or reference for imported knowledge}
+
+  - id: sm:attributedTo
+    tier: 1
+    source: semantika
+    labels: {en: attributed to, eo: atribuita al, fr: attribué à}
+    descriptions: {en: The subject fact or node is attributed to the object (person, source, tool)}
+
+  - id: sm:partOf
+    tier: 1
+    source: semantika
+    labels: {en: part of, eo: parto de, fr: fait partie de}
+    descriptions: {en: The subject is a part or member of the object (e.g. chapter partOf book)}
+
+  # ── Media predicates (Tier 1) ───────────────────────────────────────
+
+  - id: sm:hasISBN
+    tier: 1
+    source: semantika
+    labels: {en: ISBN, eo: ISBN, fr: ISBN}
+    descriptions: {en: International Standard Book Number, eo: Internacia Norma Libronumero}
+
+  - id: sm:hasAuthor
+    tier: 1
+    source: semantika
+    labels: {en: author, eo: aŭtoro, fr: auteur}
+    descriptions: {en: The author of a creative or scholarly work, eo: La aŭtoro de kreiva aŭ akademia verko}
+
+  - id: sm:hasDirector
+    tier: 1
+    source: semantika
+    labels: {en: director, eo: reĝisoro, fr: réalisateur}
+    descriptions: {en: The director of a film or video work, eo: La reĝisoro de filmo aŭ videa verko}
+
+  - id: sm:hasProducer
+    tier: 1
+    source: semantika
+    labels: {en: producer, eo: produktoro, fr: producteur}
+    descriptions: {en: The producer of a media work, eo: La produktoro de amaskomunikila verko}
+
+  - id: sm:hasActor
+    tier: 1
+    source: semantika
+    labels: {en: actor, eo: aktoro, fr: acteur}
+    descriptions: {en: An actor appearing in a film or video work, eo: Aktoro aperanta en filmo aŭ videa verko}
+
+  - id: sm:hasSinger
+    tier: 1
+    source: semantika
+    labels: {en: singer, eo: kantisto, fr: chanteur}
+    descriptions: {en: The singer or vocal performer of a song, eo: La kantisto aŭ voĉa prezentisto de kanto}
+
+  - id: sm:hasDuration
+    tier: 1
+    source: semantika
+    labels: {en: duration, eo: daŭro, fr: durée}
+    descriptions: {en: Duration in seconds of a media work, eo: Daŭro en sekundoj de amaskomunikila verko}
+
+  - id: sm:hasISAN
+    tier: 1
+    source: semantika
+    labels: {en: ISAN, eo: ISAN, fr: ISAN}
+    descriptions: {en: International Standard Audiovisual Number, eo: Internacia Norma Aŭdvidia Numero}
+
+  - id: sm:hasISWC
+    tier: 1
+    source: semantika
+    labels: {en: ISWC, eo: ISWC, fr: ISWC}
+    descriptions: {en: International Standard Musical Work Code, eo: Internacia Norma Muzika Verkkodo}
+
+  - id: sm:publicationYear
+    tier: 1
+    source: semantika
+    labels: {en: publication year, eo: publikiga jaro, fr: année de publication}
+    descriptions: {en: The year a work was first published, eo: La jaro kiam verko unue publikiĝis}
+
+  - id: sm:platform
+    tier: 1
+    source: semantika
+    labels: {en: platform, eo: platformo, fr: plateforme}
+    descriptions: {en: The platform or system a game runs on, eo: La platformo aŭ sistemo sur kiu ludo funkcias}
+
+  - id: sm:genre
+    tier: 1
+    source: semantika
+    labels: {en: genre, eo: ĝenro, fr: genre}
+    descriptions: {en: The genre of a creative work, eo: La ĝenro de kreiva verko}
+
+  - id: sm:developedBy
+    tier: 1
+    source: semantika
+    labels: {en: developed by, eo: disvolvita de, fr: développé par}
+    descriptions: {en: The developer of a software or game work, eo: La disvolvanto de programaro aŭ ludo}
+
+  - id: sm:publishedBy
+    tier: 1
+    source: semantika
+    labels: {en: published by, eo: eldonita de, fr: publié par}
+    descriptions: {en: The publisher of a work, eo: La eldonanto de verko}
+
+  - id: sm:episodeCount
+    tier: 1
+    source: semantika
+    labels: {en: episode count, eo: epizoda nombro, fr: nombre d'épisodes}
+    descriptions: {en: Number of episodes in a podcast series, eo: Nombro de epizodoj en podkasta serio}
+
+  - id: sm:hasHost
+    tier: 1
+    source: semantika
+    labels: {en: host, eo: gastiganto, fr: animateur}
+    descriptions: {en: The host of a podcast or event, eo: La gastiganto de podkasto aŭ evento}
+
+  - id: sm:feedURL
+    tier: 1
+    source: semantika
+    labels: {en: feed URL, eo: fluo URL, fr: URL du flux}
+    descriptions: {en: The RSS or Atom feed URL for a podcast, eo: La RSS aŭ Atom fluo URL por podkasto}
+
+  # ── Scholarly predicates (Tier 1) ───────────────────────────────────
+
+  - id: sm:hasDOI
+    tier: 1
+    source: semantika
+    labels: {en: DOI, eo: DOI, fr: DOI}
+    descriptions: {en: Digital Object Identifier, eo: Cifereca Objekta Identigilo}
+
+  - id: sm:publishedIn
+    tier: 1
+    source: semantika
+    labels: {en: published in, eo: eldonita en, fr: publié dans}
+    descriptions: {en: The journal or venue where a work was published, eo: La revuo aŭ loko kie verko estis publikigita}
+
+  - id: sm:hasKeyword
+    tier: 1
+    source: semantika
+    labels: {en: keyword, eo: ŝlosilvorto, fr: mot-clé}
+    descriptions: {en: A keyword or tag describing the subject, eo: Ŝlosilvorto aŭ etikedo priskribanta la temon}
+
+  - id: sm:hasURL
+    tier: 1
+    source: semantika
+    labels: {en: URL, eo: URL, fr: URL}
+    descriptions: {en: A URL pointing to an external resource, eo: URL indikanta eksteran rimedon}
+
+  - id: sm:hasPatentNumber
+    tier: 1
+    source: semantika
+    labels: {en: patent number, eo: patenta numero, fr: numéro de brevet}
+    descriptions: {en: The official patent number, eo: La oficiala patentnumero}
+
+  - id: sm:hasInventor
+    tier: 1
+    source: semantika
+    labels: {en: inventor, eo: inventisto, fr: inventeur}
+    descriptions: {en: The inventor of a patented invention, eo: La inventinto de patentita invento}
+
+  - id: sm:assignedTo
+    tier: 1
+    source: semantika
+    labels: {en: assigned to, eo: asignita al, fr: attribué à}
+    descriptions: {en: The entity to which a patent is assigned, eo: La ento al kiu patento estas asignita}
+
+  - id: sm:conferenceSeries
+    tier: 1
+    source: semantika
+    labels: {en: conference series, eo: konferenca serio, fr: série de conférences}
+    descriptions: {en: The series name of a conference (e.g. ICSE, CHI), eo: La seria nomo de konferenco}
+
+  - id: sm:location
+    tier: 1
+    source: semantika
+    labels: {en: location, eo: loko, fr: lieu}
+    descriptions: {en: A geographic location associated with the subject, eo: Geografia loko asociita kun la subjekto}
+
+  - id: sm:language
+    tier: 1
+    source: semantika
+    labels: {en: language, eo: lingvo, fr: langue}
+    descriptions: {en: The language of a creative or scholarly work, eo: La lingvo de kreiva aŭ akademia verko}
+
+  # ── Tier 2 — Extended sm: predicates ───────────────────────────────
+
+  - id: sm:isAbout
+    tier: 2
+    source: semantika
+    labels: {en: is about, eo: temas pri, fr: concerne}
+    descriptions: {en: Broader subject relationship}
+
+  - id: sm:relatesTo
+    tier: 2
+    source: semantika
+    labels: {en: relates to, eo: rilatas al, fr: se rapporte à}
+    descriptions: {en: Generic bidirectional relationship between two entities}
+
+  - id: sm:contradicts
+    tier: 2
+    source: semantika
+    labels: {en: contradicts, eo: kontraŭdiras, fr: contredit}
+    descriptions: {en: Contradictory or conflicting knowledge assertion}
+
+  - id: sm:requires
+    tier: 2
+    source: semantika
+    labels: {en: requires, eo: bezonas, fr: nécessite}
+    descriptions: {en: Subject requires the object (dependency)}
+
+  - id: sm:hasExample
+    tier: 2
+    source: semantika
+    labels: {en: has example, eo: havas ekzemplon, fr: a pour exemple}
+    descriptions: {en: Subject has the object as an example}
+
+  - id: sm:definedIn
+    tier: 2
+    source: semantika
+    labels: {en: defined in, eo: difinita en, fr: défini dans}
+    descriptions: {en: Source document or file where a concept is defined}
+
+  - id: sm:succeededBy
+    tier: 2
+    source: semantika
+    labels: {en: succeeded by, eo: sekvata de, fr: suivi par}
+    descriptions: {en: Temporal succession — subject was succeeded by the object}
+
+  - id: sm:precededBy
+    tier: 2
+    source: semantika
+    labels: {en: preceded by, eo: antaŭata de, fr: précédé par}
+    descriptions: {en: Temporal precedence — subject was preceded by the object}
+
+  - id: sm:similarTo
+    tier: 2
+    source: semantika
+    labels: {en: similar to, eo: simila al, fr: similaire à}
+    descriptions: {en: Subject is similar to the object (non-identity similarity)}
+
+  - id: sm:hasPart
+    tier: 2
+    source: semantika
+    labels: {en: has part, eo: havas parton, fr: a pour partie}
+    descriptions: {en: Subject has the object as a part (inverse of sm:partOf)}
+
+  # ── File attachment predicates ──────────────────────────────────────
+
+  - id: :hasFilePath
+    tier: file
+    source: manual
+    labels: {en: file path, eo: dosiero-loko}
+    descriptions: {en: Path to attached file, eo: Dosiero-loko por alkroĉita dosiero}
+
+  - id: :hasFileMime
+    tier: file
+    source: manual
+    labels: {en: MIME type, eo: MIME-tipo}
+    descriptions: {en: MIME type of attached file, eo: MIME-tipo de alkroĉita dosiero}
+
+  - id: :hasFileSize
+    tier: file
+    source: manual
+    labels: {en: file size, eo: grandeco}
+    descriptions: {en: File size in bytes, eo: Grandeco en bajtoj}
+
+  - id: :hasFileSource
+    tier: file
+    source: manual
+    labels: {en: file source, eo: fontindiko}
+    descriptions: {en: Original source path or URL of attached file, eo: Origina fonta vojo aŭ URL de alkroĉita dosiero}
+
+# ── Built-in type nodes ────────────────────────────────────────────────
+
+type_nodes:
+
+  - id: PHOTO
+    labels: {en: Photo, eo: Foto, fr: Photo}
+    definitions: {en: A photographic image or picture, eo: Fotografia bildo}
+
+  - id: VIDEO
+    labels: {en: Video, eo: Filmeto, fr: Vidéo}
+    definitions: {en: A video recording or moving image, eo: Videa registraĵo aŭ moviĝanta bildo}
+
+  - id: DOCUMENT
+    labels: {en: Document, eo: Dosiero, fr: Document}
+    definitions: {en: An arbitrary file or document, eo: Ajna dosiero aŭ dokumento}
+
+  - id: SOURCE_CODE
+    labels: {en: Source code, eo: Komputika kodo, fr: Code source}
+    definitions: {en: A source code snippet or software program, eo: Fontkoda fragmento aŭ programaro}
+
+  # ── Media type nodes ───────────────────────────────────────────────
+
+  - id: BOOK
+    labels: {en: Book, eo: Libro, fr: Livre}
+    definitions: {en: A published written work, eo: Publikigita skribita verko}
+
+  - id: FILM
+    labels: {en: Film, eo: Filmo, fr: Film}
+    definitions: {en: A motion picture or movie, eo: Kino aŭ movbildo}
+
+  - id: SONG
+    labels: {en: Song, eo: Kanto, fr: Chanson}
+    definitions: {en: A musical composition with or without lyrics, eo: Muzika komponaĵo kun aŭ sen tekstoj}
+
+  - id: GAME
+    labels: {en: Game, eo: Ludo, fr: Jeu}
+    definitions: {en: An interactive digital or tabletop game, eo: Interaga cifereca aŭ tabloludo}
+
+  - id: PODCAST
+    labels: {en: Podcast, eo: Podkasto, fr: Podcast}
+    definitions: {en: An episodic series of digital audio files, eo: Epizoda serio de ciferecaj audio-dosieroj}
+
+  # ── Scholarly type nodes ───────────────────────────────────────────
+
+  - id: PAPER
+    labels: {en: Paper, eo: Artikolo, fr: Article}
+    definitions: {en: An academic or scholarly article, eo: Akademia aŭ scienca artikolo}
+
+  - id: PATENT
+    labels: {en: Patent, eo: Patento, fr: Brevet}
+    definitions: {en: A granted patent or patent application, eo: Aljuĝita patento aŭ patentpeto}
+
+  - id: CONFERENCE
+    labels: {en: Conference, eo: Konferenco, fr: Conférence}
+    definitions: {en: An academic or industry conference, eo: Akademia aŭ industria konferenco}

@@ -3,6 +3,10 @@
 Provides unit node creation, expression-based auto-creation,
 decomposition, and the core ``resolve_unit()`` chain.
 
+Seed data is loaded from ``units.yaml`` (see :mod:`builtin_loader`),
+with required unit predicates falling back to the Python fallback in
+:mod:`_required_predicates` if deleted from YAML.
+
 Ported from A-semantika's ``_unit_service.py`` with EO→EN migration.
 """
 
@@ -10,16 +14,16 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from semantika.core.crud import now
 from semantika.core.exceptions import AmbiguousIDError
+from semantika.graph.builtin_loader import get_unit_data, invalidate_caches
 from semantika.graph.node_helpers import extract_label_text
 from semantika.graph.unit_builder import UnitBuilder
 from semantika.graph.unit_decomposition import UnitDecomposer
 from semantika.graph.unit_errors import UnitNotFoundError
 from semantika.graph.unit_parser import parse
-from semantika.graph.unit_seed_data import ALL_UNITS, BASE_AND_DERIVED
 
 logger = logging.getLogger(__name__)
 
@@ -60,25 +64,68 @@ class UnitService:
     # ── Lazy seeding ─────────────────────────────────────────────────
 
     def _ensure_base_units(self) -> None:
-        """Seed SI base units, derived units, and prefixes on first use."""
+        """Seed SI base units, derived units, and prefixes on first use.
+
+        Reads data from ``units.yaml`` (with Python fallback for required
+        unit predicates).
+        """
         if self._base_units_ensured:
             return
 
         now_iso = now()
-        from semantika.graph.unit_seed_data import UNIT_TYPE_NODES
+        unit_data = get_unit_data()
+        unit_type_nodes = unit_data.get("unit_types", [])
+        base_units = unit_data.get("base_units", [])
+        derived_units = unit_data.get("derived_units", [])
+        prefixes = unit_data.get("prefixes", [])
 
-        # Ensure unit-specific predicates exist
-        unit_predicates = [
+        if not unit_type_nodes:
+            logger.warning("No unit types found in units.yaml — skipping unit seeding")
+            return
+
+        # Ensure unit-specific predicates exist.
+        # These are seeded via the YAML catalog or the Python fallback
+        # in _required_predicates.py.  We use the predicate_catalog from
+        # builtin_loader (which handles fallback) and INSERT OR IGNORE
+        # to create any that are missing.
+        unit_predicate_ids = [
             "rdf:type", ":symbol", ":ucumCode", ":multiplier", ":offset",
             ":hasBase", ":hasExponent", ":hasTerm1", ":hasTerm2",
         ]
-        for pid in unit_predicates:
-            self.db.execute(
-                "INSERT OR IGNORE INTO predicates "
-                "(predicate_id, source, labels, descriptions, aliases, created_at, updated_at) "
-                "VALUES (?, 'manual', ?, '{}', '[]', ?, ?)",
-                (pid, '{}', now_iso, now_iso),
+        from semantika.graph.builtin_loader import get_predicate_catalog
+        from semantika.graph.db import compute_iri, _iri_is_non_template
+        pc = get_predicate_catalog()
+        now_iso2 = now()
+        for pid in unit_predicate_ids:
+            existing = self.db.execute_one(
+                "SELECT predicate_id FROM predicates WHERE predicate_id = ?", (pid,)
             )
+            if existing is not None:
+                continue
+            entry = pc.get(pid)
+            if entry is not None:
+                iri = compute_iri(pid) if _iri_is_non_template(pid) else ""
+                self.db.execute(
+                    "INSERT OR IGNORE INTO predicates "
+                    "(predicate_id, iri, source, labels, descriptions, aliases, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, '[]', ?, ?)",
+                    (
+                        pid,
+                        iri,
+                        entry.get("source", "manual"),
+                        json.dumps(entry.get("labels", {})),
+                        json.dumps(entry.get("descriptions", {})),
+                        now_iso2,
+                        now_iso2,
+                    ),
+                )
+            else:
+                self.db.execute(
+                    "INSERT OR IGNORE INTO predicates "
+                    "(predicate_id, source, labels, descriptions, aliases, created_at, updated_at) "
+                    "VALUES (?, 'manual', '{}', '{}', '[]', ?, ?)",
+                    (pid, now_iso2, now_iso2),
+                )
 
         # Use a transaction with deferred FKs so that generated-column
         # FK checks (object_node_id) don't fail mid-seeding.
@@ -86,49 +133,64 @@ class UnitService:
             conn.execute("PRAGMA defer_foreign_keys=ON")
 
             # 1. Create unit TYPE nodes first (referenced by triples)
-            for type_node in UNIT_TYPE_NODES:
-                labels = json.dumps(type_node["labels"])
-                label_text = extract_label_text(type_node["labels"])
+            for type_node in unit_type_nodes:
+                node_id = type_node.get("id", "")
+                if not node_id:
+                    continue
+                labels = json.dumps(type_node.get("labels", {}))
+                label_text = extract_label_text(type_node.get("labels", {}))
                 conn.execute(
                     "INSERT OR IGNORE INTO nodes "
                     "(node_id, labels, label_text, definitions, definition_text, created_at, updated_at) "
                     "VALUES (?, ?, ?, '{}', '', ?, ?)",
-                    (type_node["node_id"], labels, label_text, now_iso, now_iso),
+                    (node_id, labels, label_text, now_iso, now_iso),
                 )
 
             # 2. Now insert all rdf:type triples for type nodes
-            for type_node in UNIT_TYPE_NODES:
+            for type_node in unit_type_nodes:
+                node_id = type_node.get("id", "")
+                if not node_id:
+                    continue
                 conn.execute(
                     "INSERT OR IGNORE INTO triples "
                     "(subject_id, predicate_id, object_value, object_type, created_at) "
                     "VALUES (?, 'rdf:type', ':UnitType', 'node', ?)",
-                    (type_node["node_id"], now_iso),
+                    (node_id, now_iso),
                 )
 
             # 3. Create unit nodes (base + derived + prefixes)
-            for unit in BASE_AND_DERIVED:
+            for unit in base_units + derived_units:
                 self._insert_unit_node_in_txn(conn, unit, now_iso)
-            for prefix_data in ALL_UNITS[len(BASE_AND_DERIVED):]:
+            for prefix_data in prefixes:
                 self._insert_unit_node_in_txn(conn, prefix_data, now_iso)
 
         self._base_units_ensured = True
 
-    def _insert_unit_node_in_txn(self, conn, unit: dict, now_iso: str) -> None:
-        """Insert a unit node and its triples within an existing transaction."""
-        labels = json.dumps(unit["labels"])
-        label_text = extract_label_text(unit["labels"])
+    def _insert_unit_node_in_txn(self, conn, unit: dict[str, Any], now_iso: str) -> None:
+        """Insert a unit node and its triples within an existing transaction.
+
+        Accepts both YAML format (``id``, ``symbol`` flat) and the old
+        Python seed format (``node_id``) for backward compatibility.
+        """
+        node_id = unit.get("id") or unit.get("node_id", "")
+        if not node_id:
+            logger.warning("Skipping unit entry with no id/node_id")
+            return
+
+        labels = json.dumps(unit.get("labels", {}))
+        label_text = extract_label_text(unit.get("labels", {}))
         conn.execute(
             "INSERT OR IGNORE INTO nodes "
             "(node_id, labels, label_text, definitions, definition_text, created_at, updated_at) "
             "VALUES (?, ?, ?, '{}', '', ?, ?)",
-            (unit["node_id"], labels, label_text, now_iso, now_iso),
+            (node_id, labels, label_text, now_iso, now_iso),
         )
 
         conn.execute(
             "INSERT OR IGNORE INTO triples "
             "(subject_id, predicate_id, object_value, object_type, created_at) "
             "VALUES (?, 'rdf:type', ':SingularUnit', 'node', ?)",
-            (unit["node_id"], now_iso),
+            (node_id, now_iso),
         )
 
         symbol = unit.get("symbol")
@@ -137,7 +199,7 @@ class UnitService:
                 "INSERT OR IGNORE INTO triples "
                 "(subject_id, predicate_id, object_value, object_type, created_at) "
                 "VALUES (?, ':symbol', ?, 'literal', ?)",
-                (unit["node_id"], symbol, now_iso),
+                (node_id, symbol, now_iso),
             )
         ucum = unit.get("ucum")
         if ucum:
@@ -145,7 +207,7 @@ class UnitService:
                 "INSERT OR IGNORE INTO triples "
                 "(subject_id, predicate_id, object_value, object_type, created_at) "
                 "VALUES (?, ':ucumCode', ?, 'literal', ?)",
-                (unit["node_id"], ucum, now_iso),
+                (node_id, ucum, now_iso),
             )
         mult = unit.get("multiplier")
         if mult is not None:
@@ -153,7 +215,7 @@ class UnitService:
                 "INSERT OR IGNORE INTO triples "
                 "(subject_id, predicate_id, object_value, object_type, created_at) "
                 "VALUES (?, ':multiplier', ?, 'literal', ?)",
-                (unit["node_id"], str(mult), now_iso),
+                (node_id, str(mult), now_iso),
             )
         offset = unit.get("offset")
         if offset is not None:
@@ -161,8 +223,32 @@ class UnitService:
                 "INSERT OR IGNORE INTO triples "
                 "(subject_id, predicate_id, object_value, object_type, created_at) "
                 "VALUES (?, ':offset', ?, 'literal', ?)",
-                (unit["node_id"], str(offset), now_iso),
+                (node_id, str(offset), now_iso),
             )
+
+    def reload_units(self) -> int:
+        """Re-read ``units.yaml`` and re-seed units.
+
+        Uses ``INSERT OR IGNORE`` so existing data is never overwritten.
+        New entries added to the YAML are seeded.
+
+        Returns:
+            Total count of unit entries found in the YAML (for status
+            reporting).
+        """
+        import semantika.graph.builtin_loader as bl
+        bl.invalidate_caches()
+        self._base_units_ensured = False
+        self._ensure_base_units()
+
+        unit_data = get_unit_data()
+        total = (
+            len(unit_data.get("unit_types", []))
+            + len(unit_data.get("base_units", []))
+            + len(unit_data.get("derived_units", []))
+            + len(unit_data.get("prefixes", []))
+        )
+        return total
 
     # ── Symbol / name resolution ─────────────────────────────────────
 
