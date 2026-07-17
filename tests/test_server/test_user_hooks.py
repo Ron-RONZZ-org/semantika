@@ -120,8 +120,9 @@ class TestCallSystemCommand:
         from semantika.graph.db import get_services
         import uuid
         uid = str(uuid.uuid4())[:8]
+        # Use node.add.concept (the concrete handler), not node.add (group root)
         result = call_system_command(
-            "node.add",
+            "node.add.concept",
             flags={"id": f"HOOK_TEST_{uid}", "labels": "en::Hook Test"},
         )
         assert result["type"] == "status"

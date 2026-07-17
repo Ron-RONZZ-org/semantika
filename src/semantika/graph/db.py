@@ -325,7 +325,7 @@ SCHEMA = {
                 CASE WHEN object_type='node' THEN object_value ELSE NULL END
             ) STORED REFERENCES nodes(node_id),
             PRIMARY KEY (subject_id, predicate_id, object_value, object_type)
-        ) WITHOUT ROWID
+        )
     """,
 }
 
@@ -448,6 +448,18 @@ def _migrate_review_schema(db: SemantikaDB) -> None:
 
 def _migrate_triples_schema(db: SemantikaDB) -> None:
     """Add missing columns to existing triples table (migration)."""
+
+    # Migration: drop WITHOUT ROWID so that the implicit rowid is available
+    # (needed by the file-attachment grouping query in files.py).
+    try:
+        row = db.execute_one(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='triples'"
+        )
+        if row and "WITHOUT ROWID" in row["sql"].upper():
+            _recreate_triples_without_rowid(db)
+    except Exception:
+        pass  # Best effort — fresh DB will use the updated DDL
+
     migs = {
         "triples": [
             ("object_unit", "TEXT DEFAULT NULL"),
@@ -459,6 +471,39 @@ def _migrate_triples_schema(db: SemantikaDB) -> None:
                 db.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}")
             except sqlite3.OperationalError:
                 pass  # Column already exists
+
+
+def _recreate_triples_without_rowid(db: SemantikaDB) -> None:
+    """Recreate the triples table without WITHOUT ROWID.
+
+    SQLite does not support ``ALTER TABLE ... DROP WITHOUT ROWID``, so we
+    must recreate the table to make the implicit ``rowid`` available.
+    """
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS triples_new (
+            subject_id      TEXT NOT NULL REFERENCES nodes(node_id),
+            predicate_id    TEXT NOT NULL REFERENCES predicates(predicate_id),
+            object_type     TEXT NOT NULL DEFAULT 'node',
+            object_value    TEXT NOT NULL,
+            object_lang     TEXT DEFAULT NULL,
+            object_datatype TEXT DEFAULT NULL,
+            object_unit     TEXT DEFAULT NULL,
+            created_at      TEXT NOT NULL,
+            object_node_id  TEXT GENERATED ALWAYS AS (
+                CASE WHEN object_type='node' THEN object_value ELSE NULL END
+            ) STORED REFERENCES nodes(node_id),
+            PRIMARY KEY (subject_id, predicate_id, object_value, object_type)
+        )
+    """)
+    db.execute(
+        "INSERT OR IGNORE INTO triples_new "
+        "SELECT * FROM triples"
+    )
+    db.execute("DROP TABLE triples")
+    db.execute("ALTER TABLE triples_new RENAME TO triples")
+    # Recreate indexes
+    for idx_sql in TRIPLES_INDEXES:
+        db.execute(idx_sql)
 
 
 def _migrate_iri_column(db: SemantikaDB) -> None:

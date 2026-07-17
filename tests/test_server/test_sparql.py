@@ -227,7 +227,7 @@ def sparql_db(tmp_path: Path):
         "  object_unit TEXT DEFAULT NULL,"
         "  created_at TEXT NOT NULL,"
         "  PRIMARY KEY (subject_id, predicate_id, object_value, object_type)"
-        ") WITHOUT ROWID"
+        ")"
     )
     # Proofs table needed for cascade-delete in NodeService/PredicateService
     db.execute(
@@ -273,7 +273,8 @@ class TestSparqlEngine:
         assert len(bindings) == 1
         # rdf:type → http://www.w3.org/1999/02/22-rdf-syntax-ns#type
         assert bindings[0]["p"]["value"] == "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
-        assert "node/BOOK_001" in bindings[0]["s"]["value"]
+        # Node IRI follows the configured template (sm.ronzz.org)
+        assert "sm.ronzz.org/nodes/BOOK_001" in bindings[0]["s"]["value"]
 
     def test_sync_and_remove(self, engine: SparqlEngine):
         """Remove a triple via sync hook and verify it's gone."""

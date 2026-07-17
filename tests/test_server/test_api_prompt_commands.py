@@ -14,57 +14,24 @@ handling, and disk-based setup.
 
 from __future__ import annotations
 
-import os
-import shutil
-import tempfile
 from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from lightercore.paths import config_dir
 
-
-@pytest.fixture(scope="module", autouse=True)
-def _isolate_dirs():
-    """Set up isolated data/config dirs and restore on teardown.
-
-    Must run before ``create_app`` is imported so the app binds to
-    the temporary paths.
-    """
-    tmp = Path(tempfile.mkdtemp(prefix="semantika-pcmd-"))
-    saved_data = os.environ.get("SEMANTIKA_DATA_DIR")
-    saved_config = os.environ.get("SEMANTIKA_CONFIG_DIR")
-    os.environ["SEMANTIKA_DATA_DIR"] = str(tmp)
-    os.environ["SEMANTIKA_CONFIG_DIR"] = str(tmp)
-    # Import app after env vars are set
-    from semantika.server.app import create_app
-
-    # Store on the module so fixtures and helpers can access it
-    import sys
-
-    mod = sys.modules[__name__]
-    mod._TMP_DIR = tmp
-    mod._CONFIG_DIR = tmp
-    mod._create_app = create_app
-
-    yield
-
-    if saved_data:
-        os.environ["SEMANTIKA_DATA_DIR"] = saved_data
-    else:
-        os.environ.pop("SEMANTIKA_DATA_DIR", None)
-    if saved_config:
-        os.environ["SEMANTIKA_CONFIG_DIR"] = saved_config
-    else:
-        os.environ.pop("SEMANTIKA_CONFIG_DIR", None)
-    shutil.rmtree(tmp, ignore_errors=True)
+from semantika.server.app import create_app
 
 
 @pytest.fixture(scope="class")
 def client() -> TestClient:
-    """Return a TestClient with an isolated test DB and config dir."""
-    from semantika.server.app import create_app
+    """Return a TestClient with an isolated test DB and config dir.
 
+    Relies on the class-scoped ``auto_isolate_data_dir`` fixture from
+    ``test_server/conftest.py`` to set the ``SEMANTIKA_CONFIG_DIR`` env
+    var to an isolated temp directory.
+    """
     app = create_app()
     with TestClient(app) as c:
         yield c
@@ -72,10 +39,7 @@ def client() -> TestClient:
 
 def _write_prompt_command(name: str, content: str) -> None:
     """Write a prompt-command file into the test config dir."""
-    import sys
-
-    mod = sys.modules[__name__]
-    cmds_dir = mod._CONFIG_DIR / "commands"
+    cmds_dir = config_dir() / "commands"
     cmds_dir.mkdir(parents=True, exist_ok=True)
     (cmds_dir / f"{name}.md").write_text(content, encoding="utf-8")
 

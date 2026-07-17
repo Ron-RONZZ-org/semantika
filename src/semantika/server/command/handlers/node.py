@@ -137,7 +137,8 @@ def _get_file_path(triples: list[dict]) -> str | None:
     return None
 
 
-@group_command("node.add", description="Create nodes in the knowledge graph")
+@group_command("node.add", description="Create nodes in the knowledge graph",
+              interactive=True, form_type="node-add")
 def cmd_node_add_root(remaining: list[str], flags: dict[str, str]) -> dict:
     """Node creation group — use subcommands.
 

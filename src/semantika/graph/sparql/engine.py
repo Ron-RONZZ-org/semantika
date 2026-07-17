@@ -87,13 +87,28 @@ def _to_uri(internal_id: str, kind: str = "") -> ox.NamedNode:
 def _from_uri(uri: str) -> str:
     """Reverse of :func:`_to_uri`: convert a RDF IRI back to an internal ID.
 
-    Uses the configured template to determine the node/resource namespace.
-    For known-prefix IRIs (rdf:type, etc.) the namespace is fixed.
+    Resolution order:
+    1. Template namespaces (node + predicate) — checked first so that
+       template-expanded predicate IDs (e.g. ``rs:hasAuthor``) are
+       correctly decoded even when the predicate IRI template shares
+       a prefix with a known namespace (e.g. ``sm:``).
+    2. Known prefix namespaces — e.g. ``rdf:type`` → ``http://www.w3.org/…``.
+    3. Pass-through for bare ``http://`` / ``https://`` URIs.
 
     Raises:
         ValueError: If the URI cannot be mapped back to an internal ID.
     """
     from semantika.core.config import get_iri_template
+
+    # Node template namespace (e.g. "https://sm.ronzz.org/nodes/$id")
+    node_ns = get_iri_template("node").replace("$id", "")
+    if uri.startswith(node_ns):
+        return uri[len(node_ns):]
+
+    # Predicate template namespace (e.g. "https://sm.ronzz.org/predicates/$id")
+    pred_ns = get_iri_template("predicate").replace("$id", "")
+    if uri.startswith(pred_ns):
+        return uri[len(pred_ns):]
 
     # Known prefix namespaces
     for prefix, ns in _KNOWN_PREFIXES.items():
@@ -101,14 +116,7 @@ def _from_uri(uri: str) -> str:
             local = uri[len(ns):]
             if local:
                 return f"{prefix}:{local}"
-    # Node template namespace
-    node_ns = get_iri_template("node").replace("$id", "")
-    if uri.startswith(node_ns):
-        return uri[len(node_ns):]
-    # Predicate template namespace
-    pred_ns = get_iri_template("predicate").replace("$id", "")
-    if uri.startswith(pred_ns):
-        return uri[len(pred_ns):]
+
     # Pass-through full URIs
     if uri.startswith("http://") or uri.startswith("https://"):
         return uri
