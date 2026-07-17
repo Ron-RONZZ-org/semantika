@@ -40,10 +40,12 @@ Triple store services: NodeService, PredicateService, PredicateGroupService, Tri
 | `review_service.py` | Review session management, quiz generation |
 | `proof_service.py` | Proof CRUD (RDF reification) |
 | `unit_service.py` / `unit_builder.py` / `unit_decomposition.py` | Unit ontology management |
-| `unit_parser.py` / `unit_errors.py` / `unit_seed_data.py` | Unit parser, errors, and seed data |
-| `builtin_type_service.py` / `builtin_seed_data.py` | Built-in type nodes and predicates (sm: namespace) — lazy seeding |
+| `builtins.yaml` / `units.yaml` | Declarative seed data (predicates, type nodes, unit ontology) — editable by non-coders |
+| `builtin_loader.py` / `_required_predicates.py` | YAML loader with caching + Python fallback for required predicates |
+| `builtin_type_service.py` | Built-in type nodes and predicates — lazy seeding from YAML |
+| `unit_parser.py` / `unit_errors.py` | Unit parser, errors |
 | `db.py` | Graph DB init, schema DDL, `get_services()` factory |
-| `constants.py` | **Single source of truth** for ``KNOWN_PREFIXES`` (imported by ``db.py``, ``sparql/engine.py``, ``triple_turtle.py``), ``CORE_SM_PREDICATES``, FTS5 keywords, and heuristic helpers |
+| `constants.py` | **Single source of truth** for ``KNOWN_PREFIXES`` (imported by ``db.py``, ``sparql/engine.py``, ``triple_turtle.py``), ``CORE_SM_PREDICATES`` (lazy proxy from YAML), FTS5 keywords, and heuristic helpers |
 | `file_helpers.py` | File attachment helpers |
 | `helpers.py` | General utility helpers |
 | `services/__init__.py` | Service registry |

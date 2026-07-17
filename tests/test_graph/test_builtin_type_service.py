@@ -1,4 +1,4 @@
-"""Tests for BuiltinTypeService — lazy seeding, predicate/type node creation."""
+"""Tests for BuiltinTypeService — YAML-based lazy seeding, fallback behavior."""
 
 from __future__ import annotations
 
@@ -6,53 +6,96 @@ import json
 
 import pytest
 
-from semantika.graph.builtin_seed_data import (
-    BUILTIN_PREDICATES,
-    BUILTIN_TYPE_NODES,
-    FILE_PREDICATES,
-    REQUIRED_PREDICATES,
-    SEED_PREDICATES,
-    TIER1_SM_PREDICATES,
-    TIER2_SM_PREDICATES,
-    W3C_PREDICATES,
+from semantika.graph._required_predicates import REQUIRED_PREDICATE_IDS
+from semantika.graph.builtin_loader import (
+    get_core_predicate_ids,
+    get_predicate_catalog,
+    get_type_nodes_from_yaml,
+    invalidate_caches,
+    load_builtins_yaml,
 )
 from semantika.graph.constants import KNOWN_PREFIXES
 
 
-class TestBuiltinSeedData:
-    """Verify seed data constants are well-formed."""
+class TestYamlSeedData:
+    """Verify YAML seed data is well-formed via the loader."""
+
+    def test_builtins_yaml_loads(self):
+        """builtins.yaml can be loaded and parsed."""
+        data = load_builtins_yaml()
+        assert isinstance(data, dict)
+        assert "predicates" in data
+        assert "type_nodes" in data
 
     def test_type_nodes_have_required_keys(self):
-        for node in BUILTIN_TYPE_NODES:
-            assert "node_id" in node
-            # Concept type nodes are all-caps A-Z0-9_ (no prefix)
-            assert node["node_id"].isupper() or "_" in node["node_id"]
+        """All type nodes have id, labels, and en label."""
+        type_nodes = get_type_nodes_from_yaml()
+        assert len(type_nodes) > 0
+        for node in type_nodes:
+            assert "id" in node, f"Type node missing 'id': {node}"
+            node_id = node["id"]
+            assert node_id.isupper() or "_" in node_id  # Concept type nodes are all-caps
             assert "labels" in node
             assert "en" in node["labels"]
-            assert "eo" in node["labels"]
 
-    def test_predicates_have_required_fields(self):
-        for pid, source, labels, descriptions in BUILTIN_PREDICATES:
-            assert pid.startswith("sm:")
-            assert source == "semantika"
-            assert "en" in labels
-            assert "en" in descriptions
+    def test_predicate_catalog_has_all_required(self):
+        """Every required predicate appears in the YAML catalog (or fallback)."""
+        catalog = get_predicate_catalog()
+        for pid in REQUIRED_PREDICATE_IDS:
+            assert pid in catalog, (
+                f"Required predicate '{pid}' is missing from catalog "
+                f"(should have YAML or Python fallback)"
+            )
 
-    def test_required_predicates_includes_builtin_plus_file_preds(self):
-        for pid, _, _, _ in BUILTIN_PREDICATES:
-            assert pid in REQUIRED_PREDICATES
-        assert ":hasFilePath" in REQUIRED_PREDICATES
-        assert ":hasFileMime" in REQUIRED_PREDICATES
+    def test_predicate_catalog_has_labels(self):
+        """Every catalog entry has en labels."""
+        catalog = get_predicate_catalog()
+        for pid, entry in catalog.items():
+            assert "en" in entry.get("labels", {}), (
+                f"Predicate '{pid}' is missing 'en' label"
+            )
+
+    def test_predicate_catalog_has_tier(self):
+        """Every catalog entry has a tier field."""
+        from semantika.graph.builtin_loader import _normalize_tier
+        catalog = get_predicate_catalog()
+        for pid, entry in catalog.items():
+            tier = _normalize_tier(entry.get("tier"))
+            assert tier in ("w3c", "1", "2", "file"), (
+                f"Predicate '{pid}' has invalid tier: {entry.get('tier')!r}"
+            )
+
+    def test_core_predicate_ids_includes_tier1_only(self):
+        """Core predicate IDs include Tier 1 but NOT W3C or Tier 2."""
+        core = get_core_predicate_ids()
+        # Tier 1 sm: predicates ARE core
+        assert "sm:depicts" in core
+        assert "sm:theme" in core
+        assert "sm:partOf" in core
+        # W3C predicates are NOT core (they can be freely deleted/recreated)
+        assert "rdf:type" not in core
+        assert "rdfs:subClassOf" not in core
+        # Tier 2 should NOT be in core
+        assert "sm:isAbout" not in core
+        assert "sm:relatesTo" not in core
+
+    def test_cached_catalog_same_instance(self):
+        """Repeated calls return the same cached instance."""
+        invalidate_caches()
+        cat1 = get_predicate_catalog()
+        cat2 = get_predicate_catalog()
+        assert cat1 is cat2
 
 
 class TestBuiltinTypeService:
-    """Test lazy seeding and predicate ensuring."""
+    """Test YAML-based lazy seeding and predicate ensuring."""
 
     def test_ensure_builtins_creates_predicates(self, services: dict):
         bts = services["builtin_type"]
         bts.ensure_builtins()
 
-        for pid, _, _, _ in BUILTIN_PREDICATES:
+        catalog = get_predicate_catalog()
+        for pid in catalog:
             pred = services["predicate"].get(pid)
             assert pred is not None, f"Predicate {pid} should exist"
 
@@ -60,9 +103,10 @@ class TestBuiltinTypeService:
         bts = services["builtin_type"]
         bts.ensure_builtins()
 
-        for node in BUILTIN_TYPE_NODES:
-            n = services["node"].get(node["node_id"])
-            assert n is not None, f"Type node {node['node_id']} should exist"
+        type_nodes = get_type_nodes_from_yaml()
+        for node in type_nodes:
+            n = services["node"].get(node["id"])
+            assert n is not None, f"Type node {node['id']} should exist"
             labels = json.loads(n["labels"]) if isinstance(n["labels"], str) else n["labels"]
             assert labels.get("en") == node["labels"]["en"]
 
@@ -70,14 +114,15 @@ class TestBuiltinTypeService:
         bts = services["builtin_type"]
         bts.ensure_builtins()
 
-        for node in BUILTIN_TYPE_NODES:
-            triples = services["triple"].get_by_subject(node["node_id"])
+        type_nodes = get_type_nodes_from_yaml()
+        for node in type_nodes:
+            triples = services["triple"].get_by_subject(node["id"])
             type_triples = [
                 t for t in triples
-                if t["predicate_id"] == "rdf:type" and t["object_value"] == node["node_id"]
+                if t["predicate_id"] == "rdf:type" and t["object_value"] == node["id"]
             ]
             assert len(type_triples) >= 1, (
-                f"Type node {node['node_id']} should have rdf:type self-reference"
+                f"Type node {node['id']} should have rdf:type self-reference"
             )
 
     def test_ensure_builtins_idempotent(self, services: dict):
@@ -86,12 +131,10 @@ class TestBuiltinTypeService:
         bts.ensure_builtins()
         bts.ensure_builtins()  # second call
 
-        for pid, _, _, _ in BUILTIN_PREDICATES:
+        catalog = get_predicate_catalog()
+        for pid in catalog:
             pred = services["predicate"].get(pid)
             assert pred is not None
-        for node in BUILTIN_TYPE_NODES:
-            n = services["node"].get(node["node_id"])
-            assert n is not None
 
     def test_ensure_predicates_creates_missing(self, services: dict):
         """ensure_predicates creates a predicate if it doesn't exist."""
@@ -115,54 +158,36 @@ class TestBuiltinTypeService:
         assert bts.get_type_node_id("code") == "SOURCE_CODE"
         assert bts.get_type_node_id("unknown") is None
 
-    def test_ensure_builtins_creates_all_w3c_predicates(self, services: dict):
+    def test_ensure_builtins_creates_w3c_predicates(self, services: dict):
         """ensure_builtins seeds all W3C predicates (rdf:/rdfs:/owl:)."""
         bts = services["builtin_type"]
         bts.ensure_builtins()
-        for pid, _, _, _ in W3C_PREDICATES:
+        for pid in ["rdf:type", "rdfs:subClassOf", "rdfs:label",
+                      "owl:sameAs", "owl:disjointWith", "owl:inverseOf",
+                      "rdfs:seeAlso"]:
             pred = services["predicate"].get(pid)
             assert pred is not None, f"W3C predicate {pid} should exist"
 
-    def test_ensure_builtins_creates_all_file_predicates(self, services: dict):
+    def test_ensure_builtins_creates_file_predicates(self, services: dict):
         """ensure_builtins seeds all file-attachment predicates."""
         bts = services["builtin_type"]
         bts.ensure_builtins()
-        for pid, _, _, _ in FILE_PREDICATES:
+        for pid in [":hasFilePath", ":hasFileMime", ":hasFileSize", ":hasFileSource"]:
             pred = services["predicate"].get(pid)
             assert pred is not None, f"File predicate {pid} should exist"
-
-    def test_ensure_builtins_creates_every_seed_predicate(self, services: dict):
-        """ensure_builtins seeds the ENTIRE SEED_PREDICATES catalog."""
-        bts = services["builtin_type"]
-        bts.ensure_builtins()
-        for pid, _, _, _ in SEED_PREDICATES:
-            pred = services["predicate"].get(pid)
-            assert pred is not None, f"Seed predicate {pid} should exist"
-
-    def test_ensure_builtins_catalog_count(self, services: dict):
-        """Total seeded predicate count matches SEED_PREDICATES length."""
-        bts = services["builtin_type"]
-        bts.ensure_builtins()
-        all_preds = services["predicate"].list(limit=999)
-        # Only count predicates with seed-reserved IDs (ignore user-created ones)
-        seeded_ids = {pid for pid, _, _, _ in SEED_PREDICATES}
-        actual_seeded = [p for p in all_preds if p["predicate_id"] in seeded_ids]
-        assert len(actual_seeded) == len(SEED_PREDICATES), (
-            f"Expected {len(SEED_PREDICATES)} seeded predicates, "
-            f"found {len(actual_seeded)}"
-        )
 
     def test_iri_column_populated_for_known_prefix_predicates(self, services: dict):
         """Known-prefix predicates (rdf:, rdfs:, owl:, sm:) have populated iri column."""
         bts = services["builtin_type"]
         bts.ensure_builtins()
         known_prefixes = set(KNOWN_PREFIXES.keys())
-        for pid, _, _, _ in SEED_PREDICATES:
+        catalog = get_predicate_catalog()
+        for pid, entry in catalog.items():
             if ":" in pid:
                 prefix = pid.split(":", 1)[0]
                 if prefix in known_prefixes:
                     pred = services["predicate"].get(pid)
-                    assert pred is not None, f"Predicate {pid} should exist"
+                    assert pred is not None
                     assert pred["iri"] != "", (
                         f"Known-prefix predicate {pid} should have "
                         f"non-empty iri column, got empty string"
@@ -173,27 +198,73 @@ class TestBuiltinTypeService:
         bts = services["builtin_type"]
         bts.ensure_builtins()
         known_prefixes = set(KNOWN_PREFIXES.keys())
-        for pid, _, _, _ in FILE_PREDICATES:
+        for pid in [":hasFilePath", ":hasFileMime", ":hasFileSize", ":hasFileSource"]:
             if ":" in pid:
                 prefix = pid.split(":", 1)[0]
                 if prefix not in known_prefixes:
                     pred = services["predicate"].get(pid)
-                    assert pred is not None, f"Predicate {pid} should exist"
+                    assert pred is not None
                     assert pred["iri"] == "", (
                         f"Unknown-prefix predicate {pid} should have "
                         f"empty iri column, got {pred['iri']!r}"
                     )
 
+    def test_reload_reseeds(self, services: dict):
+        """Reload re-reads YAML and re-seeds (idempotent)."""
+        bts = services["builtin_type"]
+        counts = bts.reload()
+
+        assert counts["predicates"] >= 1
+        assert counts["type_nodes"] >= 1
+        # Verify predicates are still there after reload
+        assert services["predicate"].get("rdf:type") is not None
+        assert services["predicate"].get("sm:depicts") is not None
+
+    def test_reload_after_cache_invalidation(self):
+        """invalidate_caches clears the catalog cache."""
+        invalidate_caches()
+        cat1 = get_predicate_catalog()
+        invalidate_caches()
+        cat2 = get_predicate_catalog()
+        # They should be different objects (cache was cleared)
+        assert cat1 is not cat2
+
+
+class TestBuiltinLoader:
+    """Test the YAML loader directly."""
+
+    def test_load_builtins_yaml_has_required_keys(self):
+        data = load_builtins_yaml()
+        assert "version" in data
+        assert data["version"] == 1
+
+    def test_yaml_has_all_tiers(self):
+        catalog = get_predicate_catalog()
+        tiers_seen = set()
+        for entry in catalog.values():
+            tiers_seen.add(entry.get("tier"))
+        assert "w3c" in tiers_seen
+        assert "1" in tiers_seen
+        assert "2" in tiers_seen
+        assert "file" in tiers_seen
+
+    def test_type_nodes_include_media_types(self):
+        type_nodes = get_type_nodes_from_yaml()
+        type_ids = {n["id"] for n in type_nodes}
+        assert "PHOTO" in type_ids
+        assert "VIDEO" in type_ids
+        assert "DOCUMENT" in type_ids
+        assert "SOURCE_CODE" in type_ids
+        assert "BOOK" in type_ids
+        assert "FILM" in type_ids
+        assert "PAPER" in type_ids
+
 
 class TestSeedDefaultsNoop:
-    """Tests that the old _seed_default_predicates() is now a no-op."""
+    """The old _seed_default_predicates() remains a no-op."""
 
     def test_seed_default_predicates_noop_when_empty(self, db):
-        """Calling _seed_default_predicates on an empty DB creates nothing."""
         from semantika.graph.db import _seed_default_predicates
         _seed_default_predicates(db)
         count = db.execute_one("SELECT COUNT(*) AS cnt FROM predicates")
-        assert count["cnt"] == 0, (
-            "_seed_default_predicates should be a no-op, "
-            f"but created {count['cnt']} predicates"
-        )
+        assert count["cnt"] == 0

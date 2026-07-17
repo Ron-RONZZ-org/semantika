@@ -193,8 +193,8 @@ semantika/
 │       │   ├── review_service.py + proof_service.py
 │       │   ├── sparql/__init__.py + sparql/engine.py  # SPARQL engine (Oxigraph cache)
 │       │   ├── unit_service.py + unit_builder.py + unit_decomposition.py
-│       │   ├── unit_errors.py + unit_parser.py + unit_seed_data.py
-│       │   ├── builtin_type_service.py + builtin_seed_data.py
+│       │   ├── unit_errors.py + unit_parser.py + units.yaml
+│       │   ├── builtin_type_service.py + builtins.yaml
 │       │   └── services/__init__.py
 │       ├── scripts/             # CLI entry points
 │       │   ├── __init__.py
@@ -594,6 +594,41 @@ Known-prefix predicates (``rdf:type``, ``rdfs:label``, etc.) always use their fi
   2. Other IRIs (custom ``--canonical``, known-prefix predicates) → query by ``iri`` column.
 - RocksDB sync hooks resolve IRIs via a cache-aware method (``_resolve_iri``) that checks the ``iri`` column first, falling back to template computation.
 
+## Built-in Ontology Seeding (YAML + Python Fallback)
+
+Semantika seeds its built-in predicates, type nodes, and unit ontology from
+YAML files with a Python fallback for required predicates.
+
+### Source files
+
+| File | Contents | Editable by non-coders? |
+|------|----------|------------------------|
+| ``graph/builtins.yaml`` | Predicate catalog (W3C / Tier 1–2 / File ``sm:``) + type nodes (PHOTO, BOOK, PAPER, etc.) | Yes |
+| ``graph/units.yaml`` | Unit type hierarchy, SI base/derived units, SI prefixes | Yes |
+| ``graph/_required_predicates.py`` | Python fallback dict — every predicate referenced by built-in commands | No (developers only) |
+| ``graph/builtin_loader.py`` | YAML loading logic with caching and fallback | No (developers only) |
+
+### Resolution order
+
+1. **User-editable YAML** at ``~/.config/semantika/builtins.yaml`` (or ``units.yaml``)
+2. **Shipped default YAML** bundled in the package
+3. **Python fallback** (``_required_predicates.py``) — only for predicates that
+   built-in commands need by name
+
+If a required predicate is missing from the YAML, a warning is logged and the
+Python fallback is used.  This ensures the app never breaks even if someone
+accidentally deletes a predicate from the YAML file.
+
+### Usage
+
+- Edit ``~/.config/semantika/builtins.yaml`` to modify the predicate catalog
+- Run ``!builtins reload`` to apply changes without restarting the server
+- Or restart the server for a fresh seed
+
+### Commands
+
+- ``!builtins reload`` — Re-read YAML files and re-seed (uses ``INSERT OR IGNORE``)
+
 ## Semantika Predicate Namespace (``sm:``)
 
 Semantika ships with a **standard predicate catalog** in the ``sm:`` (Semantika) namespace. The namespace is registered in all IRI-resolution code paths (``graph/constants.py`` — single source of truth), giving ``sm:`` predicates a stable IRI at ``https://sm.ronzz.org/predicates/``
@@ -602,7 +637,7 @@ Semantika ships with a **standard predicate catalog** in the ``sm:`` (Semantika)
 ### Design rules
 
 - ``sm:`` predicates **complement, never replace, W3C standards.** The existing ``rdf:``, ``rdfs:``, and ``owl:`` predicates are left completely untouched.
-- ``sm:`` fills gaps that W3C doesn't cover. See ``graph/builtin_seed_data.py`` for the canonical catalog.
+- ``sm:`` fills gaps that W3C doesn't cover. See ``graph/builtins.yaml`` for the canonical catalog.
 - Core ``sm:`` predicates (Tier 1) are **soft-protected** from accidental deletion — ``!predicate delete`` warns unless ``--force`` is used.
 - All predicates are seeded via ``BuiltinTypeService.ensure_builtins()`` at app startup (idempotent).
 

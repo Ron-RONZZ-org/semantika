@@ -84,12 +84,14 @@ def test_sm_iri_rejects_template() -> None:
 
 def test_sm_predicate_source_is_semantika() -> None:
     """All ``sm:`` seed predicates should have source='semantika'."""
-    from semantika.graph.builtin_seed_data import TIER1_SM_PREDICATES, TIER2_SM_PREDICATES
+    from semantika.graph.builtin_loader import get_predicate_catalog
 
-    for pid, source, _, _ in TIER1_SM_PREDICATES + TIER2_SM_PREDICATES:
-        assert source == "semantika", (
-            f"{pid} has source={source!r}, expected 'semantika'"
-        )
+    catalog = get_predicate_catalog()
+    for pid, entry in catalog.items():
+        if pid.startswith("sm:"):
+            assert entry.get("source") == "semantika", (
+                f"{pid} has source={entry.get('source')!r}, expected 'semantika'"
+            )
 
 
 def test_sm_namespace_url() -> None:

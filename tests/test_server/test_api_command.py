@@ -53,14 +53,16 @@ class TestCommandHandler:
     """Test additional command dispatch paths not covered elsewhere."""
 
     def test_node_add_command(self, client: TestClient):
+        """!node add concept creates a node and returns it in the response."""
         resp = client.post(
             "/api/v1/command",
-            json={"tokens": ["node", "add"], "flags": {"labels": "Cmd Added Node"}},
+            json={"tokens": ["node", "add", "concept"], "flags": {"labels": "Cmd Added Node"}},
         )
         assert resp.status_code == 200
         data = resp.json()
         assert data["type"] == "status"
         assert "node" in data["data"]
+        assert data["data"]["node"]["node_id"] == "CMD_ADDED_NODE"
 
     def test_node_list_command(self, client: TestClient):
         resp = client.post(
@@ -79,10 +81,10 @@ class TestInteractiveForm:
     """Test interactive form routing for commands."""
 
     def test_interactive_form_routing(self, client: TestClient):
-        """Verify !node add with form flag returns form-required."""
+        """Verify !node add concept with form flag returns form-required."""
         resp = client.post(
             "/api/v1/command",
-            json={"tokens": ["node", "add"], "flags": {"form": "true"}},
+            json={"tokens": ["node", "add", "concept"], "flags": {"form": "true"}},
         )
         assert resp.status_code == 200
         data = resp.json()
