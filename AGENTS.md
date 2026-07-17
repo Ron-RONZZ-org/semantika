@@ -185,16 +185,18 @@ semantika/
 │       │   ├── __init__.py      # Re-exports SemantikaDB, paths, exceptions
 │       │   ├── db.py / paths.py / exceptions.py / backup.py / crud.py / fts.py
 │       │   └── reset.py         # Reset to fresh state
-│       ├── graph/               # Triple store services (17 source files + services/)
-│       │   ├── __init__.py + constants.py + db.py + file_helpers.py
-│       │   ├── node_helpers.py + node_service.py + node_merge_mixin.py + node_fts.py
+│       ├── graph/               # Triple store services (20+ source files + services/)
+│       │   ├── __init__.py + constants.py + db.py + helpers.py
+│       │   ├── file_helpers.py + node_helpers.py + node_service.py
+│       │   ├── node_merge_mixin.py + node_fts.py
 │       │   ├── predicate_service.py + predicate_group_service.py
 │       │   ├── triple_service.py + triple_turtle.py
 │       │   ├── review_service.py + proof_service.py
 │       │   ├── sparql/__init__.py + sparql/engine.py  # SPARQL engine (Oxigraph cache)
 │       │   ├── unit_service.py + unit_builder.py + unit_decomposition.py
 │       │   ├── unit_errors.py + unit_parser.py + units.yaml
-│       │   ├── builtin_type_service.py + builtins.yaml
+│       │   ├── builtin_type_service.py + builtin_loader.py
+│       │   ├── builtins.yaml + _required_predicates.py
 │       │   └── services/__init__.py
 │       ├── scripts/             # CLI entry points
 │       │   ├── __init__.py
@@ -219,8 +221,12 @@ semantika/
 │               │   ├── node_scholarly.py   # !node add scholarly paper|patent|conference
 │               │   ├── predicate.py / predicate_group.py / predicate_trash.py
 │               │   ├── triple.py / review.py
+│               │   ├── template.py          # !template list/view/save/use
 │               │   ├── backup.py / reset.py
-│               │   ├── context.py  # Context store for multi-turn flows (!context.get)
+│               │   ├── builtins.py          # !builtins reload
+│               │   ├── system.py            # !system reindex
+│               │   ├── sparql.py            # !sparql query/status
+│               │   ├── context.py           # Context store for multi-turn flows (!context.get)
 │               │   ├── help.py
 │               │   ├── llm.py
 │               │   ├── trash.py
@@ -228,7 +234,14 @@ semantika/
 │           │       └── user_config.py
 │           ├── llm/             # LLM provider abstraction
 │           │   ├── __init__.py
-│           │   └── provider.py  # Provider singleton (get_provider / reset_provider)
+│           │   ├── provider.py  # Provider singleton (get_provider / reset_provider)
+│           │   ├── tool_loop.py # Re-exports from lightercore.llm.tool_loop
+│           │   ├── system_prompt.py  # Two-file system prompt (base + AGENTS.md)
+│           │   └── prompt_defaults.py  # Shipped defaults for prompt files
+│           ├── templates/       # Triple template management
+│           │   ├── __init__.py + loader.py  # YAML file discovery and parsing
+│           │   ├── models.py   # TemplateParam, TriplePattern, TripleTemplate
+│           │   └── executor.py # execute_template, expand_template
 │           └── routes/          # FastAPI route handlers
 │               ├── graph.py     # /api/v1/graph/* — CRUD for nodes, predicates, triples
 │               ├── query.py     # /api/v1/query/* — search, export, stats, raw SQL
@@ -237,7 +250,7 @@ semantika/
 │               ├── proof.py     # /api/v1/proof/* — proof CRUD
 │               ├── unit.py      # /api/v1/units/* — unit ontology
 │               ├── files.py     # /api/v1/files/* — file attachments
-│               ├── llm.py       # /api/v1/llm/* — chat, config, profiles, confirm
+│               ├── llm.py       # /api/v1/llm/* — chat, config, profiles, confirm, resume
 │               ├── sparql.py    # /api/v1/query/sparql — SPARQL 1.1 Protocol endpoint
 │               ├── prompt_commands.py  # /api/v1/prompt-commands/* — list, expand, execute, SSE stream
 │               │   Turn prompts use named-only expansion ($ARGUMENTS, $TEMPLATE_DESCRIPTION, $STYLE_EXAMPLE).
@@ -245,18 +258,36 @@ semantika/
 │               │   /text-to-triples supports three-turn HITL: nodes in T1, templates+predicates in T2,
 │               │     triples with post-loop validation in T3.
 │               │   $STYLE_EXAMPLE auto-injected from most recently modified user-created template.
+│               ├── prompt_commands_text_to_triple.py  # /text-to-triples three-turn flow logic
+│               ├── prompt_commands_helpers.py  # Shared helpers: context dispatch, style injection
+│               ├── triple_templates.py  # /api/v1/triple-templates/* — list, expand, execute, save
+│               ├── prompts.py          # /api/v1/llm/prompts/* — prompt file management
 │               └── user_config.py      # /api/v1/user/config — locale, preferences
-├── tests/                       # pytest tests (860+ tests)
+├── tests/                       # pytest tests (1300+ tests)
 │   ├── conftest.py
-│   ├── test_core/               # Backup, entry points, reset tests
+│   ├── test_core/               # Backup, entry points, reset, config tests
 │   ├── test_graph/              # Service integration tests (nodes, predicates, triples, units, proofs)
-│   └── test_server/             # API E2E + handler dispatch tests
-│       ├── conftest.py
-│       ├── test_api_*.py        # API endpoint tests per domain
-│       ├── test_handler_*.py    # Command handler dispatch tests
-│       ├── test_command_*.py    # Command parser + dispatch
-│       ├── test_llm_*.py        # LLM provider + API tests
-│       └── test_files_api.py    # File attachment API tests
+│   ├── test_server/             # API E2E + handler dispatch tests
+│   │   ├── conftest.py
+│   │   ├── test_api_*.py        # API endpoint tests per domain
+│   │   ├── test_handler_*.py    # Command handler dispatch tests
+│   │   ├── test_command_*.py    # Command parser + dispatch
+│   │   ├── test_llm_*.py        # LLM provider + API tests
+│   │   ├── test_files_api.py    # File attachment API tests
+│   │   ├── test_templates.py    # Triple template tests
+│   │   ├── test_template_turns.py     # /template two-turn flow tests
+│   │   ├── test_text_to_triple_flow.py # /text-to-triples flow tests
+│   │   ├── test_prompt_commands.py     # Prompt command expansion/execution
+│   │   ├── test_system_prompt.py       # System prompt loading tests
+│   │   ├── test_sparql.py             # SPARQL endpoint tests
+│   │   ├── test_user_hooks.py         # User hooks loading tests
+│   │   └── test_zz_api_import.py      # Turtle import E2E
+│   ├── test_scripts/            # Dev CLI tests
+│   ├── semantika_full_e2e.mjs   # Playwright E2E test
+│   ├── sparql_e2e.mjs           # SPARQL Playwright E2E test
+│   ├── gui_fixes_e2e.mjs        # GUI fix regression E2E tests
+│   ├── test_markdown.mjs        # Markdown renderer unit tests
+│   └── test_e2e.py             # E2E wrapper (pytest-managed server)
 ├── core/                        # AGENTS-core.md (doc only — code is under src/semantika/core/)
 ├── graph/                       # AGENTS-graph.md (doc only — code is under src/semantika/graph/)
 ├── server/                      # AGENTS-server.md (doc only — code is under src/semantika/server/)
@@ -265,22 +296,37 @@ semantika/
     ├── package.json / vite.config.js / svelte.config.js / index.html
     └── src/
         ├── main.js + App.svelte
-        └── lib/                  # UI components
-            ├── ChatInput.svelte / DynamicForm.svelte / FormField.svelte
-            ├── FormTab.svelte / PopupOverlay.svelte / StatusPopup.svelte
-            ├── ErrorPopup.svelte / LoadingPopup.svelte / BannerContainer.svelte
-            ├── HelpPopup.svelte / ConfirmDialog.svelte / KeyboardShortcutOverlay.svelte
-            ├── LlmSetupModal.svelte / GraphView.svelte / QuizPanel.svelte
-            ├── HomeTab.svelte / HomeHeader.svelte
-            ├── TabView.svelte / MessageList.svelte
-            ├── NodeListTab.svelte / PredicateListTab.svelte / TripleListTab.svelte
-            ├── TripleAddTab.svelte / tripleAddTypeUtils.js
-            ├── listTabFormat.js / listTabSelection.svelte.js / listTabShared.svelte.js
-            ├── commandRouter.js / commandEngine.js / commandExecutor.js
-            ├── commandTree.js / commandHistory.svelte.js / parser.js
-            ├── popupStore.svelte.js / tabStore.svelte.js / bannerStore.svelte.js
-            ├── dirtyFormStore.svelte.js / keyboardShortcuts.svelte.js / historyStore.svelte.js
-            └── userConfig.svelte.js / markdown.js
+        ├── lib/                  # UI components
+        │   ├── ChatInput.svelte / DynamicForm.svelte / FormField.svelte
+        │   ├── FormTab.svelte / PopupOverlay.svelte / StatusPopup.svelte
+        │   ├── ErrorPopup.svelte / LoadingPopup.svelte / BannerContainer.svelte
+        │   ├── HelpPopup.svelte / ConfirmDialog.svelte / KeyboardShortcutOverlay.svelte
+        │   ├── LlmSetupModal.svelte / GraphView.svelte / QuizPanel.svelte
+        │   ├── HomeTab.svelte / HomeHeader.svelte
+        │   ├── TabView.svelte / MessageList.svelte
+        │   ├── NodeListTab.svelte / NodeViewTab.svelte
+        │   ├── PredicateListTab.svelte / TripleListTab.svelte / TripleDetailTab.svelte
+        │   ├── TripleAddTab.svelte / tripleAddTypeUtils.js
+        │   ├── TripleTemplateForm.svelte / TemplateYamlPopup.svelte
+        │   ├── PromptListTab.svelte / SettingsTab.svelte
+        │   ├── listTabFormat.js / listTabSelection.svelte.js / listTabShared.svelte.js
+        │   ├── listSort.svelte.js / formatCommand.js
+        │   ├── commandRouter.js / commandEngine.js / commandExecutor.js
+        │   ├── commandTree.js / commandHistory.svelte.js / parser.js
+        │   ├── popupStore.svelte.js / tabStore.svelte.js / bannerStore.svelte.js
+        │   ├── dirtyFormStore.svelte.js / keyboardShortcuts.svelte.js / historyStore.svelte.js
+        │   ├── userConfig.svelte.js / markdown.js
+        │   └── sparql/                  # SPARQL query editor (CodeMirror 6)
+        │       ├── SparqlQueryEditor.svelte / SparqlResultTable.svelte
+        │       ├── sparqlStore.svelte.js / sparqlLanguage.js
+        └── lib/__tests__/              # Vitest component tests
+            ├── commandRouter.test.js / commandEngine.test.js
+            ├── commandHistory.test.js / parser.test.js
+            ├── ConfirmDialog.test.js / DynamicForm.test.js
+            ├── FormField.test.js / formatCommand.test.js
+            ├── optimisticStore.test.js / popupStore.test.js
+            ├── SettingsTab.test.js / tabStore.test.js
+            └── tripleAddTypeUtils.test.js
 ```
 
 ---

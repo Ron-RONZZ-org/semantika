@@ -353,3 +353,28 @@ class TestUnitBuilderIntegration:
         nid1 = builder.create_from_ast(ast)
         nid2 = builder.create_from_ast(ast)
         assert nid1 == nid2
+
+
+class TestUnitServiceReload:
+    """Test UnitService.reload_units() — YAML-based re-seeding."""
+
+    def test_reload_units_returns_count(self, seeded_env: UnitService):
+        """reload_units() returns a positive count of unit entries."""
+        count = seeded_env.reload_units()
+        assert count >= 1, "reload_units should return positive count"
+
+    def test_reload_units_idempotent(self, seeded_env: UnitService):
+        """Calling reload_units twice does not raise."""
+        seeded_env.reload_units()
+        seeded_env.reload_units()  # second call should succeed
+
+    def test_reload_units_preserves_existing(self, seeded_env: UnitService):
+        """After reload, previously created units still resolve."""
+        from semantika.graph.unit_parser import normalize, parse
+
+        ast = normalize(parse("m^2"))
+        builder = seeded_env.builder
+        nid1 = builder.create_from_ast(ast)
+        seeded_env.reload_units()
+        nid2 = builder.create_from_ast(ast)  # same AST after reload
+        assert nid2 == nid1, "Unit should still exist after reload"

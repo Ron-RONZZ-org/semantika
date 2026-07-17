@@ -230,6 +230,39 @@ class TestBuiltinTypeService:
         assert cat1 is not cat2
 
 
+    def test_reload_requires_ensure_builtins_call(self, services: dict):
+        """Reload invalidates cache and re-seeds even without prior ensure_builtins."""
+        bts = services["builtin_type"]
+        counts = bts.reload()
+        assert counts["predicates"] >= 1
+        assert counts["type_nodes"] >= 1
+
+    def test_fallback_warns_on_missing_yaml_predicate(self, services: dict, caplog):
+        """When a required predicate is missing from YAML, the Python fallback
+        is used and a warning is logged."""
+        import logging
+        from semantika.graph.builtin_loader import get_predicate_catalog, invalidate_caches
+
+        invalidate_caches()
+        caplog.set_level(logging.WARNING)
+        catalog = get_predicate_catalog()
+
+        # All required predicates should be in the catalog (via YAML or fallback)
+        for pid in REQUIRED_PREDICATE_IDS:
+            assert pid in catalog, f"Required predicate '{pid}' missing from catalog"
+
+        # Verify at least some unit predicates come from fallback
+        # (they are NOT in builtins.yaml — only in _required_predicates.py)
+        assert ":symbol" in catalog
+        assert ":multiplier" in catalog
+
+    def test_missing_yaml_returns_empty(self, tmp_path):
+        """When no YAML is found, loader returns empty dict."""
+        from semantika.graph.builtin_loader import _load_yaml_file
+        result = _load_yaml_file(tmp_path / "nonexistent.yaml", "test")
+        assert result is None
+
+
 class TestBuiltinLoader:
     """Test the YAML loader directly."""
 

@@ -153,6 +153,44 @@ class TestSystemHandler:
         assert result["data"]["form"] == "confirm-reindex"
 
 
+# ── Builtins handler tests ────────────────────────────────────────────────
+
+
+class TestBuiltinsHandler:
+    """Test !builtins reload command handler."""
+
+    def test_builtins_reload_returns_status(self, services):
+        """!builtins reload returns a status message with counts."""
+        from semantika.graph.builtin_loader import invalidate_caches, get_predicate_catalog
+        invalidate_caches()
+        result = dispatch(["builtins", "reload"], {})
+        assert result["type"] == "status"
+        data = result["data"]
+        assert "predicates" in data["message"]
+        assert "type nodes" in data["message"]
+        # Verify predicates are actually seeded after reload
+        catalog = get_predicate_catalog()
+        assert len(catalog) >= 1
+
+    def test_builtins_reload_quiet(self, services):
+        """!builtins reload --quiet returns minimal status."""
+        result = dispatch(["builtins", "reload"], {"quiet": "true"})
+        assert result["type"] == "status"
+        assert "Builtins reloaded." in result["data"]["message"]
+
+    def test_builtins_reload_preserves_existing(self, services):
+        """Re-reading YAML does not overwrite existing user data."""
+        from semantika.graph.builtin_loader import invalidate_caches
+        invalidate_caches()
+        # First reload seeds the data
+        dispatch(["builtins", "reload"], {})
+        # Re-create a predicate to simulate user data
+        services["predicate"].create({"predicate_id": "test:userPred", "labels": {"en": "user"}})
+        # Second reload should not remove the user predicate
+        dispatch(["builtins", "reload"], {})
+        assert services["predicate"].get("test:userPred") is not None
+
+
 # ── Unit handler tests ───────────────────────────────────────────────────
 
 

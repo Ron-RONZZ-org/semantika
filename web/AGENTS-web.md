@@ -54,9 +54,15 @@ Svelte 5 SPA frontend — command-bar UI with rich result rendering for the Sema
 | Component | Purpose |
 |-----------|---------|
 | `NodeListTab.svelte` | Searchable node list with selection, batch delete |
+| `NodeViewTab.svelte` | Rich viewer for typed nodes (photo, video, document, code) — shows media preview, syntax-highlighted code, metadata, and triple table below |
 | `PredicateListTab.svelte` | Searchable predicate list with selection, batch delete, infinite scroll (ScrollList), sort (predicate_id/created_at), keyboard shortcuts (`s` sort, `/` search, `v` select) |
-| `TripleListTab.svelte` | Filterable triple list (by subject/predicate) |
+| `PromptListTab.svelte` | Prompt file management tab — list/View/Edit/Reset all customisable LLM prompt files with modification status badges, inline editor, reset-all button |
+| `SettingsTab.svelte` | Settings tab — locale selector, ID normalisation toggles (normalise node IDs, strip predicate diacritics), persistent via ``PATCH /api/v1/user/config`` |
 | `TripleAddTab.svelte` | Multi-row batch triple entry with toolbar (New/Insert/Undo/Redo/Select), autocomplete, dual-path object type selector (GUI dropdown + CLI ``--flag`` in field), per-field validation, abbreviation, post-submit status |
+| `TripleDetailTab.svelte` | Triple detail view — shows full triple info (subject, predicate, object) with labels, definitions, and type-specific rendering (KaTeX, numbers, booleans, language-tagged, URI links) |
+| `TripleListTab.svelte` | Filterable triple list (by subject/predicate) |
+| `TripleTemplateForm.svelte` | Dynamic form for applying triple templates — loads params from ``GET /api/v1/triple-templates/{name}``, renders input fields, submits for execution |
+| `TemplateYamlPopup.svelte` | Fallback popup showing generated template YAML (used when LLM tool-calling is unavailable — shows the YAML for manual save instead of automatic ``!template save``) |
 | `tripleAddTypeUtils.js` | Pure functions for the dual-path type system — ``parseFlagFromValue()`` / ``interpretFlag()`` / ``resolveObjectType()``. Extracted for testability. |
 | `SparqlQueryEditor.svelte` | SPARQL query editor with CodeMirror 6 — syntax highlighting, Run/Stop, split-editor/result layout |
 | `SparqlResultTable.svelte` | SPARQL result renderer — table for SELECT, Yes/No for ASK, Turtle for CONSTRUCT, CSV export |
