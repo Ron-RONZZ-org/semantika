@@ -4,6 +4,9 @@ import {
   parseFlagFromValue,
   resolveObjectType,
   OBJECT_TYPE_LABELS,
+  getBoolSuggestions,
+  getFlagSuggestions,
+  TYPE_FLAG_MAP,
 } from "../tripleAddTypeUtils.js";
 
 // ── interpretFlag ────────────────────────────────────────────────────────
@@ -266,5 +269,53 @@ describe("OBJECT_TYPE_LABELS", () => {
   it("has labels for all types", () => {
     const expected = { node: "Node", literal: "Str", int: "Int", float: "Float", bool: "Bool", url: "URL", katex: "KaTeX" };
     expect(OBJECT_TYPE_LABELS).toEqual(expected);
+  });
+});
+
+// ── getBoolSuggestions ────────────────────────────────────────────────────
+
+describe("getBoolSuggestions", () => {
+  it("returns true and false suggestions", () => {
+    const suggestions = getBoolSuggestions();
+    expect(suggestions).toEqual([
+      { id: "true", label: "True" },
+      { id: "false", label: "False" },
+    ]);
+  });
+
+  it("returns a fresh array each call", () => {
+    expect(getBoolSuggestions()).not.toBe(getBoolSuggestions());
+  });
+});
+
+// ── getFlagSuggestions ───────────────────────────────────────────────────
+
+describe("getFlagSuggestions", () => {
+  it("returns all keys from TYPE_FLAG_MAP prefixed with --", () => {
+    const suggestions = getFlagSuggestions();
+    const expectedKeys = Object.keys(TYPE_FLAG_MAP).map(k => `--${k}`);
+    // Should contain all flag keys (order doesn't matter for contains)
+    for (const key of expectedKeys) {
+      expect(suggestions).toContain(key);
+    }
+  });
+
+  it("returns sorted results", () => {
+    const suggestions = getFlagSuggestions();
+    for (let i = 1; i < suggestions.length; i++) {
+      expect(suggestions[i - 1].localeCompare(suggestions[i])).toBeLessThanOrEqual(0);
+    }
+  });
+
+  it("contains --str and --string (abbreviation and full form)", () => {
+    const suggestions = getFlagSuggestions();
+    expect(suggestions).toContain("--str");
+    expect(suggestions).toContain("--string");
+  });
+
+  it("deduplicates entries (no duplicate --flag values)", () => {
+    const suggestions = getFlagSuggestions();
+    const unique = new Set(suggestions);
+    expect(unique.size).toBe(suggestions.length);
   });
 });
