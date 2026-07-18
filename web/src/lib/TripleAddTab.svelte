@@ -5,6 +5,7 @@
    * per-row error display.
    */
 
+  import { createCowrite, CowriteButton, CowritePanel } from "@lightercore/ui/cowrite/index.js";
   import { createHistory } from "./historyStore.svelte.js";
   import { tabStore } from "./tabStore.svelte.js";
   import {
@@ -464,6 +465,39 @@
     selected = next;
   }
 
+  // ── Cowrite (LLM-assisted editing) ───────────────────────────────────────
+  /** Serialize all editable rows into a flat {field_name: text} map for cowrite. */
+  function getCowriteContent() {
+    const content = {};
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (r._status !== "editing") continue;
+      if (r.subject_id)      content[`row_${i}_subject_id`] = r.subject_id;
+      if (r.predicate_id)    content[`row_${i}_predicate_id`] = r.predicate_id;
+      if (r.object_value)    content[`row_${i}_object_value`] = r.object_value;
+    }
+    return content;
+  }
+
+  /** Parse a flat cowrite field name back to row index + column, apply edit. */
+  function applyCowriteEdit(field, text) {
+    const match = field.match(/^row_(\d+)_(subject_id|predicate_id|object_value)$/);
+    if (!match) return;
+    const idx = parseInt(match[1], 10);
+    const col = match[2];
+    if (idx >= 0 && idx < rows.length && rows[idx]._status === "editing") {
+      rows[idx][col] = text;
+      clearRowError(rows[idx]);
+      rows = [...rows]; // trigger reactivity
+    }
+  }
+
+  let cowrite = $state(createCowrite({
+    formType: "triple-add-batch",
+    getCurrentContent: getCowriteContent,
+    applyEdit: applyCowriteEdit,
+  }));
+
   // ── Object type label helper (for the badge-like display) ──────────
   function objectTypeLabel(row) {
     return OBJECT_TYPE_LABELS[resolveObjectType(row)] || resolveObjectType(row);
@@ -509,6 +543,7 @@
         <button class="btn-small" onclick={() => hist.redo()} disabled={!hist.canRedo}
           title="Ctrl+Y">Redo</button>
         <button class="btn-small" onclick={toggleSelectionMode}>v Select</button>
+        <CowriteButton {cowrite} />
       {/if}
     </div>
 
@@ -640,6 +675,10 @@
     </div>
   {/if}
 </div>
+
+{#if cowrite.isActive}
+  <CowritePanel {cowrite} />
+{/if}
 
 <!-- ── Confirm dialogs ── -->
 {#if showDiscardConfirm}

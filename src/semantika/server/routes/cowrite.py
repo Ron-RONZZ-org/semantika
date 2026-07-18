@@ -26,6 +26,7 @@ from semantika.core.cowrite_defaults import (
     DEFAULT_COWRITE_STYLE_UNIT,
     _FORM_TYPE_TO_DOMAIN,
 )
+from semantika.server.cowrite.context import gather_context
 from semantika.server.llm.provider import get_provider
 
 logger = logging.getLogger(__name__)
@@ -97,6 +98,9 @@ async def cowrite_endpoint(data: dict) -> dict:
         defaults=_COWRITE_STYLE_DEFAULTS,
     )
 
+    # Gather writing samples context (RAG — recent samples only, no vector search yet)
+    context = gather_context(form_type, fields)
+
     try:
         result = await cowrite_engine(
             form_type=form_type,
@@ -104,6 +108,7 @@ async def cowrite_endpoint(data: dict) -> dict:
             instruction=instruction,
             chat_fn=provider.chat,
             style_content=style_content,
+            context=context if context else None,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
