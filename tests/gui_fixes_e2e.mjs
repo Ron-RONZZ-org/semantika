@@ -102,22 +102,22 @@ async function test(name, fn) {
     assert(panel.includes("labels"), "Form should have labels field");
   });
 
-  // 3c. Same for !node add code (trailing space)
-  await test("!node add code (trailing space) opens Add Source Code form", async () => {
-    await typeAndRun("!node add code ");
+  // 3c. Same for !node add attachment code (trailing space)
+  await test("!node add attachment code (trailing space) opens Add Source Code form", async () => {
+    await typeAndRun("!node add attachment code ");
     const panel = await page.evaluate(() => {
       const p = document.querySelector(".tab-content.active");
       return p ? p.textContent : "";
     });
-    assert(panel.includes("Node Add Code"), `Form should have 'Node Add Code' heading, got: "${panel.slice(0, 100)}"`);
+    assert(panel.includes("Add Attachment Code"), `Form should have 'Add Attachment Code' heading, got: "${panel.slice(0, 100)}"`);
   });
 
-  // 4-7. Specialized add commands
+  // 4-7. Specialized add commands (attachment group)
   const formTests = [
-    { cmd: "!node add photo", heading: "Node Add Photo" },
-    { cmd: "!node add video", heading: "Node Add Video" },
-    { cmd: "!node add file", heading: "Node Add File" },
-    { cmd: "!node add code", heading: "Node Add Code" },
+    { cmd: "!node add attachment photo", heading: "Add Attachment Photo" },
+    { cmd: "!node add attachment video", heading: "Add Attachment Video" },
+    { cmd: "!node add attachment file", heading: "Add Attachment File" },
+    { cmd: "!node add attachment code", heading: "Add Attachment Code" },
   ];
   for (const { cmd, heading } of formTests) {
     await test(`${cmd} opens ${heading} form`, async () => {
@@ -130,7 +130,43 @@ async function test(name, fn) {
     });
   }
 
-  // 8. !node list API returns correct structure
+  // 8. Media sub-group commands
+  const mediaTests = [
+    { cmd: "!node add media book", heading: "Add Media Book" },
+    { cmd: "!node add media film", heading: "Add Media Film" },
+    { cmd: "!node add media song", heading: "Add Media Song" },
+    { cmd: "!node add media game", heading: "Add Media Game" },
+    { cmd: "!node add media podcast", heading: "Add Media Podcast" },
+  ];
+  for (const { cmd, heading } of mediaTests) {
+    await test(`${cmd} opens ${heading} form`, async () => {
+      await typeAndRun(cmd);
+      const panel = await page.evaluate(() => {
+        const p = document.querySelector(".tab-content.active");
+        return p ? p.textContent : "";
+      });
+      assert(panel.includes(heading), `Expected "${heading}" in form, got: "${panel.slice(0, 100)}"`);
+    });
+  }
+
+  // 9. Scholarly sub-group commands
+  const scholarlyTests = [
+    { cmd: "!node add scholarly paper", heading: "Add Scholarly Paper" },
+    { cmd: "!node add scholarly patent", heading: "Add Scholarly Patent" },
+    { cmd: "!node add scholarly conference", heading: "Add Scholarly Conference" },
+  ];
+  for (const { cmd, heading } of scholarlyTests) {
+    await test(`${cmd} opens ${heading} form`, async () => {
+      await typeAndRun(cmd);
+      const panel = await page.evaluate(() => {
+        const p = document.querySelector(".tab-content.active");
+        return p ? p.textContent : "";
+      });
+      assert(panel.includes(heading), `Expected "${heading}" in form, got: "${panel.slice(0, 100)}"`);
+    });
+  }
+
+  // 10. !node list API returns correct structure
   await test("!node list API returns nodes with total", async () => {
     const result = await apiCommand(["node", "list"]);
     assert(result.type === "node-list", `Expected node-list, got ${result.type}`);

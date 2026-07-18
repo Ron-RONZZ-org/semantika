@@ -12,22 +12,25 @@
   function _inferCommandPath(formType) {
     const map = {
       "node-add": ["node", "add", "concept"],
-      "node-add-photo": ["node", "add", "photo"],
-      "node-add-video": ["node", "add", "video"],
-      "node-add-file": ["node", "add", "file"],
-      "node-add-code": ["node", "add", "code"],
       "node-delete": ["node", "delete"],
       "predicate-add": ["predicate", "add"],
       "predicate-delete": ["predicate", "delete"],
+      "predicate-group-add": ["predicate", "group", "add"],
       "triple-add": ["triple", "add"],
       "triple-delete": ["triple", "delete"],
       "triple-modify": ["triple", "modify"],
       "unit-add": ["unit", "add"],
       "proof-add": ["proof", "add"],
-      "predicate-group-add": ["predicate", "group", "add"],
       "reset-no-backup": ["reset"],
     };
-    return map[formType] || [];
+    if (map[formType]) return map[formType];
+    // Dynamic derivation for node-add-* form types
+    // e.g., "node-add-attachment-photo" → ["node", "add", "attachment", "photo"]
+    // This covers all attachment/media/scholarly variants without hardcoding.
+    if (formType.startsWith("node-add-")) {
+      return formType.split("-");
+    }
+    return [];
   }
 
   async function handleFormSubmit(payload) {
