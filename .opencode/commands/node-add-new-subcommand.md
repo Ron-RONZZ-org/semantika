@@ -2,13 +2,17 @@
 description: |
   Create a new specialised !node add subcommand (e.g. !node add media recipe).
   Provides everything an LLM needs: predicate registration, handler code, CLI/GUI wiring, tests.
-agent: architect
+agent: copilot
 ---
 
-# Adding a New `!node add X` Subcommand
+# TODO: Add a New `!node add X` Subcommand
 
-This document is the canonical reference for implementing a new specialised
-`!node add` subcommand in Semantika.  Follow it step by step.
+$1
+
+fields marked * are required
+
+
+# Instructions
 
 ---
 
@@ -246,3 +250,4 @@ is independently queryable via SPARQL.
 | `parse_duration()` | `node_helpers.py` | Parse `02:30:00` → `"9000"` (seconds) |
 | `resolve_node_refs()` | `node_helpers.py` | Resolve comma-separated node refs → list of node IDs |
 | `split_literals()` | `node_helpers.py` | Split comma-separated string → list of tokens |
+
