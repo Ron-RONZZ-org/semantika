@@ -111,6 +111,7 @@
         queueMicrotask(() => {
           row.object_value = rest;
         });
+        clearRowError(row);
       } else {
         // Unknown flag: show inline warning, keep raw text as-is
         row.object_value = raw;
@@ -118,10 +119,10 @@
       }
     } else {
       row.object_value = raw;
+      clearRowError(row);
       // No flag detected; if raw starts with "--" but no space yet,
       // the user is still typing the flag word — don't change type (efficiency hack)
     }
-    clearRowError(row);
     updateObjectDatalist(raw, row._key, resolveObjectType(row));
   }
 
