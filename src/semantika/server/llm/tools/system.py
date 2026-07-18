@@ -1,34 +1,25 @@
-"""LLM tools for system-level operations.
+"""Semantika's system.now tool — re-exported from lightercore.
 
-Provides the LLM with temporal awareness (``system.now``) so it can
-accurately answer "today", "this week", or date-relative questions.
+The canonical implementation lives in :mod:`lightercore.llm.tools.system`.
+This module re-exports the handler and calls ``@llm_tool`` as a plain
+function so that importing (or reloading) this module always triggers
+registration in the shared registry — regardless of module caching.
 """
 
-from __future__ import annotations
-
-import datetime
-
 from lightercore.permissions import PermissionLevel
+from lightercore.llm.tools import llm_tool
+from lightercore.llm.tools.system import llm_system_now
 
-from semantika.server.llm.tools import llm_tool
-
-
-@llm_tool(
+# Re-register at module level so import always triggers the @llm_tool
+# decorator.  Calling llm_tool(...) as a plain function (not a decorator)
+# works because the decorator factory returns a callable that registers.
+llm_tool(
     name="system.now",
-    description="Get the current date and time.  Use this for any question "
-    "that needs to know 'today', 'this week', 'this month', "
-    "or any date-relative reasoning.",
+    description=(
+        "Get the current date and time in UTC and the local timezone. "
+        "Use this for any temporal reasoning — determining what 'today' "
+        "means, filtering by date, scheduling, or interpreting relative "
+        "time references from the user."
+    ),
     permission_level=PermissionLevel.READ,
-)
-def llm_system_now(**kwargs) -> dict:
-    """Return the current datetime as an ISO 8601 string."""
-    now = datetime.datetime.now(datetime.timezone.utc)
-    return {
-        "success": True,
-        "data": {
-            "datetime": now.isoformat(),
-            "date": now.strftime("%Y-%m-%d"),
-            "weekday": now.strftime("%A"),
-            "timezone": "UTC",
-        },
-    }
+)(llm_system_now)

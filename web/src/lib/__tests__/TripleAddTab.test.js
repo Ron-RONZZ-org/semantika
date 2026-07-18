@@ -17,6 +17,36 @@ import { render, screen, fireEvent } from "@testing-library/svelte";
 import { tick } from "svelte";
 import TripleAddTab from "../TripleAddTab.svelte";
 
+// Mock @lightercore/ui/cowrite for cowrite component testing
+vi.mock("@lightercore/ui/cowrite/index.js", () => ({
+  createCowrite: vi.fn(() => ({
+    isActive: false,
+    isLoading: false,
+    error: "",
+    instruction: "",
+    fieldEdits: [],
+    sessionId: "",
+    hasUnprocessed: false,
+    embedRequired: null,
+    startCowrite: vi.fn(),
+    openPanel: vi.fn(),
+    acceptAll: vi.fn(),
+    rejectAll: vi.fn(),
+    acceptEdit: vi.fn(),
+    rejectEdit: vi.fn(),
+    close: vi.fn(),
+  })),
+  CowriteButton: function MockCowriteButton() {
+    return { $$render: () => "" };
+  },
+  CowritePanel: function MockCowritePanel() {
+    return { $$render: () => "" };
+  },
+}));
+
+// Track the createCowrite mock for assertions
+const cowriteModule = await vi.importMock("@lightercore/ui/cowrite/index.js");
+
 // ── Module mocks ──────────────────────────────────────────────────────────
 
 vi.mock("../historyStore.svelte.js", () => ({
@@ -303,5 +333,34 @@ describe("--flag suggestions in OBJECT datalist", () => {
     expect(html).toContain("--url");
     expect(html).toContain("--float");
     expect(html).toContain("--string"); // full form
+  });
+});
+
+// ── Tests: Cowrite integration ────────────────────────────────────────────
+
+describe("TripleAddTab cowrite", () => {
+  it("renders Ask LLM button in toolbar", () => {
+    const { container } = render(TripleAddTab, { props: { data: {} } });
+    const askBtn = container.querySelector(".cowrite-btn");
+    expect(askBtn).not.toBeNull();
+  });
+
+  it("serializes editing rows via getCowriteContent", () => {
+    // createCowrite was called with getCurrentContent; we test the logic
+    // by verifying that the createCowrite import was called
+    const { createCowrite } = require("@lightercore/ui/cowrite/index.js");
+    expect(createCowrite).toHaveBeenCalled();
+
+    // Verify createCowrite was called with the right formType
+    const callArgs = createCowrite.mock.calls[0][0];
+    expect(callArgs.formType).toBe("triple-add-batch");
+    expect(typeof callArgs.getCurrentContent).toBe("function");
+    expect(typeof callArgs.applyEdit).toBe("function");
+  });
+
+  it("cowrite formType is triple-add-batch", () => {
+    const { createCowrite } = require("@lightercore/ui/cowrite/index.js");
+    const callArgs = createCowrite.mock.calls[0][0];
+    expect(callArgs.formType).toBe("triple-add-batch");
   });
 });

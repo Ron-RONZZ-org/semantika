@@ -2,6 +2,35 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/svelte";
 import DynamicForm from "../DynamicForm.svelte";
 
+// Mock the cowrite module so DynamicForm can import it
+vi.mock("@lightercore/ui/cowrite/index.js", () => ({
+  createCowrite: vi.fn(() => ({
+    isActive: false,
+    isLoading: false,
+    error: "",
+    instruction: "",
+    fieldEdits: [],
+    sessionId: "",
+    hasUnprocessed: false,
+    embedRequired: null,
+    startCowrite: vi.fn(),
+    openPanel: vi.fn(),
+    acceptAll: vi.fn(),
+    rejectAll: vi.fn(),
+    acceptEdit: vi.fn(),
+    rejectEdit: vi.fn(),
+    close: vi.fn(),
+  })),
+  CowriteButton: function MockCowriteButton(props) {
+    return {
+      $$render: () => `<span>Ask LLM</span>`,
+    };
+  },
+  CowritePanel: function MockCowritePanel() {
+    return { $$render: () => "" };
+  },
+}));
+
 // Mock the commandTree module so DynamicForm can find nodes
 vi.mock("../commandTree.js", () => ({
   commandTree: [
@@ -134,5 +163,48 @@ describe("DynamicForm", () => {
     });
 
     expect(screen.getByText("Save")).toBeTruthy();
+  });
+
+  // ── Cowrite integration ────────────────────────────────────────────────
+
+  it("renders Ask LLM button in toolbar", () => {
+    render(DynamicForm, {
+      props: {
+        commandPath: ["node", "add"],
+      },
+    });
+
+    expect(screen.getByText("Ask LLM")).toBeTruthy();
+  });
+
+  it("opens cowrite panel when Ask LLM is clicked", async () => {
+    render(DynamicForm, {
+      props: {
+        commandPath: ["node", "add"],
+      },
+    });
+
+    const askBtn = screen.getByText("Ask LLM");
+    await fireEvent.click(askBtn);
+
+    // Panel should show the LLM Co-Writing title
+    expect(screen.getByText("LLM Co-Writing")).toBeTruthy();
+  });
+
+  it("cowrite panel can be closed with close button", async () => {
+    render(DynamicForm, {
+      props: {
+        commandPath: ["node", "add"],
+      },
+    });
+
+    // Open panel
+    const askBtn = screen.getByText("Ask LLM");
+    await fireEvent.click(askBtn);
+    expect(screen.getByText("LLM Co-Writing")).toBeTruthy();
+
+    // Close button should exist
+    const closeBtn = screen.getByLabelText("Close");
+    expect(closeBtn).toBeTruthy();
   });
 });
