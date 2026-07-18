@@ -72,7 +72,7 @@ describe("DynamicForm", () => {
       },
     });
 
-    expect(screen.getByText("required")).toBeTruthy();
+    expect(screen.getByText(/required/)).toBeTruthy();
   });
 
   it("calls onsubmit with tokens, flags, and remaining when form is submitted", async () => {

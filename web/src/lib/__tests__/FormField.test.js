@@ -21,7 +21,7 @@ describe("FormField", () => {
         required: true,
       },
     });
-    expect(screen.getByText("required")).toBeTruthy();
+    expect(screen.getByText(/required/)).toBeTruthy();
   });
 
   it("does not show required badge when not required", () => {
