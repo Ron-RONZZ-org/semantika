@@ -24,7 +24,11 @@ export function shouldIntercept(input) {
   if (!node) return { intercept: false };
 
   const leafName = effectiveTokens[effectiveTokens.length - 1];
-  const isAddOrWrite = leafName === "add" || leafName === "write";
+  // Check if ANY token in the path is "add" or "write" — handles nested
+  // sub-groups like "node.add.media.book" where the leaf is "book", not "add".
+  // Without this, nested create commands (media, scholarly, attachment)
+  // never open the interactive GUI form.
+  const isAddOrWrite = effectiveTokens.some(t => t === "add" || t === "write");
   const isInteractive = node.interactive === true;
   if (!isAddOrWrite && !isInteractive) return { intercept: false };
 
@@ -54,6 +58,10 @@ export function shouldIntercept(input) {
   const addFormType = resolveAddFormType(effectiveTokens, leafName);
   const addTitle = resolveAddTitle(addFormType);
 
+  // Determine the command tokens actually consumed by the handler
+  // (as opposed to positional params). Used by FormTab to populate DynamicForm.
+  const cmdTokens = effectiveTokens.slice(0, cmdTokenCount);
+
   return {
     intercept: true,
     listTokens,
@@ -61,6 +69,7 @@ export function shouldIntercept(input) {
     addFormType,
     addTitle,
     initialData,
+    commandPath: cmdTokens,
   };
 }
 
@@ -144,11 +153,8 @@ function buildInitialData(node, leafName, paramTokens, flags) {
 function resolveAddFormType(tokens, leafName) {
   const path = tokens.join(" ");
 
+  // Legacy direct-leaft patterns (commands directly under the domain)
   if (/^node\s+add\s+concept$/i.test(path)) return "node-add";
-  if (/^node\s+add\s+photo$/i.test(path)) return "node-add-photo";
-  if (/^node\s+add\s+video$/i.test(path)) return "node-add-video";
-  if (/^node\s+add\s+file$/i.test(path)) return "node-add-file";
-  if (/^node\s+add\s+code$/i.test(path)) return "node-add-code";
   if (/^predicate\s+add$/i.test(path)) return "predicate-add";
   if (/^predicate\s+group\s+add$/i.test(path)) return "predicate-group-add";
   if (/^triple\s+add$/i.test(path)) return "triple-add";
@@ -158,16 +164,19 @@ function resolveAddFormType(tokens, leafName) {
   if (/^backup\s+config\s+add$/i.test(path)) return "backup-config-add";
   if (/^backup\s+config\s+modify$/i.test(path)) return "backup-config-modify";
 
+  // Dynamic derivation for node.add sub-groups (attachment, media, scholarly, etc.)
+  // Matches the backend's convention: tokens.join("-") from the dot-separated path.
+  // e.g., ["node","add","media","book"] → "node-add-media-book"
+  if (/^node\s+add\s+/.test(path)) {
+    return tokens.join("-");
+  }
+
   return leafName;
 }
 
 function resolveAddTitle(addFormType) {
   const titles = {
     "node-add": "Add Node",
-    "node-add-photo": "Add Photo",
-    "node-add-video": "Add Video",
-    "node-add-file": "Add Document",
-    "node-add-code": "Add Source Code",
     "predicate-add": "Add Predicate",
     "triple-add": "Add Triple",
     "unit-add": "Add Unit",
@@ -176,5 +185,15 @@ function resolveAddTitle(addFormType) {
     "backup-config-add": "Add Backup Strategy",
     "backup-config-modify": "Modify Backup Strategy",
   };
-  return titles[addFormType] || "Add";
+  if (titles[addFormType]) return titles[addFormType];
+  // Dynamic: "node-add-media-book" → "Add Media Book"
+  const match = addFormType.match(/^node-add-(.+)$/);
+  if (match) {
+    const label = match[1]
+      .split("-")
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ");
+    return "Add " + label;
+  }
+  return "Add";
 }

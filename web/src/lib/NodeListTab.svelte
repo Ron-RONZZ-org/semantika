@@ -40,11 +40,23 @@
   let filter = createFilterState(FILTER_CATEGORIES);
 
   const nodeTypes = [
+    // Generic
     { label: "Node (general)", command: ["node", "add", "concept"], formType: "node-add", icon: "\u25CB" },
-    { label: "Photo", command: ["node", "add", "photo"], formType: "node-add-photo", icon: "\u{1F5BC}" },
-    { label: "Video", command: ["node", "add", "video"], formType: "node-add-video", icon: "\u{1F3AC}" },
-    { label: "Document", command: ["node", "add", "file"], formType: "node-add-file", icon: "\u{1F4C4}" },
-    { label: "Source Code", command: ["node", "add", "code"], formType: "node-add-code", icon: "\u{1F4BB}" },
+    // File attachment (under node.add.attachment.*)
+    { label: "Photo", command: ["node", "add", "attachment", "photo"], formType: "node-add-attachment-photo", icon: "\u{1F5BC}" },
+    { label: "Video", command: ["node", "add", "attachment", "video"], formType: "node-add-attachment-video", icon: "\u{1F3AC}" },
+    { label: "Document", command: ["node", "add", "attachment", "file"], formType: "node-add-attachment-file", icon: "\u{1F4C4}" },
+    { label: "Source Code", command: ["node", "add", "attachment", "code"], formType: "node-add-attachment-code", icon: "\u{1F4BB}" },
+    // Media types (under node.add.media.*)
+    { label: "Book", command: ["node", "add", "media", "book"], formType: "node-add-media-book", icon: "\u{1F4D6}" },
+    { label: "Film", command: ["node", "add", "media", "film"], formType: "node-add-media-film", icon: "\u{1F3AC}" },
+    { label: "Song", command: ["node", "add", "media", "song"], formType: "node-add-media-song", icon: "\u{1F3B5}" },
+    { label: "Game", command: ["node", "add", "media", "game"], formType: "node-add-media-game", icon: "\u{1F3AE}" },
+    { label: "Podcast", command: ["node", "add", "media", "podcast"], formType: "node-add-media-podcast", icon: "\u{1F399}" },
+    // Scholarly types (under node.add.scholarly.*)
+    { label: "Paper", command: ["node", "add", "scholarly", "paper"], formType: "node-add-scholarly-paper", icon: "\u{1F4DC}" },
+    { label: "Patent", command: ["node", "add", "scholarly", "patent"], formType: "node-add-scholarly-patent", icon: "\u{1F4CB}" },
+    { label: "Conference", command: ["node", "add", "scholarly", "conference"], formType: "node-add-scholarly-conference", icon: "\u{1F310}" },
   ];
 
   const BUILTIN_TYPE_IDS = new Set(["PHOTO", "VIDEO", "DOCUMENT", "SOURCE_CODE"]);

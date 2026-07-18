@@ -63,6 +63,7 @@
             } else {
               tabStore.open("form", routing.addTitle || "Add", {
                 form: routing.addFormType,
+                commandPath: routing.commandPath,
                 initialData: enrichedInitial,
               }, { idKey: `form-${routing.addFormType}` });
             }

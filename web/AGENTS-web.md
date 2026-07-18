@@ -84,6 +84,37 @@ Svelte 5 SPA frontend — command-bar UI with rich result rendering for the Sema
 | `QuizPanel.svelte` | Multiple-choice quiz for review sessions |
 | `BannerContainer.svelte` | Inline notification banners |
 
+## Command Routing & Form Interception (`commandRouter.js`)
+
+The `shouldIntercept(input)` function in `commandRouter.js` determines whether a `!command` should be intercepted
+by the frontend to show an interactive GUI form (rather than being sent directly to the backend).
+
+**Interception logic** (in priority order):
+
+1. **Token check**: If ANY token in the command path is `"add"` or `"write"`, the command is treated as a
+   "create" command and always intercepted (the form opens so the user can fill in fields).
+2. **Interactive check**: If the resolved leaf node has `interactive: true` in the command tree AND required
+   params/flags are missing, the command is intercepted.
+3. **Fallthrough**: Otherwise, the command is sent directly to the backend.
+
+**Important historical note**: The `isAddOrWrite` check (step 1) used to look only at the LAST token
+(`leafName === "add"`). This broke after the refactoring that introduced intermediate sub-groups under
+`node.add.*` (like `node.add.media.book`, `node.add.attachment.photo`, `node.add.scholarly.paper`).
+These commands have type-name leaf tokens (`book`, `photo`, `paper`) rather than `"add"` or `"write"`,
+so they were never intercepted. The fix was to check ALL tokens in the path (not just the leaf).
+
+### Form type resolution (`resolveAddFormType`)
+
+Maps a command path to a form type string (e.g. `"node-add-media-book"`). Uses explicit mappings for
+legacy commands and dynamic derivation (`tokens.join("-")`) for all `node.add.*` sub-groups.
+
+### Command path propagation
+
+When a command is intercepted, `shouldIntercept` returns `commandPath` (the resolved command tokens).
+This is passed to `FormTab.svelte` via the tab data as `commandPath`, which `DynamicForm.svelte` uses
+to look up command metadata (params/flags) from the tree. This avoids relying on the stale
+`_inferCommandPath()` fallback for new command variants.
+
 ## Autocomplete Flow
 
 1. On startup, `initCommandTree()` fetches `GET /api/v1/command/tree`
