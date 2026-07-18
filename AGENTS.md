@@ -260,12 +260,24 @@ semantika/
 │               │   ├── trash.py
 │           │       ├── unit.py
 │           │       └── user_config.py
-│           ├── llm/             # LLM provider abstraction
+│           ├── llm/             # LLM provider abstraction + tool registry
 │           │   ├── __init__.py
 │           │   ├── provider.py  # Provider singleton (get_provider / reset_provider)
 │           │   ├── tool_loop.py # Re-exports from lightercore.llm.tool_loop
 │           │   ├── system_prompt.py  # Two-file system prompt (base + AGENTS.md)
-│           │   └── prompt_defaults.py  # Shipped defaults for prompt files
+│           │   ├── prompt_defaults.py  # Shipped defaults for prompt files
+│           │   └── tools/       # Dedicated LLM tool registry (AI-optimised, no CLI deps)
+│           │       ├── __init__.py  # @llm_tool decorator, registry, dispatch
+│           │       ├── graph.py     # graph.stats
+│           │       ├── node.py      # node.search/view/create/update/delete
+│           │       ├── predicate.py # predicate.search/view/create
+│           │       ├── triple.py    # triple.search/add/delete
+│           │       ├── template.py  # template.list/view/apply
+│           │       ├── search.py    # search.fts
+│           │       ├── sparql.py    # sparql.query/status
+│           │       ├── system.py    # system.now
+│           │       ├── review.py    # review.status
+│           │       └── unit.py      # unit.search/info
 │           ├── templates/       # Triple template management
 │           │   ├── __init__.py + loader.py  # YAML file discovery and parsing
 │           │   ├── models.py   # TemplateParam, TriplePattern, TripleTemplate
@@ -549,6 +561,86 @@ The LLM retrieves this data via ``!context.get --type all`` (READ-level,
 no HITL) to get exact IDs instead of guessing or relying on free-text
 summaries.  This replaces the old ``$AVAILABLE_PREDICATES`` injection
 pattern in ``/template`` T2.
+
+## Dedicated LLM Tools (``@llm_tool``)
+
+Semantika uses a **separate LLM tool registry** independent from the CLI ``!command``
+registry.  The ``POST /api/v1/llm/chat`` endpoint uses dedicated AI-optimised tools
+that call graph services directly — no CLI flag parsing, no frontend-shaped response
+wrapping.
+
+### Architecture
+
+``src/semantika/server/llm/tools/``
+
+| File | Purpose |
+|------|---------|
+| ``__init__.py`` | ``@llm_tool()`` decorator, registry, ``get_llm_tools()``, ``dispatch_llm_tool()`` |
+| ``graph.py`` | ``graph.stats`` |
+| ``node.py`` | ``node.search``, ``.view``, ``.create``, ``.update``, ``.delete`` |
+| ``predicate.py`` | ``predicate.search``, ``.view``, ``.create`` |
+| ``triple.py`` | ``triple.search``, ``.add``, ``.delete`` |
+| ``template.py`` | ``template.list``, ``.view``, ``.apply`` |
+| ``search.py`` | ``search.fts`` |
+| ``sparql.py`` | ``sparql.query``, ``.status`` |
+| ``system.py`` | ``system.now`` |
+| ``review.py`` | ``review.status`` |
+| ``unit.py`` | ``unit.search``, ``.info`` |
+
+### Tool registration
+
+Tools are registered with the ``@llm_tool()`` decorator::
+
+    @llm_tool(
+        name="node.search",
+        description="Search nodes by ID, label, or FTS text query",
+        params=[{"name": "q", "type": "string", "description": "Search query", "required": True}],
+        permission_level=PermissionLevel.READ,
+    )
+    def llm_node_search(q: str = "", **kwargs) -> dict:
+        ...
+
+### Return format
+
+Every tool returns a uniform dict::
+
+    # Success
+    {"success": True, "data": {...}}
+
+    # Error
+    {"success": False, "error": "descriptive message"}
+
+### Permission model
+
+- **READ** tools execute immediately without confirmation
+- **WRITE** tools gate behind HITL approval (same ``confirm_tool`` mechanism as CLI commands)
+- Permission is resolved via ``get_llm_tool_level()``, passed as ``get_tool_level_fn`` to ``run_tool_loop``
+- Falls back to CLI command registry level if the tool path isn't in the LLM registry
+
+### Why separate tools?
+
+| CLI commands | LLM tools |
+|--------------|-----------|
+| ~40+ subcommands, one per operation | ~22 higher-level tools |
+| Frontend-shaped responses (``type``, ``title``, ``data``) | Structured data (``success``, ``data``/``error``) |
+| CLI flag parsing + positional args | Clean keyword arguments |
+| Designed for human consumption | Designed for AI consumption |
+| ``!node add concept|media book|scholarly paper|...`` | ``node.create`` with ``type`` param |
+
+### Chat endpoint migration
+
+The ``POST /api/v1/llm/chat`` endpoint now uses ``get_llm_tools()`` (not ``defs_to_tools(get_command_definitions())``).
+The dispatch was changed from ``dispatch()`` (CLI pipeline) to ``dispatch_llm_tool()`` (direct service calls).
+``get_tool_level_fn=get_llm_tool_level`` is passed for permission resolution.
+
+The prompt commands endpoint (``POST /api/v1/prompt-commands/execute``) continues to use CLI definitions
+for backward compatibility with multi-turn flows.
+
+### Future: lightercore extraction
+
+The ``@llm_tool`` decorator, registry, dispatch, and permission helpers are currently
+vendored in ``semantika.server.llm.tools``.  A future extraction to
+``lightercore.llm.tools`` will make them shared with lighterbird.
 
 ## Templates (``!template``)
 
