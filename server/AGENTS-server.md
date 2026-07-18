@@ -37,13 +37,31 @@ FastAPI web server: application factory, API routes, middleware, command engine,
   - **Suggestions/datalist**: Flags with a ``suggestions`` list (e.g. programming languages for ``--lang``) are rendered as an ``<input>`` + ``<datalist>`` for autocomplete.
   - **Code type**: ``"type": "code"`` renders a multi-line ``<textarea>`` in the GUI form, paired with a Preview button.
 - **LLM integration**: The chat endpoint can call graph query methods. Keep LLM calls async with timeout. The provider at `server/llm/provider.py` extends `lightercore.llm.BaseLLMProvider` and delegates config/profile persistence to `lightercore.llm` modules.
-- **LLM chat flow (multi-round tool-calling)**:
-  1. `POST /api/v1/llm/chat` — user sends NL message; backend runs `run_tool_loop` which calls `provider.chat_with_tools` with registered tool definitions
-  2. LLM can call multiple tools per round — READ-level tools execute immediately, WRITE/DESTRUCTIVE tools gate behind user confirmation
-  3. If write tools are present, the endpoint returns `{"type": "confirm_tool", "session_id": "...", "batch": [...], "message": "..."}` instead of a final reply
-  4. Frontend shows a confirmation dialog with the batch of pending operations
-  5. Frontend calls `POST /api/v1/llm/chat/resume` with `{session_id, decisions}` (or `confirmed: bool`) to approve or reject
-  6. Resume continues the tool loop: approved tools execute, rejected tools are recorded as user rejection; LLM may call more tools or produce a final text answer
+- **LLM chat flow (multi-round tool-calling with dedicated LLM tools)**:
+  1. `POST /api/v1/llm/chat` — user sends NL message; backend runs `run_tool_loop` which calls `provider.chat_with_tools` with **dedicated AI-optimised tools** from `server/llm/tools/`
+  2. The LLM receives ~22 higher-level tools (vs 40+ CLI subcommands) that call graph services **directly** — no CLI flag parsing or frontend-shaped response wrapping
+  3. READ-level tools execute immediately, WRITE/DESTRUCTIVE tools gate behind user confirmation
+  4. If write tools are present, the endpoint returns `{"type": "confirm_tool", ...}` instead of a final reply
+  5. Frontend calls `POST /api/v1/llm/chat/resume` with `{session_id, decisions}` to approve/reject
+  6. Resume continues the tool loop: approved tools execute, rejected tools are recorded as user rejection
+- **LLM tool registry** (`server/llm/tools/`): Tools are registered via `@llm_tool()` decorator (independent from `@command()`). Each tool:
+  - Calls graph services directly (`NodeService`, `TripleService`, etc.) — no CLI dispatch
+  - Returns `{"success": True, "data": ...}` or `{"success": False, "error": "..."}`
+  - Has a `permission_level` (READ | WRITE) for HITL gating
+  - Tools use `domain.verb` naming (e.g. `node.search`, `triple.add`) — underscore format for OpenAI (`node_search`, `triple_add`)
+- **Domain tool modules**: One file per domain under `server/llm/tools/`:
+  - `graph.py` — `graph.stats`
+  - `node.py` — `node.search`, `.view`, `.create`, `.update`, `.delete`
+  - `predicate.py` — `predicate.search`, `.view`, `.create`
+  - `triple.py` — `triple.search`, `.add`, `.delete`
+  - `template.py` — `template.list`, `.view`, `.apply`
+  - `search.py` — `search.fts`
+  - `sparql.py` — `sparql.query`, `.status`
+  - `system.py` — `system.now`
+  - `review.py` — `review.status`
+  - `unit.py` — `unit.search`, `.info`
+- **Chat resume** (`POST /api/v1/llm/chat/resume`): Uses `dispatch_llm_tool` for execution (same as the initial call) and `get_llm_tool_level` for permission resolution.
+- **Combined metadata lookup**: `_get_combined_metadata()` checks the LLM tool registry first, then falls back to the CLI command registry. This ensures `confirm_tool` dialog descriptions come from the LLM tool's AI-optimised descriptions when available.
 - **Same flow for prompt commands**: `/api/v1/prompt-commands/execute` returns `confirm_tool` for write tools; resume via `/api/v1/prompt-commands/execute/resume`
 - **Legacy single-command confirm**: `POST /api/v1/llm/confirm` still available for the old flow (`{"type": "confirm", ...}` from the deprecated `generate_command` path). Both the backend and frontend support both formats.
 - **User hooks directory**: ``~/.config/semantika/hooks/*.py`` — every ``.py`` file in this directory is loaded at startup (after system commands register). Each file executes in a pre-populated namespace so no imports are needed — ``command``, ``group_command``, ``call_system_command``, ``PermissionLevel``, ``CommandError``, ``CommandValidationError``, ``dispatch``, and ``get_services`` are automatically available. Files are loaded alphabetically; ``__init__.py``, hidden files, and editor backups are skipped. One bad file does not block others. Overridden commands can delegate to the original via ``call_system_command()``. See ``registry.py:freeze_system_commands`` / ``call_system_command`` / ``load_user_hooks`` / ``_build_hook_namespace``.

@@ -1,13 +1,17 @@
 """LLM integration routes — multi-round tool-calling chat with HITL.
 
-``POST /api/v1/chat``        — Multi-round tool loop, replacing old one-shot flow.
+``POST /api/v1/chat``        — Multi-round tool loop using dedicated LLM tools.
 ``POST /api/v1/chat/resume`` — Resume paused HITL session.
 ``POST /api/v1/confirm``     — Legacy single-command confirmation (kept for compat).
 
 The chat endpoint uses the shared :func:`run_tool_loop` from lightercore.
-The LLM receives all registered ``!commands`` as native tools and can
-call them, see results, and iterate until it produces a final answer.
-WRITE-level tools gate behind user confirmation via ``/chat/resume``.
+The LLM receives **dedicated AI-optimised tools** from
+:mod:`~semantika.server.llm.tools` (not CLI command definitions) — these
+call graph services directly with clean parameter schemas and return
+structured data without frontend-shaped wrapping.  WRITE-level tools gate
+behind user confirmation via ``/chat/resume``.
+
+See :mod:`semantika.server.llm.tools` for the tool registry.
 """
 
 from __future__ import annotations
@@ -15,7 +19,6 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, HTTPException
-from lightercore.llm.base import defs_to_tools
 from lightercore.llm.tool_loop import resume_execution, run_tool_loop
 from pydantic import BaseModel
 
@@ -29,6 +32,12 @@ from semantika.server.command.registry import (
 )
 from semantika.server.llm.provider import get_provider
 from semantika.server.llm.system_prompt import load_system_prompt, reload_system_prompt, system_prompt_path
+from semantika.server.llm.tools import (
+    dispatch_llm_tool,
+    get_llm_tool_level,
+    get_llm_tool_metadata,
+    get_llm_tools,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -212,18 +221,26 @@ async def reload_system_prompt_endpoint() -> dict:
 # ── Chat ─────────────────────────────────────────────────────────────────
 
 
-def _dispatch_path(path: str, flags: dict) -> dict:
-    """Dispatch a command by dot-separated path."""
-    return dispatch(path.split("."), flags)
+def _get_combined_metadata(path: str) -> dict | None:
+    """Combined metadata lookup: LLM tool registry first, then CLI registry.
+
+    The LLM tool registry stores ``description`` in its entries, which
+    :func:`~lightercore.llm.tool_loop.run_tool_loop` uses to populate
+    the ``confirm_tool`` dialog descriptions.
+    """
+    meta = get_llm_tool_metadata(path)
+    if meta:
+        return meta
+    return get_handler_metadata(path)
 
 
 @router.post("/chat")
 async def chat(req: ChatRequest):
     """Chat with the LLM using multi-round tool-calling.
 
-    Replaces the old one-shot ``generate_command`` → execute → summarise
-    pipeline.  The LLM can now call tools, see results, and iterate
-    until it produces a final answer.
+    The LLM receives **dedicated AI-optimised tools** (not CLI command
+    definitions) that call graph services directly.  WRITE-level tools
+    gate behind user confirmation via ``/chat/resume``.
     """
     if not req.message.strip():
         return {"reply": "Say something!"}
@@ -233,9 +250,6 @@ async def chat(req: ChatRequest):
         return {"reply": stub_response(req.message)["reply"]}
 
     # Build messages with system prompt + conversation history
-    # load_system_prompt() reads the user-editable system_prompt.md file
-    # from the config directory, auto-seeding with the shipped default
-    # on first run.
     context = list(req.context or req.history or [])
     messages = [
         {"role": "system", "content": load_system_prompt()},
@@ -243,8 +257,8 @@ async def chat(req: ChatRequest):
         {"role": "user", "content": req.message},
     ]
 
-    defs = get_command_definitions()
-    tools = defs_to_tools(defs) if defs else []
+    # Use dedicated LLM tools (not CLI command definitions)
+    tools = get_llm_tools()
 
     # Run the multi-round tool loop
     result = await run_tool_loop(
@@ -252,9 +266,10 @@ async def chat(req: ChatRequest):
         tools=tools,
         name="chat",
         provider=provider,
-        dispatch_fn=_dispatch_path,
-        get_handler_metadata_fn=get_handler_metadata,
+        dispatch_fn=dispatch_llm_tool,
+        get_handler_metadata_fn=_get_combined_metadata,
         get_command_level_fn=get_command_level,
+        get_tool_level_fn=get_llm_tool_level,
     )
 
     # Handle confirm_tool pause
@@ -266,9 +281,7 @@ async def chat(req: ChatRequest):
     if reply:
         return {"reply": reply}
 
-    # Tool loop produced nothing (error, empty response, or exhaustion).
-    # Retry as a plain chat (no tool definitions) to distinguish between
-    # an API error and the LLM simply declining to use tools.
+    # Tool loop produced nothing — retry as plain chat
     logger.warning("Tool loop returned empty for message=%r — retrying as plain chat", req.message)
     try:
         fallback = await provider.chat([
@@ -312,9 +325,10 @@ async def chat_resume(data: dict) -> dict:
             confirmed=data.get("confirmed"),
             feedback=data.get("feedback"),
             provider=provider,
-            dispatch_fn=_dispatch_path,
-            get_handler_metadata_fn=get_handler_metadata,
+            dispatch_fn=dispatch_llm_tool,
+            get_handler_metadata_fn=_get_combined_metadata,
             get_command_level_fn=get_command_level,
+            get_tool_level_fn=get_llm_tool_level,
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
