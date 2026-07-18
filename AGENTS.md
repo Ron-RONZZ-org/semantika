@@ -156,6 +156,34 @@ SEMANTIKA_PORT=8765 npm run dev
 
 The default fallback is `SEMANTIKA_PORT || 6015` in ``vite.config.js``.
 
+### Node modules in git worktrees
+
+Git worktrees do NOT share `node_modules/` with the parent repo — it appears as an
+empty directory. There are three ways to run Node.js tools (Vitest, Vite, Playwright)
+from a worktree:
+
+1. **NODE_PATH** (one-shot, no setup):
+   ```bash
+   NODE_PATH=/path/to/parent/web/node_modules npx vitest run web/src/lib/__tests__/...
+   ```
+
+2. **Symlink** (persistent local setup):
+   ```bash
+   ln -sfn /path/to/parent/web/node_modules web/node_modules
+   ```
+   Once created, all Node.js tools resolve dependencies from the parent's
+   `node_modules` as if they were installed locally. The symlink is gitignored.
+
+3. **Full install** (isolated, slow):
+   ```bash
+   cd web && npm install
+   ```
+   Use this only if you need to modify `package.json` or work offline for extended
+   periods.
+
+Method 2 is the recommended balance between convenience and setup effort for this
+project.
+
 ---
 
 ## User-Simulation Testing
