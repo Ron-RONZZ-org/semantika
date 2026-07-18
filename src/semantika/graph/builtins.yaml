@@ -110,7 +110,13 @@ predicates:
     tier: 1
     source: semantika
     labels: {en: part of, eo: parto de, fr: fait partie de}
-    descriptions: {en: The subject is a part or member of the object (e.g. chapter partOf book)}
+    descriptions: {en: The subject is a part or member of the object (e.g. chapter partOf book), eo: La subjekto estas parto aŭ membro de la objekto}
+
+  - id: sm:hasExcerpt
+    tier: 1
+    source: semantika
+    labels: {en: excerpt, eo: eltiraĵo, fr: extrait}
+    descriptions: {en: A source has this excerpt or quotation, eo: Fonto havas ĉi tiun eltiraĵon}
 
   # ── Media predicates (Tier 1) ───────────────────────────────────────
 
@@ -471,3 +477,9 @@ type_nodes:
   - id: CONFERENCE
     labels: {en: Conference, eo: Konferenco, fr: Conférence}
     definitions: {en: An academic or industry conference, eo: Akademia aŭ industria konferenco}
+
+  # ── Quotation type node ───────────────────────────────────────────────
+
+  - id: QUOTE
+    labels: {en: Quote, eo: Citaĵo, fr: Citation}
+    definitions: {en: A quotation or excerpt attributed to a source, eo: Citaĵo el fonto}

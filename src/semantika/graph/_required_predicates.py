@@ -105,6 +105,11 @@ REQUIRED_PREDICATES: dict[str, SeedPredicate] = {
         "labels": {"en": "part of", "eo": "parto de", "fr": "fait partie de"},
         "descriptions": {"en": "The subject is a part or member of the object (e.g. chapter partOf book)"},
     },
+    "sm:hasExcerpt": {
+        "source": "semantika",
+        "labels": {"en": "excerpt", "eo": "eltiraĵo", "fr": "extrait"},
+        "descriptions": {"en": "A source has this excerpt or quotation", "eo": "Fonto havas ĉi tiun eltiraĵon"},
+    },
     # ── Media predicates ───────────────────────────────────────────────
     "sm:hasISBN": {
         "source": "semantika",

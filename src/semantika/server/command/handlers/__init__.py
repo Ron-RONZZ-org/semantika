@@ -13,6 +13,7 @@ from . import (
     node,  # noqa: F401 — node CRUD + node trash
     node_attachment,  # noqa: F401 — !node add attachment photo|video|file|code
     node_media,  # noqa: F401 — !node add media book|film|song|game|podcast
+    node_quote,  # noqa: F401 — !node add quote
     node_scholarly,  # noqa: F401 — !node add scholarly paper|patent|conference
     predicate,  # noqa: F401 — predicate CRUD
     predicate_group,  # noqa: F401 — predicate group CRUD
