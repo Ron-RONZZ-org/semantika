@@ -11,7 +11,9 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from semantika.core import SemantikaDB, data_dir, ensure_dirs
+from semantika.core import SemantikaDB
+from semantika.core import data_dir, ensure_dirs
+from semantika.server.cowrite import COWRITE_SAMPLES_SCHEMA
 from semantika.core.crud import now
 
 logger = logging.getLogger(__name__)
@@ -405,6 +407,10 @@ def init_db() -> None:
 
     # Create review/proof tables
     for sql in {**REVIEW_SCHEMA, **PROOF_SCHEMA}.values():
+        db.execute(sql)
+
+    # Create cowrite writing samples table
+    for sql in COWRITE_SAMPLES_SCHEMA.values():
         db.execute(sql)
 
     # Create FTS tables + populate
