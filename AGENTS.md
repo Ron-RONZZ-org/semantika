@@ -408,7 +408,9 @@ Semantika provides an **Ask LLM** button on dynamic forms (``!node add``, ``!pre
 | Frontend engine | ``@lightercore/ui/cowrite/CowriteEngine.svelte.js`` | Session state machine, API calls, accept/reject logic |
 | Frontend button | ``@lightercore/ui/cowrite/CowriteButton.svelte`` | "✨ Ask LLM" toolbar button |
 | Frontend panel | ``@lightercore/ui/cowrite/CowritePanel.svelte`` | Slide-in overlay with diff visualization + controls |
-| Form integration | ``web/src/lib/DynamicForm.svelte`` | Generic ``getValues()``/``setField()`` wiring — all DynamicForm-based commands get cowrite for free |
+| Form integration (DynamicForm) | ``web/src/lib/DynamicForm.svelte`` | Generic ``getValues()``/``setField()`` wiring — all DynamicForm-based commands get cowrite for free |
+| Form integration (triple batch) | ``web/src/lib/TripleAddTab.svelte`` | Multi-row batch cowrite — serializes rows as ``row_0_subject_id`` etc., maps edits back to individual cells |
+| Context/RAG | ``src/semantika/server/cowrite/context.py`` | Writing samples DB table, ``gather_context()`` returns recent samples for style injection |
 
 ### Style Files
 
@@ -426,7 +428,7 @@ Style files live at ``~/.config/semantika/cowrite_style*.md`` and are auto-seede
 
 ### Writing Samples
 
-Context gathering (writing samples RAG) is **deferred**. Semantika v1 cowrite does not collect or inject past writing samples.
+Context gathering (writing samples RAG) uses a ``cowrite_samples`` table in the graph DB. ``gather_context()`` in ``src/semantika/server/cowrite/context.py`` retrieves up to 5 most recent samples for style matching. **Collection is not yet implemented** — no code triggers saving a writing sample after approved edits. When collection is added, samples will be inserted into ``cowrite_samples`` and automatically picked up by ``gather_context()`` on subsequent cowrite requests.
 
 ---
 
