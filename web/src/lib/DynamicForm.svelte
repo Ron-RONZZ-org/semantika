@@ -1,6 +1,7 @@
 <script>
   import { findNode } from "./commandTree.js";
   import FormField from "./FormField.svelte";
+  import { createCowrite, CowriteButton, CowritePanel } from "@lightercore/ui/cowrite/index.js";
 
   let { commandPath = [], initialData = {}, onsubmit = async () => {} } = $props();
 
@@ -62,6 +63,33 @@
     if (isSensitive(flagDef.name)) return "password";
     return "text";
   }
+
+  // ── Cowrite (LLM-assisted editing) ───────────────────────────────────────
+  // Derive form type from command path: ["node", "add", "concept"] → "node-add-concept"
+  let cowriteFormType = $derived(commandPath.join("-"));
+
+  /** Collect all text field values for cowrite (exclude booleans, checkboxes). */
+  function getCowriteContent() {
+    const content = {};
+    for (const p of params) {
+      if (p.type !== "flag" && fieldValues[p.name]) content[p.name] = fieldValues[p.name];
+    }
+    for (const f of flags) {
+      if (f.type !== "flag" && fieldValues[f.name]) content[f.name] = fieldValues[f.name];
+    }
+    return content;
+  }
+
+  /** Apply a cowrite edit back to a form field. */
+  function applyCowriteEdit(field, text) {
+    setField(field, text);
+  }
+
+  let cowrite = $state(createCowrite({
+    formType: cowriteFormType,
+    getCurrentContent: getCowriteContent,
+    applyEdit: applyCowriteEdit,
+  }));
 
   /** Collect grouped fields — each group gets rendered as a toggle, non-grouped fields render inline. */
   let groupedFlags = $derived.by(() => {
@@ -256,8 +284,13 @@
 
   <div class="form-actions">
     <button type="submit" disabled={submitting}>{submitting ? "Saving\u2026" : "Save"}</button>
+    <CowriteButton {cowrite} />
   </div>
 </form>
+
+{#if cowrite.isActive}
+  <CowritePanel {cowrite} />
+{/if}
 
 <!-- Code Preview Modal -->
 {#if showPreview}

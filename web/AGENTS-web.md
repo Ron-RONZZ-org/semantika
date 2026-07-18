@@ -68,7 +68,7 @@ Svelte 5 SPA frontend — command-bar UI with rich result rendering for the Sema
 | `SparqlResultTable.svelte` | SPARQL result renderer — table for SELECT, Yes/No for ASK, Turtle for CONSTRUCT, CSV export |
 | `sparqlStore.svelte.js` | Reactive store for SPARQL query state: query text, results, loading, error, prefix autocomplete |
 | `sparqlLanguage.js` | CodeMirror 6 SPARQL language support (keyword highlighting via `@codemirror/lang-sql`) |
-| `DynamicForm.svelte` | Generic form builder for command params |
+| `DynamicForm.svelte` | Generic form builder for command params. Integrates cowrite (LLM-assisted editing) via ``createCowrite`` from ``@lightercore/ui/cowrite`` — derives ``formType`` from ``commandPath.join("-")``, provides ``getCowriteContent()`` for text field collection and ``applyCowriteEdit()`` for field updates. All DynamicForm-based commands (node add, predicate add, triple add, etc.) get cowrite for free. |
 | `FormTab.svelte` | Wrapper for DynamicForm in a tab |
 | `FormField.svelte` | Individual form field with validation |
 | `PopupOverlay.svelte` | Modal overlay container |
