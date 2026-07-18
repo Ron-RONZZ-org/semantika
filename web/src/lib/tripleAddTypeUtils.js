@@ -86,6 +86,38 @@ export const OBJECT_TYPE_LABELS = {
 };
 
 /**
+ * Boolean literal value suggestions for the OBJECT datalist.
+ *
+ * @returns {{ id: string, label: string }[]}
+ */
+export function getBoolSuggestions() {
+  return [
+    { id: "true", label: "True" },
+    { id: "false", label: "False" },
+  ];
+}
+
+/**
+ * Get the complete list of CLI --flag suggestions for the OBJECT datalist.
+ *
+ * Deduplicates by key since TYPE_FLAG_MAP may have multiple keys for the
+ * same type (e.g., "string" and "str").
+ *
+ * @returns {string[]} Sorted list of unique --flag strings
+ */
+export function getFlagSuggestions() {
+  const seen = new Set();
+  const result = [];
+  for (const key of Object.keys(TYPE_FLAG_MAP)) {
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(`--${key}`);
+    }
+  }
+  return result.sort();
+}
+
+/**
  * OBJECT_TYPE_ITEMS for rendering the `<select>` dropdown options.
  */
 export const OBJECT_TYPE_ITEMS = [

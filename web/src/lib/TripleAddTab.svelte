@@ -14,6 +14,8 @@
     resolveObjectType,
     OBJECT_TYPE_LABELS,
     OBJECT_TYPE_ITEMS as OBJECT_TYPES,
+    getBoolSuggestions,
+    getFlagSuggestions,
   } from "./tripleAddTypeUtils.js";
 
   /** Row data model */
@@ -69,9 +71,13 @@
     const datalist = document.getElementById(`dl-${rowKey}-obj`);
     if (!datalist) return;
     if (value.startsWith("--")) {
-      // Show CLI flag suggestions
-      datalist.innerHTML = ["--str", "--int", "--float", "--bool", "--url", "--katex"]
+      // Show CLI flag suggestions — dynamically generated from TYPE_FLAG_MAP
+      datalist.innerHTML = getFlagSuggestions()
         .map(f => `<option value="${f}">`).join("");
+    } else if (currentType === "bool") {
+      // Show TRUE / FALSE suggestions for boolean literals
+      datalist.innerHTML = getBoolSuggestions()
+        .map(s => `<option value="${s.id}">${s.label}</option>`).join("");
     } else if (currentType === "node" && value.length >= 2) {
       // Debounced node autocomplete
       clearTimeout(autocompleteTimeouts[rowKey + "-obj"]);
@@ -98,7 +104,14 @@
         row.object_type = typeInfo.object_type;
         row.object_datatype = typeInfo.object_datatype;
         row.object_lang = null;
-        row.object_value = rest;
+        // Defer value clearing to a microtask so the browser can process
+        // the native <datalist> popup (which appears during the input event)
+        // before we programmatically clear the value.  This prevents Svelte's
+        // reactive DOM update from dismissing the popup prematurely.
+        queueMicrotask(() => {
+          row.object_value = rest;
+        });
+        clearRowError(row);
       } else {
         // Unknown flag: show inline warning, keep raw text as-is
         row.object_value = raw;
@@ -106,10 +119,10 @@
       }
     } else {
       row.object_value = raw;
+      clearRowError(row);
       // No flag detected; if raw starts with "--" but no space yet,
       // the user is still typing the flag word — don't change type (efficiency hack)
     }
-    clearRowError(row);
     updateObjectDatalist(raw, row._key, resolveObjectType(row));
   }
 
@@ -129,7 +142,9 @@
     // If the value still has a stale --flag prefix from the previous type, strip it
     const { flag, rest } = parseFlagFromValue(row.object_value);
     if (flag) {
-      row.object_value = rest;
+      queueMicrotask(() => {
+        row.object_value = rest;
+      });
     }
     clearRowError(row);
     updateObjectDatalist(row.object_value, row._key, resolveObjectType(row));
@@ -538,8 +553,8 @@
               value={row.subject_id}
               oninput={(e) => { row.subject_id = e.target.value; clearRowError(row); debouncedAutocomplete(e, "nodes"); }}
               disabled={row._status !== "editing"}
-              list={row._key + "-nodes"} />
-            <datalist id={row._key + "-nodes"}></datalist>
+              list={"dl-" + row._key + "-nodes"} />
+            <datalist id={"dl-" + row._key + "-nodes"}></datalist>
             {#if row._error?.field === "subject_id"}
               <span class="field-error">{row._error.message}</span>
             {/if}
@@ -550,10 +565,10 @@
             <input data-row-key={row._key} data-field="predicate_id"
               type="text" placeholder="Predicate ID (e.g. ex:knows)"
               value={row.predicate_id}
-              oninput={(e) => { row.predicate_id = e.target.value; clearRowError(row); debouncedAutocomplete(e, "predicates"); }}
+              oninput={(e) => { row.predicate_id = e.target.value; clearRowError(row); debouncedAutocomplete(e, "preds"); }}
               disabled={row._status !== "editing"}
-              list={row._key + "-preds"} />
-            <datalist id={row._key + "-preds"}></datalist>
+              list={"dl-" + row._key + "-preds"} />
+            <datalist id={"dl-" + row._key + "-preds"}></datalist>
             {#if row._error?.field === "predicate_id"}
               <span class="field-error">{row._error.message}</span>
             {/if}
@@ -561,25 +576,15 @@
 
           <!-- OBJECT -->
           <span class="col-obj">
-            {#if resolveObjectType(row) === "bool"}
-              <select data-field="object_value" value={row.object_value}
-                onchange={(e) => { handleObjectInput(e, row); }}
-                disabled={row._status !== "editing"}>
-                <option value="">--</option>
-                <option value="true">true</option>
-                <option value="false">false</option>
-              </select>
-            {:else}
-              <input data-row-key={row._key} data-field="object_value"
-                type={resolveObjectType(row) === "int" ? "number" : resolveObjectType(row) === "float" ? "number" : "text"}
-                step={resolveObjectType(row) === "int" ? "1" : resolveObjectType(row) === "float" ? "any" : undefined}
-                placeholder={resolveObjectType(row) === "node" ? "Node ID (e.g. BOB)" : resolveObjectType(row) === "url" ? "https://..." : resolveObjectType(row) === "katex" ? "E = mc^2" : resolveObjectType(row) === "int" ? "Integer" : resolveObjectType(row) === "float" ? "Decimal" : "Literal value or --flag value"}
-                value={row.object_value}
-                oninput={(e) => { handleObjectInput(e, row); }}
-                disabled={row._status !== "editing"}
-                list={"dl-" + row._key + "-obj"} />
-              <datalist id={"dl-" + row._key + "-obj"}></datalist>
-            {/if}
+            <input data-row-key={row._key} data-field="object_value"
+              type="text"
+              inputmode={resolveObjectType(row) === "int" || resolveObjectType(row) === "float" ? "decimal" : resolveObjectType(row) === "url" ? "url" : undefined}
+              placeholder={resolveObjectType(row) === "node" ? "Node ID (e.g. BOB)" : resolveObjectType(row) === "url" ? "https://..." : resolveObjectType(row) === "katex" ? "E = mc^2" : resolveObjectType(row) === "int" ? "Integer" : resolveObjectType(row) === "float" ? "Decimal" : resolveObjectType(row) === "bool" ? "true / false" : "Literal value or --flag value"}
+              value={row.object_value}
+              oninput={(e) => { handleObjectInput(e, row); }}
+              disabled={row._status !== "editing"}
+              list={"dl-" + row._key + "-obj"} />
+            <datalist id={"dl-" + row._key + "-obj"}></datalist>
             {#if row._error?.field === "object_value"}
               <span class="field-error">{row._error.message}</span>
             {/if}

@@ -278,22 +278,36 @@ The OBJECT type selector in ``TripleAddTab.svelte`` supports **two workflows** t
 ### GUI dropdown path
 - A `<select>` dropdown in the **Type** column shows: Node, Str, Int, Float, Bool, URL, KaTeX
 - Changing the dropdown immediately updates `row.object_type` / `row.object_datatype`
-- The object input field shows the correct `<input type="number">` for Int/Float, a `<select>` for Bool
+- The object input field is always `<input type="text">` regardless of type, with `inputmode` hints
+  (``decimal`` for Int/Float, ``url`` for URL, default ``text`` otherwise)
+- Boolean type provides TRUE / FALSE suggestions via `<datalist>` instead of a separate `<select>`
 
 ### CLI ``--flag`` keyboard path (power-user fast path)
 - Typing ``--string ``, ``--int ``, ``--float ``, ``--bool ``, ``--url ``, or ``--katex `` (with trailing SPACE) in the OBJECT field auto-detects the flag and:
   1. Updates ``row.object_type`` / ``row.object_datatype`` to match
-  2. Strips the ``--flag `` prefix from the displayed value (value stays pure)
+  2. Strips the ``--flag `` prefix from the displayed value (value stays pure), deferred to a
+     microtask so the native `<datalist>` popup is not dismissed by Svelte's reactive update
   3. Updates the Type dropdown to show the matching type
 - Abbreviation ``--str`` is accepted as equivalent to ``--string``
 - Unknown flags (e.g., ``--foobar``) show an inline warning: *"Unknown type: --foobar"*
 - **Efficiency hack**: ``--int`` (no trailing space) is NOT interpreted — the user is still typing the flag word
+- ``--flag`` suggestions appear in the OBJECT datalist as soon as the user types ``--`', dynamically
+  sourced from ``TYPE_FLAG_MAP`` (auto-syncs with the flag table)
+
+### Autocomplete
+- SUBJECT and PREDICATE fields fetch suggestions from the API (debounced 300ms) and render them
+  via `<datalist>` with IDs using ``dl-`` prefix convention
+- OBJECT field autocomplete depends on current type:
+  - ``node``: fetches node ID suggestions from the API (debounced 300ms)
+  - ``bool``: shows TRUE / FALSE from a static list
+  - other literal types: empty (no relevant suggestions)
+  - ``--`` prefix: shows all registered flag names from ``getFlagSuggestions()``
 
 ### Shared data model
 Both paths converge on the same row metadata (``object_type``, ``object_datatype``, ``object_lang``). At submission time, a safety net in ``handleSubmit()`` strips any residual ``--flag`` prefix from ``object_value`` before sending to the backend.
 
 ### Key files
-- ``tripleAddTypeUtils.js`` — exported pure functions: ``interpretFlag()``, ``parseFlagFromValue()``, ``resolveObjectType()``, plus constants (``TYPE_FLAG_MAP``, ``OBJECT_TYPE_ITEMS``)
+- ``tripleAddTypeUtils.js`` — exported pure functions: ``interpretFlag()``, ``parseFlagFromValue()``, ``resolveObjectType()``, ``getBoolSuggestions()``, ``getFlagSuggestions()``, plus constants (``TYPE_FLAG_MAP``, ``OBJECT_TYPE_ITEMS``)
 - ``TripleAddTab.svelte`` — imports from ``tripleAddTypeUtils.js``; contains the UI binding logic (``handleObjectInput()``, ``setObjectType()``, ``updateObjectDatalist()``)
 
 ## Keyboard Shortcut Key Placement
