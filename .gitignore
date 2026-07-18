@@ -40,3 +40,4 @@ coverage_html/
 .serena/
 MagicMock/
 .opencode/worktree-state.sqlite
+web/node_modules
