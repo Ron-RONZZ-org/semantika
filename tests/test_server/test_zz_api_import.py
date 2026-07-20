@@ -1,7 +1,7 @@
 """TTL import tests — must run LAST to avoid DB locking other test files.
 
 The TTL import writes multiple nodes/predicates/triples in a single request
-via thread pool workers. The per-thread connections from LighterbirdDB
+via thread pool workers. The per-thread connections from LighterDB
 persist after the test completes, causing ``database is locked`` errors for
 any test file collected after this one.
 
