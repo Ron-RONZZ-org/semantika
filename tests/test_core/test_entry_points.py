@@ -18,8 +18,8 @@ class TestCoreDb:
     def test_semantika_db_alias(self) -> None:
         """SemantikaDB is re-exported from lightercore."""
         from semantika.core.db import SemantikaDB
-        from lightercore.db import LighterbirdDB
-        assert SemantikaDB is LighterbirdDB
+        from lightercore.db import LighterDB
+        assert SemantikaDB is LighterDB
 
 
 class TestDevCli:
