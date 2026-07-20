@@ -4,6 +4,7 @@
   import { tabStore } from "./tabStore.svelte.js";
   import { banner } from "./bannerStore.svelte.js";
   import { opt } from "./optimisticStore.svelte.js";
+  import { createHighlightManager } from "@lightercore/ui/highlight.svelte.js";
   import ScrollList from "@lightercore/ui/ScrollList.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import {
@@ -80,8 +81,12 @@
   function handleNew(type) {
     showNewDropdown = false;
     tabStore.open("form", type.label, {
-      form: type.formType, commandPath: type.command,
-      initialData: { _returnType: "node-list", _returnTitle: "Nodes" },
+      form: type.formType,
+      commandPath: type.command,
+      initialData: {},
+      returnType: "node-list",
+      returnTitle: "Nodes",
+      returnTokens: ["node", "list"],
     }, { idKey: type.formType });
   }
 
@@ -159,6 +164,14 @@
   }
 
   $effect(init);
+
+  /** Highlight newly created node after form submit redirect. */
+  createHighlightManager({
+    getData: () => data,
+    getItems: () => allNodes,
+    idField: "node_id",
+    rowPrefix: "row-",
+  });
 
   /** Track previous sort key to avoid infinite re-fetch cycles. */
   let _prevSortKey = $state("");
@@ -454,4 +467,8 @@
   .type-s { background: #2a4a3a; color: #4f8; }
   .type-u { background: #3a2a4a; color: #a7f; }
   .type-c { background: #2a3a4a; color: #7cf; }
+
+  /* Highlight flash for newly created nodes */
+  :global(.hc-highlight-flash) { animation: hc-pulse 2s ease-out; }
+  @keyframes hc-pulse { 0%, 100% { background-color: transparent; } 30% { background-color: rgba(60, 180, 75, 0.25); } }
 </style>

@@ -43,6 +43,49 @@
         body: JSON.stringify(payload),
       });
       const result = await resp.json();
+
+      // Post-submit redirect: close the form and open the list with
+      // a highlight animation on the newly created node/predicate.
+      const returnType = data?.returnType;
+      const returnTokens = data?.returnTokens;
+      const returnTitle = data?.returnTitle || "List";
+      const returnIdKey = data?.returnIdKey;
+      const nodeId = result?.data?.node?.node_id;
+      const predId = result?.data?.predicate?.predicate_id;
+
+      if (resp.ok && (nodeId || predId) && returnType && returnTokens) {
+        const entityId = nodeId || predId;
+        const currentId = tabStore.active?.id;
+        if (currentId) tabStore.close(currentId);
+
+        // Fetch fresh list data so the new entity appears in the list
+        const listResp = await fetch("/api/v1/command", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tokens: returnTokens, flags: {}, remaining: [] }),
+        });
+        if (listResp.ok) {
+          const listResult = await listResp.json();
+          const listData = listResult?.data || listResult || {};
+
+          if (returnIdKey) {
+            const existingId = tabStore.findByKey(returnIdKey);
+            if (existingId) {
+              tabStore.update(existingId, { ...listData, _highlight: entityId });
+              tabStore.setActive(existingId);
+              return;
+            }
+          }
+          // Fallback: open a new list tab (deduplicates by type via TabView)
+          tabStore.open(returnType, returnTitle, { ...listData, _highlight: entityId }, { idKey: returnType });
+        } else {
+          // List fetch failed, node was still created — go to home
+          tabStore.goHome();
+        }
+        return;
+      }
+
+      // Original behavior: show result in a status tab
       tabStore.open(result.type || "status", result.title || "Result", result.data || result);
     } catch (err) {
       tabStore.open("error", "Error", { type: "error", data: { message: String(err) } });

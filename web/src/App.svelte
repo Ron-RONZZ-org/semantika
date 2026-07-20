@@ -54,17 +54,17 @@
               routing.listIdKey,
             );
             popup.updateCache(listResult.data || {});
-            const enrichedInitial = {
-              ...(routing.initialData || {}),
-              _returnIdKey: routing.listIdKey ? `persistent-${routing.listIdKey}` : undefined,
-            };
             if (routing.addFormType === "triple-add") {
               tabStore.open("triple-add", routing.addTitle || "Add Triples", {}, { idKey: "triple-add" });
             } else {
               tabStore.open("form", routing.addTitle || "Add", {
                 form: routing.addFormType,
                 commandPath: routing.commandPath,
-                initialData: enrichedInitial,
+                initialData: { ...(routing.initialData || {}) },
+                returnType: listResult.type,
+                returnTitle: listResult.title,
+                returnTokens: routing.listTokens,
+                returnIdKey: routing.listIdKey ? `persistent-${routing.listIdKey}` : undefined,
               }, { idKey: `form-${routing.addFormType}` });
             }
           }

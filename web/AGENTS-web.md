@@ -69,7 +69,7 @@ Svelte 5 SPA frontend — command-bar UI with rich result rendering for the Sema
 | `sparqlStore.svelte.js` | Reactive store for SPARQL query state: query text, results, loading, error, prefix autocomplete |
 | `sparqlLanguage.js` | CodeMirror 6 SPARQL language support (keyword highlighting via `@codemirror/lang-sql`) |
 | `DynamicForm.svelte` | Generic form builder for command params. Integrates cowrite (LLM-assisted editing) via ``createCowrite`` from ``@lightercore/ui/cowrite`` — derives ``formType`` from ``commandPath.join("-")``, provides ``getCowriteContent()`` for text field collection and ``applyCowriteEdit()`` for field updates. All DynamicForm-based commands (node add, predicate add, triple add, etc.) get cowrite for free. |
-| `FormTab.svelte` | Wrapper for DynamicForm in a tab |
+| `FormTab.svelte` | Wrapper for DynamicForm in a tab. Handles post-submit redirect: when the form's ``data`` contains ``returnType``, ``returnTokens``, and the backend response includes a ``node.node_id`` or ``predicate.predicate_id``, the form tab closes and opens the corresponding list tab with a highlight animation on the newly created entity. |
 | `FormField.svelte` | Individual form field with validation |
 | `PopupOverlay.svelte` | Modal overlay container |
 | `StatusPopup.svelte` | Status/result display (node details, triple lists, etc.). Also handles **prompt file viewing** — when data contains ``details`` and ``_edit_name`` fields, renders the prompt content in a scrollable ``<pre>`` block with an **Edit** button that opens an inline editor overlay. |
@@ -114,6 +114,45 @@ When a command is intercepted, `shouldIntercept` returns `commandPath` (the reso
 This is passed to `FormTab.svelte` via the tab data as `commandPath`, which `DynamicForm.svelte` uses
 to look up command metadata (params/flags) from the tree. This avoids relying on the stale
 `_inferCommandPath()` fallback for new command variants.
+
+## Post-Submit Redirect & Highlight Pattern
+
+When an interactive form (``DynamicForm`` inside ``FormTab``) creates a new entity, the default behavior is to close the form and redirect to the list with a highlight animation on the newly created row.
+
+### How it works
+
+1. The form tab's ``data`` object includes these metadata keys at the top level:
+   - ``returnType`` — Tab type for the list (e.g. ``"node-list"``, ``"predicate-list"``)
+   - ``returnTitle`` — Tab title (e.g. ``"Nodes"``, ``"Predicates"``)
+   - ``returnTokens`` — Command tokens to re-fetch fresh list data (e.g. ``["node", "list"]``)
+   - ``returnIdKey`` — Optional: idKey of an existing persistent list tab to update instead of opening a new one
+2. After the backend returns a successful response with ``data.node.node_id`` or ``data.predicate.predicate_id``, ``FormTab.handleFormSubmit()``:
+   - Closes the form tab
+   - Re-fetches the list via ``POST /api/v1/command`` with ``returnTokens``
+   - Opens/updates the list tab with ``_highlight`` metadata set to the new entity's ID
+3. The list component (``NodeListTab``, ``PredicateListTab``) uses ``createHighlightManager`` from ``@lightercore/ui/highlight.svelte.js``, which watches for ``data._highlight`` in a ``$effect``, verifies the entity exists in the loaded items, scrolls to its row element, and applies a brief green pulse animation.
+4. The animation CSS class ``.hc-highlight-flash`` is defined per-component using ``:global()`` with a ``@keyframes hc-pulse`` animation.
+
+### Adding highlight to a new list tab
+
+```js
+import { createHighlightManager } from "@lightercore/ui/highlight.svelte.js";
+
+// In <script>:
+createHighlightManager({
+  getData: () => data,       // returns the data prop
+  getItems: () => allItems,  // returns the loaded items array
+  idField: "node_id",        // field name on each item
+  rowPrefix: "row-",         // DOM id prefix (rows are id="row-{CSS.escape(id)}")
+});
+```
+
+### Setting return metadata
+
+Two paths set return metadata on form tabs:
+
+- **Intercept path** (typing ``!node add quote``): ``App.svelte`` passes ``returnType``/``returnTitle``/``returnTokens``/``returnIdKey`` from the ``shouldIntercept()`` result and the pre-fetched list response.
+- **"New" dropdown path**: Each list tab's ``handleNew()`` passes the metadata statically (e.g. ``returnType: "node-list"``, ``returnTokens: ["node", "list"]``).
 
 ## Autocomplete Flow
 

@@ -342,8 +342,12 @@
   function viewTriples() {
     tabStore.close(tabStore.active?.id);
     tabStore.open("form", "Add Triple", {
-      form: "triple-add", commandPath: ["triple", "add"],
-      initialData: { _returnType: "triple-list", _returnTitle: "Triples" },
+      form: "triple-add",
+      commandPath: ["triple", "add"],
+      initialData: {},
+      returnType: "triple-list",
+      returnTitle: "Triples",
+      returnTokens: ["triple", "list"],
     }, { idKey: "triple-add" });
   }
 

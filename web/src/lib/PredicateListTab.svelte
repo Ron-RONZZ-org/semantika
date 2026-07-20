@@ -5,6 +5,7 @@
   import { banner } from "./bannerStore.svelte.js";
   import { opt } from "./optimisticStore.svelte.js";
   import ScrollList from "@lightercore/ui/ScrollList.svelte";
+  import { createHighlightManager } from "@lightercore/ui/highlight.svelte.js";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import {
     createSelectionManager,
@@ -67,8 +68,12 @@
 
   function handleNew() {
     tabStore.open("form", "Add Predicate", {
-      form: "predicate-add", commandPath: ["predicate", "add"],
-      initialData: { _returnType: "predicate-list", _returnTitle: "Predicates" },
+      form: "predicate-add",
+      commandPath: ["predicate", "add"],
+      initialData: {},
+      returnType: "predicate-list",
+      returnTitle: "Predicates",
+      returnTokens: ["predicate", "list"],
     }, { idKey: "predicate-add" });
   }
 
@@ -146,8 +151,13 @@
 
   $effect(init);
 
-  /** Track previous sort key to avoid infinite re-fetch cycles. */
-  let _prevSortKey = $state("");
+  /** Highlight newly created predicate after form submit redirect. */
+  createHighlightManager({
+    getData: () => data,
+    getItems: () => allPredicates,
+    idField: "predicate_id",
+    rowPrefix: "row-",
+  });
 
   /** Re-fetch when sort mode changes (actual user action, not data reload). */
   $effect(() => {
@@ -365,4 +375,8 @@
   .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #e0e0e0; font-weight: 600; }
   .id { color: var(--clr-sub); font-size: 0.78rem; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .actions { flex-shrink: 0; }
+
+  /* Highlight flash for newly created predicates */
+  :global(.hc-highlight-flash) { animation: hc-pulse 2s ease-out; }
+  @keyframes hc-pulse { 0%, 100% { background-color: transparent; } 30% { background-color: rgba(60, 180, 75, 0.25); } }
 </style>
