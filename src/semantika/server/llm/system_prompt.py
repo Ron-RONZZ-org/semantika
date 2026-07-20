@@ -8,9 +8,16 @@ Two files work together:
    power users who want deep customisation of the LLM's behaviour.
 
 2. **``AGENTS.md``** — the user's custom style instructions (naming
-   conventions, language preferences, workflow rules, etc.).  Always
-   *appended* after the base prompt.  This is the primary customisation
-   point for regular users.
+   conventions, language preferences, workflow rules, domain conventions,
+   writing style, etc.).  Always *appended* after the base prompt.
+   This is the primary customisation point for regular users.
+   :func:`load_user_style` makes this content available to **both** the
+   main LLM agent and the cowrite (co-writing) endpoint, ensuring
+   consistent style across all LLM interactions.
+
+The old per-domain ``cowrite_style*.md`` files have been removed in
+favour of a single ``AGENTS.md`` file.  All writing style rules (tone,
+conventions, domain guidance) should go into ``AGENTS.md``.
 
 Both files are auto-seeded on first access (lazy seeding).  The combined
 result is returned by :func:`load_system_prompt`.
@@ -78,15 +85,32 @@ DEFAULT_SEMANTIKA_PROMPT = (
 DEFAULT_AGENTS_STYLE = (
     "# AGENTS.md — Additional context for Semantika AI\n\n"
     "This file is loaded automatically and appended to the system prompt "
-    "for ALL interactions (chat and prompt commands).  Use it to add your "
-    "personal naming conventions, style preferences, or workflow rules.\n\n"
-    "## Example\n"
-    "```\n"
-    "When creating nodes:\n"
-    "- Always provide labels in eo, fr, en\n"
-    "- Node ID from Esperanto label, uppercased, ASCII-normalised\n"
-    "- Predicate IDs: rs:xxx with Esperanto word\n"
-    "```\n"
+    "for ALL interactions (chat, cowrite, prompt commands).  Use it to add "
+    "your personal naming conventions, style preferences, or workflow rules.\n\n"
+    "## General Style\n"
+    "- Clear, factual, and neutral tone\n"
+    "- Use precise terminology\n"
+    "- Be concise \u2014 entries should be easy to scan\n"
+    "- Use English for labels and definitions\n"
+    "- Avoid promotional language, subjective opinions, or fluff\n\n"
+    "## Node Conventions\n"
+    "- Use singular form for concept nodes\n"
+    "- Capitalize proper nouns only\n"
+    "- One or two sentences capturing the essential meaning\n"
+    "- Include a brief etymology or source if relevant\n\n"
+    "## Predicate Conventions\n"
+    "- Use camelCase for multi-word IDs (hasAuthor, isPartOf, depicts)\n"
+    "- Keep IDs short but descriptive\n"
+    "- Follow existing predicate naming conventions in the graph\n\n"
+    "## Triple Conventions\n"
+    "- Subject-Predicate-Object: clear and unambiguous\n"
+    "- Use existing predicates from the built-in catalog when possible\n"
+    "- Briefly explain the relationship if it's non-obvious\n\n"
+    "## Review and Proof\n"
+    "- Evaluate accuracy, consistency, and completeness of triples\n"
+    "- Cite specific sources or reasoning steps\n"
+    "- Distinguish between direct evidence and inference\n"
+    "- Note confidence level when appropriate\n"
 )
 
 # ── Backward-compat alias ───────────────────────────────────────────────────
@@ -156,8 +180,11 @@ def _lazy_seed(filepath: Path, default: str) -> str | None:
         return None
 
 
-def _load_user_style() -> str | None:
+def load_user_style() -> str | None:
     """Load the user's AGENTS.md style guide, auto-seeding on first access.
+
+    Called by both the main LLM system prompt loader and the cowrite
+    endpoint to ensure consistent style across all LLM interactions.
 
     Returns the content of AGENTS.md, or ``None`` if the file is missing
     or empty (no style guidance to append).
@@ -211,7 +238,7 @@ def load_system_prompt() -> str:
                 if _has_migration_marker(content):
                     return content
                 # Normal two-file mode: base exists, append AGENTS.md
-                style = _load_user_style()
+                style = load_user_style()
                 if style:
                     return content + "\n\n" + style
                 return content
@@ -222,7 +249,7 @@ def load_system_prompt() -> str:
     base = DEFAULT_SEMANTIKA_PROMPT
     _lazy_seed(base_path, base)
 
-    style = _load_user_style()
+    style = load_user_style()
     if style:
         return base + "\n\n" + style
     return base
@@ -245,7 +272,7 @@ def reload_system_prompt() -> str:
                 if _has_migration_marker(content):
                     return content
                 # Normal two-file mode: re-read AGENTS.md and combine
-                style = _load_user_style()
+                style = load_user_style()
                 if style:
                     return content + "\n\n" + style
                 return content
@@ -262,6 +289,7 @@ __all__ = [
     "SEMANTIKA_SYSTEM_PROMPT",
     "agents_path",
     "load_system_prompt",
+    "load_user_style",
     "reload_system_prompt",
     "system_prompt_path",
 ]

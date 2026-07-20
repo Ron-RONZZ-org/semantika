@@ -402,10 +402,8 @@ Semantika provides an **Ask LLM** button on dynamic forms (``!node add``, ``!pre
 
 | Layer | Location | Purpose |
 |-------|----------|---------|
-| Backend engine | ``lightercore.cowrite.engine`` | Protocol prompt, LLM response parsing, diff computation |
-| Style cascade | ``lightercore.cowrite.style`` | Generic cascade style loader (general + per-domain) |
-| API route | ``src/semantika/server/routes/cowrite.py`` | ``POST /api/v1/cowrite`` — validates, loads style, calls engine |
-| Style defaults | ``src/semantika/core/cowrite_defaults.py`` | Shipped defaults for ``cowrite_style*.md`` files |
+| Backend engine | ``lightercore.cowrite.engine`` | Protocol prompt (behavioral rules only; format is enforced at API level), LLM response parsing, diff computation |
+| API route | ``src/semantika/server/routes/cowrite.py`` | ``POST /api/v1/cowrite`` — validates, loads AGENTS.md style, builds JSON schema, wraps ``chat()`` with schema enforcement |
 | Frontend engine | ``@lightercore/ui/cowrite/CowriteEngine.svelte.js`` | Session state machine, API calls, accept/reject logic |
 | Frontend button | ``@lightercore/ui/cowrite/CowriteButton.svelte`` | "✨ Ask LLM" toolbar button |
 | Frontend panel | ``@lightercore/ui/cowrite/CowritePanel.svelte`` | Slide-in overlay with diff visualization + controls |
@@ -413,19 +411,32 @@ Semantika provides an **Ask LLM** button on dynamic forms (``!node add``, ``!pre
 | Form integration (triple batch) | ``web/src/lib/TripleAddTab.svelte`` | Multi-row batch cowrite — serializes rows as ``row_0_subject_id`` etc., maps edits back to individual cells |
 | Context/RAG | ``src/semantika/server/cowrite/context.py`` | Writing samples DB table, ``gather_context()`` returns recent samples for style injection |
 
-### Style Files
+### User Style
 
-Style files live at ``~/.config/semantika/cowrite_style*.md`` and are auto-seeded on first access:
+Cowrite uses the **same single style file** as the main LLM agent — ``AGENTS.md`` in
+``~/.config/semantika/AGENTS.md``.  There are no separate ``cowrite_style*.md`` files.
+All writing style rules (tone, conventions, domain guidance) go into ``AGENTS.md``
+and apply to **all** LLM interactions: chat, prompt commands, and cowrite.
 
-| File | Domain |
-|------|--------|
-| ``cowrite_style.md`` | General (cross-cutting rules) |
-| ``cowrite_style_node.md`` | Node labels, definitions, code formatting |
-| ``cowrite_style_predicate.md`` | Predicate IDs, labels |
-| ``cowrite_style_triple.md`` | Triple pattern style |
-| ``cowrite_style_unit.md`` | Unit type descriptions |
-| ``cowrite_style_review.md`` | Review comments |
-| ``cowrite_style_proof.md`` | Proof evidence descriptions |
+Style content is loaded via :func:`semantika.server.llm.system_prompt.load_user_style`,
+which also handles lazy auto-seeding of ``AGENTS.md`` on first access.
+
+### Response Format Enforcement
+
+Response format is enforced at the **API level** via ``response_format`` with a
+JSON schema when the provider supports it:
+
+- **Tier 1**: ``response_format={"type": "json_schema", "json_schema": {...}}``
+  — strict schema validation (OpenAI, compatible providers).
+  The LLM physically cannot return invalid JSON or extra/missing fields.
+- **Tier 2**: ``response_format={"type": "json_object"}`` — JSON-only guarantee
+  (DeepSeek, some compat APIs).  Weaker than schema but better than prompt-only.
+- **Tier 3**: Prompt-only fallback (Ollama, unknown endpoints).
+  Uses ``_clean_llm_response()`` in the engine for legacy parsing.
+
+This eliminates the fragile prompt-level format rules.  The ``COWRITE_PROTOCOL_PROMPT``
+now contains only behavioral rules (preserve content, don't truncate, improve
+meaningfully).
 
 ### Writing Samples
 
@@ -736,6 +747,9 @@ Semantika uses a **two-file model** for LLM system prompt customisation:
   (typically on the first chat or prompt command).
 - The combined system prompt = content of ``system_prompt.md`` + ``"\n\n"`` +
   content of ``AGENTS.md``.
+- ``AGENTS.md`` also flows into the **cowrite** endpoint via
+  :func:`~semantika.server.llm.system_prompt.load_user_style`, ensuring
+  your style rules apply to co-writing too.
 - **After editing**, call ``POST /api/v1/llm/reload-prompt`` to apply
   changes without restarting the server.
 - **View the current prompt**: ``GET /api/v1/llm/prompt`` returns

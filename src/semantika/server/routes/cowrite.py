@@ -5,43 +5,89 @@
 Returns structured diffs (computed via ``difflib`` on the full revised
 text returned by the LLM), along with the raw revised text for each
 field.
+
+User style is loaded from ``AGENTS.md`` (via :func:`load_user_style`),
+which is shared with the main LLM system prompt — one file for all
+style customisation.  The old per-domain ``cowrite_style*.md`` files
+have been removed.
+
+Response format is enforced at the API level via ``response_format``
+(JSON schema) when the provider supports it, with graceful fallback
+to prompt-only enforcement otherwise.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 
 from fastapi import APIRouter, HTTPException
 
 from lightercore.cowrite.engine import cowrite as cowrite_engine
-from lightercore.cowrite.style import load_cowrite_style
-from lightercore.paths import config_dir
-from semantika.core.cowrite_defaults import (
-    DEFAULT_COWRITE_STYLE,
-    DEFAULT_COWRITE_STYLE_NODE,
-    DEFAULT_COWRITE_STYLE_PREDICATE,
-    DEFAULT_COWRITE_STYLE_PROOF,
-    DEFAULT_COWRITE_STYLE_REVIEW,
-    DEFAULT_COWRITE_STYLE_TRIPLE,
-    DEFAULT_COWRITE_STYLE_UNIT,
-    _FORM_TYPE_TO_DOMAIN,
-)
 from semantika.server.cowrite.context import gather_context
 from semantika.server.llm.provider import get_provider
+from semantika.server.llm.system_prompt import load_user_style
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["cowrite"])
 
-_COWRITE_STYLE_DEFAULTS: dict[str, str] = {
-    "general": DEFAULT_COWRITE_STYLE,
-    "node": DEFAULT_COWRITE_STYLE_NODE,
-    "predicate": DEFAULT_COWRITE_STYLE_PREDICATE,
-    "triple": DEFAULT_COWRITE_STYLE_TRIPLE,
-    "unit": DEFAULT_COWRITE_STYLE_UNIT,
-    "review": DEFAULT_COWRITE_STYLE_REVIEW,
-    "proof": DEFAULT_COWRITE_STYLE_PROOF,
-}
+
+def _build_json_schema(fields: dict[str, str]) -> dict:
+    """Build an OpenAI-compatible ``json_schema`` response_format for cowrite.
+
+    The schema ensures the LLM returns ONLY the requested fields, each as a
+    string, with no extra keys — enforced at the API level when the provider
+    supports structured output.
+    """
+    properties = {name: {"type": "string"} for name in fields}
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "cowrite_response",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": properties,
+                "required": list(fields.keys()),
+                "additionalProperties": False,
+            },
+        },
+    }
+
+
+async def _cowrite_chat_with_schema(
+    chat_fn: callable,
+    messages: list[dict],
+    fields: dict[str, str],
+) -> str:
+    """Call *chat_fn* with API-level schema enforcement, falling back gracefully.
+
+    Tier 1 — strict JSON schema (OpenAI, compatible providers).
+    Tier 2 — weak JSON object mode (DeepSeek, some compat APIs).
+    Tier 3 — prompt-only (Ollama, everything else; uses
+             ``_clean_llm_response`` in the engine for parsing).
+    """
+    strict_schema = _build_json_schema(fields)
+
+    # Tier 1: strict schema
+    try:
+        return await chat_fn(messages, response_format=strict_schema)
+    except Exception:
+        logger.debug("Strict JSON schema not supported, falling back to json_object")
+        pass
+
+    # Tier 2: weak JSON guarantee
+    try:
+        return await chat_fn(
+            messages, response_format={"type": "json_object"},
+        )
+    except Exception:
+        logger.debug("json_object not supported either, falling back to prompt-only")
+        pass
+
+    # Tier 3: prompt-only (works everywhere)
+    return await chat_fn(messages)
 
 
 @router.post("/cowrite")
@@ -90,13 +136,12 @@ async def cowrite_endpoint(data: dict) -> dict:
             detail="LLM not configured. Use ``!llm profile`` to set up a provider.",
         )
 
-    # Load cowrite style (general + per-domain cascade)
-    style_content = load_cowrite_style(
-        config_dir=config_dir(),
-        form_type=form_type,
-        form_type_to_domain=_FORM_TYPE_TO_DOMAIN,
-        defaults=_COWRITE_STYLE_DEFAULTS,
-    )
+    # Load user style from AGENTS.md (shared with main LLM system prompt)
+    style_content = load_user_style()
+
+    # Wrap provider.chat with JSON schema enforcement + fallback
+    async def cowrite_chat(messages: list[dict], **kwargs: object) -> str:
+        return await _cowrite_chat_with_schema(provider.chat, messages, fields)
 
     # Gather writing samples context (RAG — recent samples only, no vector search yet)
     context = gather_context(form_type, fields)
@@ -106,7 +151,7 @@ async def cowrite_endpoint(data: dict) -> dict:
             form_type=form_type,
             fields=fields,
             instruction=instruction,
-            chat_fn=provider.chat,
+            chat_fn=cowrite_chat,
             style_content=style_content,
             context=context if context else None,
         )
