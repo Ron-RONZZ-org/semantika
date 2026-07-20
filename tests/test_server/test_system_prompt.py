@@ -81,7 +81,7 @@ class TestLoadSystemPrompt:
         (tmp_path / "AGENTS.md").write_text("", encoding="utf-8")
 
         content = load_system_prompt()
-        # AGENTS.md was empty but _load_user_style() reseeds it
+        # AGENTS.md was empty but load_user_style() reseeds it
         assert DEFAULT_AGENTS_STYLE.strip() in content
 
     def test_appends_agents_content(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
