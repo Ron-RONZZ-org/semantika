@@ -363,9 +363,10 @@ semantika/
             ├── commandRouter.test.js / commandEngine.test.js
             ├── commandHistory.test.js / parser.test.js
             ├── ConfirmDialog.test.js / DynamicForm.test.js
-            ├── FormField.test.js / formatCommand.test.js
-            ├── optimisticStore.test.js / popupStore.test.js
-            ├── SettingsTab.test.js / tabStore.test.js
+            ├── FormField.test.js / FormTab.test.js
+            ├── formatCommand.test.js / optimisticStore.test.js
+            ├── popupStore.test.js / SettingsTab.test.js
+            ├── tabStore.test.js
             └── tripleAddTypeUtils.test.js
 ```
 
@@ -922,6 +923,27 @@ The ``@command`` decorator's param/flag dicts support these metadata keys for en
 | ``type: "code"`` | string | Renders a multi-line ``<textarea>`` with Preview (Ctrl+Shift+P) |
 
 All ``!xxx add`` commands (node, predicate, triple, unit, proof, predicate.group) now include ``placeholder`` text.
+
+## Post-Submit Redirect & Highlight
+
+When a form submits and creates a new entity (node or predicate), the default behavior is now to **close the form tab** and **redirect to the list tab** with a brief green pulse animation on the newly created row.
+
+### Mechanism
+
+1. The form tab's ``data`` includes top-level metadata keys: ``returnType`` (e.g. ``"node-list"``), ``returnTokens`` (e.g. ``["node", "list"]``), ``returnTitle``, and optionally ``returnIdKey``.
+2. ``FormTab.handleFormSubmit()`` checks: if ``resp.ok`` AND ``result.data.node.node_id`` (or ``result.data.predicate.predicate_id``) exists AND ``returnType``/``returnTokens`` are set → redirect. Otherwise → original status-tab behavior.
+3. On redirect: close form tab, re-fetch fresh list data via ``POST /api/v1/command`` with ``returnTokens``, open/update the list tab with ``_highlight`` set to the new entity ID.
+4. The list component (``NodeListTab``, ``PredicateListTab``) uses ``createHighlightManager`` from ``@lightercore/ui/highlight.svelte.js``, which watches for ``data._highlight`` in a ``$effect``, scrolls the matching row into view, and applies a CSS pulse animation.
+
+### Coverage
+
+The redirect fires for **every** ``!node add <type>`` and ``!predicate add`` — all backend handlers return either ``node.node_id`` or ``predicate.predicate_id`` in their response ``data``. Forms without ``returnType`` (``!triple add``, ``!unit add``, ``!proof add``) keep the original behavior.
+
+### Testing
+
+8 component tests in ``FormTab.test.js`` cover: original-behavior preservation (no returnType → status tab), error responses don't close form, full redirect with ``returnTokens``, ``returnIdKey`` persistent-tab update, list-fetch failure fallback, predicate_id redirect, and correct tab close.
+
+The ``applyHighlight()`` DOM function is tested with 8 unit tests in lightercore's ``highlight.test.js``.
 
 ## Node Handler Module Split
 
