@@ -32,7 +32,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from lightercore.system_prompt import SystemPromptManager
+from lighterllm.system_prompt import SystemPromptManager
 
 from semantika.core import config_dir
 

@@ -14,14 +14,14 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from lightercore.llm import BaseLLMProvider, ProfileManager, ProviderConfig
-from lightercore.llm.config import (
+from lighterllm.llm import BaseLLMProvider, ProfileManager, ProviderConfig
+from lighterllm.llm.config import (
     clear_active_config as _clear_active,
 )
-from lightercore.llm.config import (
+from lighterllm.llm.config import (
     load_active_config as _load_active,
 )
-from lightercore.llm.config import (
+from lighterllm.llm.config import (
     save_active_config as _save_active,
 )
 
@@ -104,7 +104,7 @@ class LLMProvider(BaseLLMProvider):
 
     @staticmethod
     def _default_base_url(provider_type: str) -> str:
-        from lightercore.llm.utils import resolve_base_url
+        from lighterllm.llm.utils import resolve_base_url
         return resolve_base_url(provider_type, "")
 
     def clear_config(self) -> None:

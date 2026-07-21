@@ -9,8 +9,8 @@ import httpx
 import pytest
 
 from lightercore.exceptions import AIError
-from lightercore.llm import ProviderConfig
-from lightercore.llm.utils import parse_command_result
+from lighterllm.llm import ProviderConfig
+from lighterllm.llm.utils import parse_command_result
 from semantika.server.command.registry import get_command_definitions
 from semantika.server.llm.provider import LLMProvider, get_provider, reset_provider
 

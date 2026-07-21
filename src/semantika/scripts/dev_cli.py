@@ -141,8 +141,8 @@ def _auto_configure_llm(creds: dict[str, str]) -> None:
     if not api_key:
         return
 
-    from lightercore.llm.config import save_active_config as _save
-    from lightercore.llm.config import ProviderConfig
+    from lighterllm.llm.config import save_active_config as _save
+    from lighterllm.llm.config import ProviderConfig
 
     SERVICE = "semantika-llm"
 

@@ -15,7 +15,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from lightercore.llm.base import defs_to_tools
+from lighterllm.llm.base import defs_to_tools
 from lightercore.paths import config_dir
 
 from semantika.server.command.handlers.context import (
@@ -168,7 +168,7 @@ async def _run_t1_nodes(context_session_id: str, user_text: str) -> dict[str, An
     turn1_defs = [d for d in all_defs if tuple(d["path"]) in turn1_tool_paths]
     turn1_tools = defs_to_tools(turn1_defs) if turn1_defs else []
 
-    from lightercore.llm.tool_loop import run_tool_loop as _lc_tool_loop
+    from lighterllm.llm.tool_loop import run_tool_loop as _lc_tool_loop
 
     provider = get_provider()
     ctx_dispatch = _make_context_dispatch_wrapper(context_session_id)
@@ -240,7 +240,7 @@ async def _run_t2_templates_predicates(context_session_id: str,
     turn2_defs = [d for d in all_defs if tuple(d["path"]) in turn2_tool_paths]
     turn2_tools = defs_to_tools(turn2_defs) if turn2_defs else []
 
-    from lightercore.llm.tool_loop import run_tool_loop as _lc_tool_loop
+    from lighterllm.llm.tool_loop import run_tool_loop as _lc_tool_loop
 
     provider = get_provider()
     ctx_dispatch = _make_context_dispatch_wrapper(context_session_id)
@@ -326,7 +326,7 @@ async def _run_t3_triples(context_session_id: str, user_text: str) -> dict[str, 
     turn3_defs = [d for d in all_defs if tuple(d["path"]) in turn3_tool_paths]
     turn3_tools = defs_to_tools(turn3_defs) if turn3_defs else []
 
-    from lightercore.llm.tool_loop import run_tool_loop as _lc_tool_loop
+    from lighterllm.llm.tool_loop import run_tool_loop as _lc_tool_loop
 
     provider = get_provider()
     ctx_dispatch = _make_context_dispatch_wrapper(context_session_id)

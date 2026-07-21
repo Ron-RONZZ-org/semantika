@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, HTTPException
-from lightercore.llm.tool_loop import resume_execution, run_tool_loop
+from lighterllm.llm.tool_loop import resume_execution, run_tool_loop
 from pydantic import BaseModel
 
 from semantika.server.command.errors import CommandError
@@ -147,8 +147,8 @@ async def update_profile(name: str, req: ProfileSaveRequest):
         raise HTTPException(404, f"Profile '{name}' not found")
 
     # Switch back to active profile (switch_to_profile changes the active)
-    from lightercore.llm.config import load_active_config
-    from lightercore.llm.profiles import ProfileManager
+    from lighterllm.llm.config import load_active_config
+    from lighterllm.llm.profiles import ProfileManager
 
     pm = ProfileManager("semantika-llm", provider._profile_dir)
     active = load_active_config("semantika-llm")

@@ -6,7 +6,7 @@ The canonical implementation lives in lightercore — this module is a thin
 re-export so internal imports are consistent.
 """
 
-from lightercore.llm.tool_loop import (
+from lighterllm.llm.tool_loop import (
     _pending_executions,
     resume_execution,
     run_tool_loop,

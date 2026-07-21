@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from lightercore.llm.base import ChatResult, ToolCall
+from lighterllm.llm.base import ChatResult, ToolCall
 
 from semantika.server.app import create_app
 

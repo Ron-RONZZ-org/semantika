@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from lightercore.llm.base import defs_to_tools
+from lighterllm.llm.base import defs_to_tools
 from lightercore.paths import config_dir
 
 from semantika.server.command.errors import CommandError
@@ -158,7 +158,7 @@ async def resume_execution(
     """
     from fastapi import HTTPException
 
-    from lightercore.llm.tool_loop import resume_execution as _lc_resume
+    from lighterllm.llm.tool_loop import resume_execution as _lc_resume
 
     # Evict stale sessions before looking up the current one
     _cleanup_expired_flow_sessions()
@@ -323,7 +323,7 @@ async def _run_template_turn2(
     The LLM can use **context.get** to retrieve predicate IDs discovered
     in turn 1, instead of relying on injected text variables.
     """
-    from lightercore.llm.tool_loop import run_tool_loop as _lc_tool_loop
+    from lighterllm.llm.tool_loop import run_tool_loop as _lc_tool_loop
 
     # Build turn2 variables
     style_example = _get_style_example()
@@ -555,7 +555,7 @@ async def execute_template_flow(data: dict[str, Any]) -> dict[str, Any]:
     _current_context_session.set(context_session_id)
     ctx_dispatch = _make_context_dispatch_wrapper(context_session_id)
 
-    from lightercore.llm.tool_loop import run_tool_loop as _lc_tool_loop
+    from lighterllm.llm.tool_loop import run_tool_loop as _lc_tool_loop
 
     try:
         turn1_result = await _lc_tool_loop(

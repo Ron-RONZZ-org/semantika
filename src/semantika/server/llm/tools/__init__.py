@@ -14,7 +14,7 @@ Usage::
     tools = get_llm_tools()  # OpenAI-compatible tool definitions
 """
 
-from lightercore.llm.tools import (  # noqa: F401
+from lighterllm.llm.tools import (  # noqa: F401
     _llm_registry,
     dispatch_llm_tool,
     get_llm_tool_level,

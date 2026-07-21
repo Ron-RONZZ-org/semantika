@@ -20,8 +20,8 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from lightercore.llm.base import defs_to_tools
-from lightercore.prompt_commands import (
+from lighterllm.llm.base import defs_to_tools
+from lighterllm.prompt_commands import (
     execute_prompt_command,
     expand_prompt_template,
     list_prompt_commands,

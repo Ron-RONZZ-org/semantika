@@ -12,6 +12,7 @@ license = "AGPL-3.0-only"
 requires-python = ">=3.11"
 dependencies = [
     "lightercore>=0.1.0",
+    "lighterllm>=0.1.0",
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.27.0",
     "cryptography>=42.0.0",
@@ -54,6 +55,7 @@ markers = [
 
 [tool.uv.sources]
 lightercore = { path = "../lightercore", editable = true }
+lighterllm = { path = "../lighterllm", editable = true }
 
 [tool.ruff]
 line-length = 120

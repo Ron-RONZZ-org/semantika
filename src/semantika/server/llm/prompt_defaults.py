@@ -13,7 +13,7 @@ This module is the single source of truth used by:
 
 from __future__ import annotations
 
-from lightercore.prompt_files import PromptFile
+from lighterllm.prompt_files import PromptFile
 
 # ── System prompts ───────────────────────────────────────────────────────────
 
@@ -270,6 +270,6 @@ def get_prompt_files_manager() -> PromptFilesManager:
 
     from lightercore.paths import config_dir
 
-    from lightercore.prompt_files import PromptFilesManager
+    from lighterllm.prompt_files import PromptFilesManager
 
     return PromptFilesManager(Path(config_dir()), SEMANTIKA_PROMPT_FILES)

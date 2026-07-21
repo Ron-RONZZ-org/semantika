@@ -7,8 +7,8 @@ registration in the shared registry — regardless of module caching.
 """
 
 from lightercore.permissions import PermissionLevel
-from lightercore.llm.tools import llm_tool
-from lightercore.llm.tools.system import llm_system_now
+from lighterllm.llm.tools import llm_tool
+from lighterllm.llm.tools.system import llm_system_now
 
 # Re-register at module level so import always triggers the @llm_tool
 # decorator.  Calling llm_tool(...) as a plain function (not a decorator)
